@@ -1,0 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* 1. Reset toàn bộ thuộc tính mặc định của trình duyệt */
+html, body, #root {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  min-height: 100vh !important;
+  background-color: #05070c !important; 
+  color: #ffffff !important;
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
+}
+
+/* Đóng ngoặc chuẩn cho thẻ selector * */
+* {
+  box-sizing: border-box;
+}
+
+/* 2. Đặt @keyframes nằm độc lập ở NGOÀI dấu ngoặc nhọn, không lồng vào đâu hết */
+@keyframes movepic {
+  0% {
+    transform: translateY(0); 
+  }
+  50% {
+    transform: translateY(-12px); /* keyframe */
+  }
+  100% {
+    transform: translateY(0); 
+  }
+}
