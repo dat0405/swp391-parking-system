@@ -19,6 +19,7 @@ function App() {
       <Route path="/" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/login" element={<LoginPage />} />
       
       {/* Các Route nội bộ sau khi đăng nhập thành công */}
       <Route path="/dashboard" element={<DashboardPage />} />

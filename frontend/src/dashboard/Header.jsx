@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Bell, Settings } from 'lucide-react';
+import { Search, Bell, Settings, X, Sliders, DollarSign, ShieldAlert } from 'lucide-react';
 
 function Header() {
   // 1. State quản lý thông tin User & Role tự động theo BE
   const [currentUser, setCurrentUser] = useState({
     name: "Phung Thanh DO",
-    role: "Admin" // Giá trị hiển thị ban đầu, sẽ bị đè nếu localStorage có data thật
+    role: "Admin" 
   });
 
   // 2. Quản lý danh sách thông báo
@@ -21,6 +21,14 @@ function Header() {
   const [isOpenSettings, setIsOpenSettings] = useState(false); 
   const [activeToast, setActiveToast] = useState(null); 
   
+  // STATE QUẢN LÝ MODAL SYSTEM SETTINGS
+  const [isOpenSettingsModal, setIsOpenSettingsModal] = useState(false);
+  const [systemConfig, setSystemConfig] = useState({
+    basePrice: 5000,
+    overnightPrice: 30000,
+    maintenanceMode: false
+  });
+
   const dropdownRef = useRef(null);
   const settingsRef = useRef(null);
 
@@ -29,16 +37,15 @@ function Header() {
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   // ==========================================
-  // 🌐 SYNC ROLE TỪ BE & LẮNG NGHE SỰ KIỆN PORTAL
+  // 🌐 EFFECT KHỞI TẠO & LẮNG NGHE SỰ KIỆN TỪ BE / LOCALSTORAGE
   // ==========================================
   useEffect(() => {
-    // 🔑 TỰ ĐỘNG ĐỌC ROLE TỪ LOCALSTORAGE KHI LOAD TRANG
+    // 🔑 [API PLACEHOLDER]: ĐỌC THÔNG TIN USER KHI ĐÃ AUTHENTICATE
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
       try {
         const parsedUser = JSON.parse(savedUser);
         const validRoles = ["Admin", "Parking staff", "User", "Parking management"];
-        
         if (parsedUser.role && validRoles.includes(parsedUser.role)) {
           setCurrentUser({
             name: parsedUser.name || "Phung Thanh DO",
@@ -50,19 +57,10 @@ function Header() {
       }
     }
 
-    // Lắng nghe thông báo từ trang CheckInOutPage
-    const handlePageNotification = (event) => {
-      const messageContent = event.detail;
-      console.log("=== CHUÔNG HEADER ĐÃ NHẬN TÍN HIỆU ===", messageContent);
-      triggerNewNotification(messageContent);
-    };
-
-    window.addEventListener('dispatchParkingNotification', handlePageNotification);
-
+    // 🔑 [API PLACEHOLDER]: ĐOẠN NÀY LÀ FETCH DANH SÁCH THÔNG BÁO BAN ĐẦU TỪ BE
     const fetchNotificationsFromBE = async () => {
       try {
-        /*
-        const token = localStorage.getItem('token');
+        /* const token = localStorage.getItem('token');
         const response = await axios.get('https://api.parksystem.pro/api/notifications', {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -71,23 +69,23 @@ function Header() {
         }
         */
       } catch (error) {
-        console.error("Lỗi khi lấy thông báo từ Backend:", error);
+        console.error("Lỗi khi fetch danh sách thông báo từ server:", error);
       }
     };
     fetchNotificationsFromBE();
 
-    return () => {
-      window.removeEventListener('dispatchParkingNotification', handlePageNotification);
+    // Lắng nghe thông báo Realtime phát ra nội bộ từ trang CheckInOutPage
+    const handlePageNotification = (event) => {
+      const messageContent = event.detail;
+      triggerNewNotification(messageContent);
     };
+
+    window.addEventListener('dispatchParkingNotification', handlePageNotification);
+    return () => window.removeEventListener('dispatchParkingNotification', handlePageNotification);
   }, []);
 
   const triggerNewNotification = (text) => {
-    const newNoti = {
-      id: Date.now(), 
-      text: text,
-      time: "Just now",
-      isRead: false
-    };
+    const newNoti = { id: Date.now(), text, time: "Just now", isRead: false };
     setNotifications(prev => [newNoti, ...prev]);
     setActiveToast(newNoti);
   };
@@ -113,12 +111,72 @@ function Header() {
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
   };
 
-  const handleLogOut = () => {
-    console.log("Đang đăng xuất hệ thống...");
-    localStorage.removeItem('token'); 
-    localStorage.removeItem('user'); // Xoá luôn data user khi log out
-    sessionStorage.clear();
-    window.location.reload(); 
+  // ==========================================
+  // 🔑 [API PLACEHOLDER]: LOGIC ĐĂNG XUẤT HỆ THỐNG (LOGOUT)
+  // ==========================================
+  const handleLogOut = async () => {
+    console.log("Đang xử lý đăng xuất...");
+    
+    try {
+      // Nếu BE cần gọi API để hủy Token/Session trên Server thì mở đoạn này:
+      /*
+      const token = localStorage.getItem('token');
+      await axios.post('https://api.parksystem.pro/api/auth/logout', {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      */
+    } catch (error) {
+      console.error("Lỗi gọi API logout phía server (vẫn tiếp tục clear local):", error);
+    } finally {
+      // Clear toàn bộ session dữ liệu ở Client trình duyệt
+      localStorage.removeItem('token'); 
+      localStorage.removeItem('user'); 
+      sessionStorage.clear();
+      
+      // Đá thẳng trình duyệt về trang Login cứng để dọn sạch State lỗi
+      window.location.href = '/login'; 
+    }
+  };
+
+  // ==========================================
+  // 🔑 [API PLACEHOLDER]: BẮN DATA CẤU HÌNH MỚI SANG BE
+  // ==========================================
+  const updateSystemConfigAPI = async (configData) => {
+    // Sau này team BE code xong, mày chỉ việc bỏ comment khối này ra và điền URL thật vào:
+    /*
+    const token = localStorage.getItem('token');
+    const response = await axios.put('https://api.parksystem.pro/api/system/config', configData, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    return response.data;
+    */
+    
+    // Hiện tại chưa có API BE thật, mặc định giả lập trả về kết quả thành công:
+    return { success: true, message: "Mockup update success" };
+  };
+
+  // Hàm handle khi submit form cấu hình bãi xe
+  const handleSaveConfig = async (e) => {
+    e.preventDefault();
+    console.log("Dữ liệu chuẩn bị gửi đi:", systemConfig);
+    
+    try {
+      // Gọi đến hàm chứa cấu trúc API đã chừa sẵn ở trên
+      const result = await updateSystemConfigAPI(systemConfig);
+      
+      if (result.success) {
+        setIsOpenSettingsModal(false);
+        triggerNewNotification("🔧 System configurations updated successfully!");
+      } else {
+        alert(`Cập nhật lỗi: ${result.message}`);
+      }
+    } catch (error) {
+      console.error("Lỗi kết nối API cấu hình:", error);
+      alert("Không thể kết nối đến máy chủ Backend!");
+    }
   };
 
   return (
@@ -161,7 +219,7 @@ function Header() {
             )}
           </button>
 
-          {/* 1. TOAST DROP-DOWN TẠM THỜI */}
+          {/* TOAST DROP-DOWN TẠM THỜI */}
           {activeToast && (
             <div style={{
               position: 'absolute', top: '40px', right: '0', width: '280px',
@@ -177,7 +235,7 @@ function Header() {
             </div>
           )}
 
-          {/* 2. MENU DROPDOWN CHÍNH CỦA CHUÔNG */}
+          {/* MENU DROPDOWN CHÍNH CỦA CHUÔNG */}
           {isOpenDropdown && (
             <div style={{
               position: 'absolute', top: '40px', right: '0', width: '320px',
@@ -204,16 +262,6 @@ function Header() {
                   </div>
                 ))}
               </div>
-
-              {remainingCount > 0 && (
-                <div style={{
-                  padding: '0.5rem 1rem', textAlign: 'center', fontSize: '0.75rem',
-                  color: '#64748b', borderTop: '1px solid #1e293b', backgroundColor: '#090d16',
-                  fontWeight: '500', fontStyle: 'italic'
-                }}>
-                  and {remainingCount} more notifications... (+...)
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -242,7 +290,7 @@ function Header() {
                 }}
                 onMouseEnter={(e) => e.target.style.backgroundColor = '#1e293b'}
                 onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                onClick={() => { alert("System Settings Functional"); setIsOpenSettings(false); }}
+                onClick={() => { setIsOpenSettingsModal(true); setIsOpenSettings(false); }}
               >
                 System Settings
               </button>
@@ -273,7 +321,6 @@ function Header() {
             <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: '600', color: '#ffffff', letterSpacing: '0.3px' }}>
               {currentUser.name}
             </h4>
-            {/* 🔑 TEXT ROLE THAY ĐỔI THEO DATA TẠI ĐÂY */}
             <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: '500', display: 'block', marginTop: '1px' }}>
               {currentUser.role}
             </span>
@@ -286,6 +333,99 @@ function Header() {
         </div>
 
       </div>
+
+      {/* MODAL SYSTEM SETTINGS */}
+      {isOpenSettingsModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          backgroundColor: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999
+        }}>
+          <div style={{
+            backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '0.75rem',
+            width: '450px', padding: '1.5rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+            color: '#f8fafc', animation: 'slideDown 0.2s ease-out'
+          }}>
+            {/* Header Modal */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Sliders size={18} style={{ color: '#3b82f6' }} />
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '600' }}>System Configuration</h3>
+              </div>
+              <button onClick={() => setIsOpenSettingsModal(false)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Form Thiết Lập */}
+            <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              
+              {/* Cấu hình 1: Giá vé theo giờ */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.35rem', fontWeight: '500' }}>Base Parking Fee (per hour)</label>
+                <div style={{ position: 'relative' }}>
+                  <DollarSign size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                  <input 
+                    type="number" 
+                    value={systemConfig.basePrice}
+                    onChange={(e) => setSystemConfig({...systemConfig, basePrice: Number(e.target.value)})}
+                    style={{ width: '100%', padding: '0.5rem 0.5rem 0.5rem 2rem', backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '0.375rem', color: '#f8fafc', fontSize: '0.85rem', outline: 'none' }}
+                  />
+                </div>
+              </div>
+
+              {/* Cấu hình 2: Giá vé qua đêm */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.35rem', fontWeight: '500' }}>Overnight Rate (Fixed)</label>
+                <div style={{ position: 'relative' }}>
+                  <DollarSign size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                  <input 
+                    type="number" 
+                    value={systemConfig.overnightPrice}
+                    onChange={(e) => setSystemConfig({...systemConfig, overnightPrice: Number(e.target.value)})}
+                    style={{ width: '100%', padding: '0.5rem 0.5rem 0.5rem 2rem', backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: '0.375rem', color: '#f8fafc', fontSize: '0.85rem', outline: 'none' }}
+                  />
+                </div>
+              </div>
+
+              {/* Cấu hình 3: Chế độ bảo trì hệ thống */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0', borderTop: '1px solid #1e293b', paddingTop: '0.75rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <ShieldAlert size={16} style={{ color: systemConfig.maintenanceMode ? '#ef4444' : '#64748b' }} />
+                  <div>
+                    <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: '500' }}>System Maintenance Portal</span>
+                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Lock check-in/out modules for DB update</span>
+                  </div>
+                </div>
+                <input 
+                  type="checkbox" 
+                  checked={systemConfig.maintenanceMode}
+                  onChange={(e) => setSystemConfig({...systemConfig, maintenanceMode: e.target.checked})}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#ef4444' }}
+                />
+              </div>
+
+              {/* Nhóm Nút Action */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <button 
+                  type="button"
+                  onClick={() => setIsOpenSettingsModal(false)}
+                  style={{ padding: '0.5rem 1rem', backgroundColor: '#1e293b', border: 'none', borderRadius: '0.375rem', color: '#94a3b8', fontSize: '0.8rem', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  style={{ padding: '0.5rem 1rem', backgroundColor: '#3b82f6', border: 'none', borderRadius: '0.375rem', color: '#ffffff', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Save Changes
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes slideDown {
