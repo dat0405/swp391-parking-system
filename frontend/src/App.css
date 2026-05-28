@@ -1,0 +1,146 @@
+/* Tổng thể Layout chia đôi màn hình */
+.auth-container {
+  display: flex !important;
+  flex-direction: row !important;
+  min-height: 100vh !important;
+  width: 100vw !important;
+  background-color: #05070c !important;
+}
+
+/* Cột trái - Login Form */
+.login-column {
+  width: 38% !important;
+  background-color: #0c1322 !important;
+  padding: 3.5rem 4rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Cột phải - Showcase */
+.showcase-column {
+  width: 62% !important;
+  background: radial-gradient(circle at center, #0f1c30 0%, #05070c 100%) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  position: relative !important;
+  overflow: hidden !important;
+  padding: 2rem !important;
+}
+
+/* Thiết kế Input Form */
+.input-group {
+  margin-bottom: 1.25rem !important;
+}
+
+.input-label {
+  display: block !important;
+  font-size: 0.7rem !important;
+  font-weight: 600 !important;
+  color: #64748b !important;
+  letter-spacing: 0.05em !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.input-wrapper {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.input-icon-left {
+  position: absolute !important;
+  left: 1rem !important;
+  color: #475569 !important;
+  z-index: 5;
+}
+
+.input-icon-right {
+  position: absolute !important;
+  right: 1rem !important;
+  color: #475569 !important;
+  cursor: pointer !important;
+  background: none !important;
+  border: none !important;
+  z-index: 5;
+}
+
+.form-input {
+  width: 100% !important;
+  padding: 0.85rem 1rem 0.85rem 2.75rem !important;
+  background-color: #131c2e !important;
+  border: 1px solid #1e293b !important;
+  border-radius: 0.5rem !important;
+  color: #ffffff !important;
+  font-size: 0.9rem !important;
+  transition: all 0.2s ease !important;
+}
+
+.form-input:focus {
+  outline: none !important;
+  border-color: #3b82f6 !important;
+  background-color: #172237 !important;
+}
+
+/* Hiệu ứng Phối cảnh 3D cho Màn hình Dashboard */
+.dashboard-perspective-wrapper {
+  perspective: 1200px !important;
+  width: 80% !important;
+  max-width: 680px !important;
+  margin-bottom: 2rem !important;
+}
+
+.dashboard-mockup {
+  width: 100% !important;
+  transform: rotateY(-12deg) rotateX(8deg) rotateZ(2deg) !important;
+  border-radius: 0.75rem !important;
+  box-shadow: -20px 30px 60px rgba(0, 0, 0, 0.7) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Các Badge nổi (Floating Badges) */
+.floating-badge {
+  position: absolute !important;
+  background: rgba(15, 23, 42, 0.85) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding: 0.75rem 1rem !important;
+  border-radius: 0.6rem !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.75rem !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4) !important;
+  z-index: 10 !important;
+}
+
+.badge-ev {
+  top: 10% !important;
+  right: 12% !important;
+}
+
+.badge-revenue {
+  bottom: 22% !important;
+  left: 10% !important;
+}
+
+/* Responsive xử lý trên thiết bị di động */
+@media (max-width: 1024px) {
+  .auth-container {
+    flex-direction: column !important;
+  }
+  .login-column {
+    width: 100% !important;
+    padding: 3rem 2rem !important;
+  }
+  .showcase-column {
+    width: 100% !important;
+    padding: 4rem 2rem !important;
+  }
+}
+/* Áp dụng hiệu ứng vào class anh-dong */
+.anh-dong {
+  animation: movepic 4s ease-in-out infinite;
+}
