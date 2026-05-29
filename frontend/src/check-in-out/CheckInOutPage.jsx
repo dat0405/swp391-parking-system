@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import Sidebar from '../dashboard/Sidebar';
+
 import Header from '../dashboard/Header';
 import { Search, SquarePlay, LogOut, ReceiptText } from 'lucide-react'; 
 
