@@ -22,32 +22,34 @@ function CheckInOutPage() {
   useEffect(() => {
     const availableFloors = floorsData.filter(floor => floor.type === vehicleType);
     if (availableFloors.length > 0) {
-      // Ưu tiên chọn tầng đầu tiên còn chỗ trống, nếu đầy hết thì chọn tầng đầu tiên mặc định
       const defaultFloor = availableFloors.find(f => f.availableSlots > 0) || availableFloors[0];
       setParkingFloor(defaultFloor.id);
     }
-  }, [vehicleType]); // Theo dõi vehicleType để đổi tầng tương ứng
+  }, [vehicleType]); 
 
   // Tự động cập nhật Entry Time theo thời gian thực tế của máy tính
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      const timeString = now.toTimeString().split(' ')[0]; // Lấy định dạng HH:MM:SS
+      const timeString = now.toTimeString().split(' ')[0]; 
       setEntryTime(timeString);
     };
     updateTime();
-    const interval = setInterval(updateTime, 1000); // Cập nhật sau mỗi giây
+    const interval = setInterval(updateTime, 1000); 
     return () => clearInterval(interval);
   }, []);
 
-  // 🛠️ HÀM XỬ LÝ SUBMIT CHECK-IN (CẬP NHẬT TRỪ SỐ CHỖ TRỐNG THỰC TẾ)
+  // 🛠️ HÀM XỬ LÝ SUBMIT CHECK-IN (ĐÃ KHỬ ALERT, ĐỒNG BỘ CHUÔNG HEADER)
   const handleCheckInSubmit = async (e) => {
     e.preventDefault();
 
-    // 1. Kiểm tra thực tế xem tầng được chọn có còn chỗ trống hay không
     const selectedFloor = floorsData.find(f => f.id === parkingFloor);
+    
+    // 1. Kiểm tra thực tế xem tầng được chọn có còn chỗ trống hay không
     if (selectedFloor && selectedFloor.availableSlots === 0) {
-      alert(`Rất tiếc, ${selectedFloor.name} đã đầy chỗ! Vui lòng cấu hình chọn tầng khác.`);
+      // Bắn sự kiện báo lỗi Đầy Chỗ lên Chuông thông báo
+      const errorMsg = `Cảnh báo: ${selectedFloor.name} đã đầy chỗ! Không thể Check-in cho xe ${licensePlateIn}.`;
+      window.dispatchEvent(new CustomEvent('dispatchParkingNotification', { detail: errorMsg }));
       return; 
     }
 
@@ -70,11 +72,14 @@ function CheckInOutPage() {
       )
     );
 
-    alert(`Check-in thành công cho xe ${licensePlateIn} tại ${selectedFloor?.name}!`);
+    // ✨ 3. BẮN SỰ KIỆN TOÀN CỤC THAY THẾ CHO HÀM ALERT() CŨ
+    const successMsg = `Check-in thành công cho xe ${licensePlateIn} tại ${selectedFloor?.name || parkingFloor}!`;
+    const event = new CustomEvent('dispatchParkingNotification', { detail: successMsg });
+    window.dispatchEvent(event);
 
     // Reset Form Input sau khi Check-in thành công
     setLicensePlateIn('');
-    setTicketId(`TK-${Math.floor(100000 + Math.random() * 900000)}`); // Làm mới mã vé ngẫu nhiên tiếp theo
+    setTicketId(`TK-${Math.floor(100000 + Math.random() * 900000)}`); 
 
     // CHỖ TRỐNG KẾT NỐI API BACKEND (POST DATA) SAU NÀY:
     /*
@@ -92,7 +97,7 @@ function CheckInOutPage() {
   };
 
 
-  // ================= =======================================================
+  // =========================================================================
   // 2. QUẢN LÝ STATE CHO PHẦN CHECK-OUT (BÊN PHẢI)
   // =========================================================================
   const [searchCheckoutQuery, setSearchCheckoutQuery] = useState('');
@@ -125,10 +130,14 @@ function CheckInOutPage() {
     */
   };
 
-  // 🛠️ HÀM XỬ LÝ XÁC NHẬN THANH TOÁN / CHO XE RA
+  // 🛠️ HÀM XỬ LÝ XÁC NHẬN THANH TOÁN (ĐÃ KHỬ ALERT, ĐỒNG BỘ CHUÔNG HEADER)
   const handleConfirmCheckOut = async () => {
     console.log("Xác nhận cho xe ra, tính tiền hoàn tất:", checkoutData.licensePlate);
-    alert("Xe ra và thanh toán thành công!");
+
+    // ✨ BẮN SỰ KIỆN THÔNG BÁO CHECK-OUT THÀNH CÔNG LÊN CHUÔNG HEADER
+    const checkoutMsg = `Check-out & Thanh toán thành công cho xe ${checkoutData.licensePlate}! Số tiền: $${checkoutData.totalAmount.toFixed(2)}`;
+    const event = new CustomEvent('dispatchParkingNotification', { detail: checkoutMsg });
+    window.dispatchEvent(event);
 
     // CHỖ TRỐNG KẾT NỐI API BACKEND (UPDATE STATUS):
     /*
@@ -150,49 +159,45 @@ function CheckInOutPage() {
         <Header />
 
         {/* Tiêu đề Portal */}
-        <div className="dashboard-title">
-          <h1>Check-in/out Portal</h1>
-          <p>Manage vehicle flow and real-time gate operations.</p>
+        <div className="dashboard-title" style={{ padding: '1.5rem 0 0.5rem 0' }}>
+          <h1 style={{ color: '#fff', fontSize: '1.75rem', margin: '0 0 0.25rem 0' }}>Check-in/out Portal</h1>
+          <p style={{ color: '#64748b', margin: 0, fontSize: '0.9rem' }}>Manage vehicle flow and real-time gate operations.</p>
         </div>
 
         {/* Khu vực xử lý hai cột Check-in và Check-out */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem', marginTop: '1.5rem' }}>
           
           {/* ================= THẺ TRÁI: CHECK-IN ENTRY ================= */}
           <div style={{ backgroundColor: '#1e293b', padding: '2rem', borderRadius: '0.75rem', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-            <h3 style={{ color: '#fff', fontSize: '1.1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <h3 style={{ color: '#fff', fontSize: '1.1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 0 }}>
               <SquarePlay size={18} style={{ color: '#3b82f6' }} /> Check-in Entry
             </h3>
             
             <form onSubmit={handleCheckInSubmit}>
-              {/* Biển số xe - Tự động định dạng chuẩn Việt Nam: 2 số + 1 chữ + 5 số (có dấu . và -) */}
-<div style={{ marginBottom: '1.2rem' }}>
-  <label style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: '600', display: 'block', marginBottom: '0.5rem' }}>
-    LICENSE PLATE NUMBER
-  </label>
-  <input 
-    type="text" 
-    value={licensePlateIn}
-    placeholder="e.g., 51K-123.45" 
-    maxLength={10} // Giới hạn tối đa 10 ký tự bao gồm cả dấu - và . (Ví dụ: 51K-123.45)
-    style={{ width: '100%', padding: '0.75rem', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '0.375rem', color: '#fff', outline: 'none', letterSpacing: '1px', fontWeight: '600' }}
-    required
-    onChange={(e) => {
-      let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); // Chỉ giữ lại chữ và số
-      
-      // Tự động chèn dấu '-' sau 3 ký tự đầu (2 số + 1 chữ)
-      if (value.length > 3) {
-        value = value.slice(0, 3) + '-' + value.slice(3);
-      }
-      // Tự động chèn thêm dấu '.' trước 2 số cuối (sau khi đã có 3 số đầu của cụm sau)
-      if (value.length > 7) {
-        value = value.slice(0, 7) + '.' + value.slice(7, 9);
-      }
-
-      setLicensePlateIn(value);
-    }}
-  />
-</div>
+              {/* Biển số xe */}
+              <div style={{ marginBottom: '1.2rem' }}>
+                <label style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: '600', display: 'block', marginBottom: '0.5rem' }}>
+                  LICENSE PLATE NUMBER
+                </label>
+                <input 
+                  type="text" 
+                  value={licensePlateIn}
+                  placeholder="e.g., 51K-123.45" 
+                  maxLength={10} 
+                  style={{ width: '100%', padding: '0.75rem', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '0.375rem', color: '#fff', outline: 'none', letterSpacing: '1px', fontWeight: '600' }}
+                  required
+                  onChange={(e) => {
+                    let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); 
+                    if (value.length > 3) {
+                      value = value.slice(0, 3) + '-' + value.slice(3);
+                    }
+                    if (value.length > 7) {
+                      value = value.slice(0, 7) + '.' + value.slice(7, 9);
+                    }
+                    setLicensePlateIn(value);
+                  }}
+                />
+              </div>
 
               {/* Loại xe & Tầng Đỗ Dữ Liệu Động */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.2rem' }}>
@@ -258,7 +263,7 @@ function CheckInOutPage() {
 
           {/* ================= THẺ PHẢI: CHECK-OUT EXIT ================= */}
           <div style={{ backgroundColor: '#1e293b', padding: '2rem', borderRadius: '0.75rem', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-            <h3 style={{ color: '#fff', fontSize: '1.1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <h3 style={{ color: '#fff', fontSize: '1.1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 0 }}>
               <LogOut size={18} style={{ color: '#10b981' }} /> Check-out Exit
             </h3>
 
@@ -317,7 +322,7 @@ function CheckInOutPage() {
           <h3 style={{ color: '#fff', fontSize: '1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <ReceiptText size={18} style={{ color: '#94a3b8' }} /> Recent Parking Sessions
           </h3>
-          <p style={{ color: '#64748b', fontSize: '0.85rem' }}>[Chỗ này chừa sẵn bãng danh sách lịch sử xe ra vào lấy dữ liệu API sau này...]</p>
+          <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>[Chỗ này chừa sẵn bảng danh sách lịch sử xe ra vào lấy dữ liệu API sau này...]</p>
         </div>
 
       </main>
