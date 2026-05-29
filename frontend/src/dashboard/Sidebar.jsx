@@ -1,82 +1,39 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  Layers, 
-  ArrowLeftRight, 
-  CalendarDays, 
-  Users, 
-  CircleDollarSign, 
-  BarChart3, 
-  Settings 
-} from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Search, Bell, Settings } from 'lucide-react';
 
-function Sidebar() {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  // Hàm check xem menu nào trùng với URL hiện tại để sáng đèn
-  const isActive = (path) => location.pathname === path;
-
+function Header({ fullName, role }) {
   return (
-    <aside className="sidebar">
-      <div className="sidebar-brand">
-        <div className="brand-icon">P</div>
-        <div className="brand-text">
-          <h2>ParkSystem Pro</h2>
-          <span>MANAGEMENT CONSOLE</span>
-        </div>
+    <header className="top-header">
+      <div className="search-bar">
+        <Search size={16} />
+        <input type="text" placeholder="Search plates, users, or floor ID..." />
       </div>
 
-      <nav className="sidebar-menu">
-        {/* 1. DASHBOARD */}
-        <div 
-          className={`menu-item ${isActive('/dashboard') ? 'active' : ''}`} 
-          onClick={() => navigate('/dashboard')}
-          style={{ cursor: 'pointer' }}
-        >
-          <LayoutDashboard size={18} /> 
-          <span>Dashboard</span>
+      <div className="header-actions">
+        <button className="icon-btn">
+          <Bell size={18} />
+          <span className="badge-dot"></span>
+        </button>
+
+        <button className="icon-btn">
+          <Settings size={18} />
+        </button>
+
+        <div className="user-profile">
+          <div className="user-info">
+            <span className="user-name">{fullName || 'User'}</span>
+            <span className="user-role">{role || 'Unknown role'}</span>
+          </div>
+
+          <img
+            className="user-avatar"
+            src="https://danviet-24h.ex-cdn.com/files/upload/2-2021/images/2021-06-26/42725836-adf9-4fc7-8764-9f671109ee3a-1624678195-502-width600height400.jpeg"
+            alt="Avatar"
+          />
         </div>
-
-        {/* 2. PARKING FLOORS */}
-        <div className="menu-item"><Layers size={18} /> <span>Parking Floors</span></div>
-        
-        {/* 3. CHECK-IN/OUT */}
-        <div 
-          className={`menu-item ${isActive('/check-in-out') ? 'active' : ''}`} 
-          onClick={() => navigate('/check-in-out')}
-          style={{ cursor: 'pointer' }}
-        >
-          <ArrowLeftRight size={18} /> 
-          <span>Check-in/out</span>
-        </div>
-
-        {/* 4. RESERVATIONS */}
-        <div className="menu-item"><CalendarDays size={18} /> <span>Reservations</span></div>
-        
-        {/* 5. USER MANAGEMENT */}
-        <div className="menu-item"><Users size={18} /> <span>User Management</span></div>
-        
-        {/* 6. PRICING POLICIES  */}
-        <div 
-          className={`menu-item ${isActive('/pricing-policies') ? 'active' : ''}`} 
-          onClick={() => navigate('/pricing-policies')}
-          style={{ cursor: 'pointer' }}
-        >
-          <CircleDollarSign size={18} /> 
-          <span>Pricing Policies</span>
-        </div>
-
-        {/* 7. REPORTS */}
-        <div className="menu-item"><BarChart3 size={18} /> <span>Reports</span></div>
-      </nav>
-
-      <div className="sidebar-footer">
-        <div className="menu-item"><Settings size={18} /> <span>Admin Settings</span></div>
       </div>
-    </aside>
+    </header>
   );
 }
 
-export default Sidebar;
+export default Header;
