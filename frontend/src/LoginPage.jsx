@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { User, Lock, Eye, EyeOff, ArrowRight, ShieldCheck, Mail } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
-  const [isLoading, setIsLoading] = useState(false); // Quản lý trạng thái đợi API
+  const [isLoading, setIsLoading] = useState(false); 
   const navigate = useNavigate();
 
   const handleInputChange = (e) => {
@@ -19,37 +19,46 @@ function LoginPage() {
     setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 4000);
   };
 
-const handleLogin = async (e) => {
-  e.preventDefault();
-  setIsLoading(true);
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
 
-  try {
-    // 🌐 API CONNECTION PLACEHOLDER (GIỮ NGUYÊN ĐỂ SAU NÀY DÙNG)
-    /*
-    const response = await axios.post('https://api.yourdomain.com/auth/login', {
-      email: formData.email,
-      password: formData.password
-    });
-    if (response.data.success) { ... }
-    */
+    try {
+      // 🌐 API CONNECTION PLACEHOLDER (GIỮ NGUYÊN ĐỂ SAU NÀY DÙNG BACKEND)
+      /*
+      const response = await axios.post('https://api.yourdomain.com/auth/login', {
+        email: formData.email,
+        password: formData.password
+      });
+      if (response.data.success) { ... }
+      */
 
-    // --- ĐOẠN GIẢ LẬP ĐÃ SỬA: NHẬP BẤT KỲ CÁI GÌ CŨNG ĐĂNG NHẬP ĐƯỢC ---
-    await new Promise((resolve) => {
-      setTimeout(() => {
-        resolve(); // Chấp nhận tất cả mọi tài khoản nhập vào, không check đúng sai nữa
-      }, 1200);
-    });
+      // --- ĐOẠN XỬ LÝ MOCKUP: NẠP TOKEN ĐỂ ĐỂ QUA VÒNG BẢO VỆ CỦA APP.JSX ---
+      await new Promise((resolve) => {
+        setTimeout(() => {
+          resolve(); 
+        }, 1000);
+      });
 
-    showToast("Login successful! Redirecting...", "success");
-    setTimeout(() => navigate('/dashboard'), 1500);
-    // -----------------------------------------------------------------
+      // Kịp thời nạp Token vào máy trước khi chuyển trang để App.jsx không chặn lại
+      localStorage.setItem('token', 'mock_token_vohoanganh_2026');
+      localStorage.setItem('user', JSON.stringify({
+        fullName: 'Võ Hoàng Anh',
+        role: 'Administrator'
+      }));
 
-  } catch (err) {
-    showToast(err.message || "Login failed. Internal server error.", "error");
-  } finally {
-    setIsLoading(false);
-  }
-};
+      showToast("Login successful! Redirecting...", "success");
+      
+      // Chuyển hướng thẳng vào trang Dashboard quản trị bãi xe
+      setTimeout(() => navigate('/dashboard'), 1000);
+      // -----------------------------------------------------------------
+
+    } catch (err) {
+      showToast(err.message || "Login failed. Internal server error.", "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="auth-container" style={{ position: 'relative' }}>
@@ -139,7 +148,7 @@ const handleLogin = async (e) => {
               </span>
             </div>
 
-            {/* 🎯 SUBMIT BUTTON: ĐỒNG BỘ TRẠNG THÁI LOADING THEO REGISTER */}
+            {/* SUBMIT BUTTON */}
             <button 
               type="submit" 
               disabled={isLoading}
@@ -149,7 +158,7 @@ const handleLogin = async (e) => {
                 color: isLoading ? '#93c5fd' : '#ffffff',
                 border: 'none', borderRadius: '0.5rem', fontWeight: '600', fontSize: '0.9rem',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-                cursor: isLoading ? 'not-allowed' : 'pointer',
+                cursor: isLoading ? '#not-allowed' : 'pointer',
                 transition: 'background-color 0.2s', marginBottom: '1.5rem'
               }}
               onMouseOver={(e) => !isLoading && (e.currentTarget.style.backgroundColor = '#2563eb')}

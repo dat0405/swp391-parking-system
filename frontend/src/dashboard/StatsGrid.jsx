@@ -14,6 +14,9 @@ function StatsGrid({ stats }) {
     utilization = 0
   } = stats || {};
 
+  // Tính toán số liệu dự báo động dựa trên doanh thu thực tế để UI luôn hợp lý khi số nhảy
+  const projectedRevenue = todayRevenue > 0 ? (todayRevenue * 1.45) / 1000 : 12.2;
+
   return (
     <div style={{
       display: 'grid',
@@ -35,7 +38,6 @@ function StatsGrid({ stats }) {
             <Database size={20} />
           </div>
         </div>
-        {/* .toLocaleString() để tự động thêm dấu phẩy phân tách hàng nghìn (ví dụ: 1,248) */}
         <h2 style={{ fontSize: '1.75rem', fontWeight: '700', color: '#ffffff', margin: '0 0 0.5rem 0' }}>
           {totalSlots.toLocaleString()}
         </h2>
@@ -78,12 +80,11 @@ function StatsGrid({ stats }) {
             <DollarSign size={20} />
           </div>
         </div>
-        {/* Định dạng tiền tệ: Nếu là 8400 thì hiển thị thành $8.4k */}
         <h2 style={{ fontSize: '1.75rem', fontWeight: '700', color: '#ffffff', margin: '0 0 0.5rem 0' }}>
           ${(todayRevenue / 1000).toFixed(1)}k
         </h2>
         <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-          Projected: $12.2k total
+          Projected: ${projectedRevenue.toFixed(1)}k total
         </div>
       </div>
 

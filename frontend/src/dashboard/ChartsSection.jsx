@@ -11,8 +11,8 @@ function ChartsSection() {
             <p>Real-time vehicle flow monitoring</p>
           </div>
           <div className="chart-tabs">
-            <button className="tab-btn active">DAILY</button>
-            <button className="tab-btn">WEEKLY</button>
+            <button className="tab-btn active" type="button">DAILY</button>
+            <button className="tab-btn" type="button">WEEKLY</button>
           </div>
         </div>
         <div className="bar-chart-mock">
