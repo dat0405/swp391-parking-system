@@ -42,6 +42,7 @@ public class PricingPolicyController {
         if (pricingPolicy != null) {
             pricingPolicy.setVehicleType(updatedPricingPolicy.getVehicleType());
             pricingPolicy.setBasePrice(updatedPricingPolicy.getBasePrice());
+            pricingPolicy.setPricePerHour(updatedPricingPolicy.getPricePerHour());
 
             return pricingPolicyRepository.save(pricingPolicy);
         }
