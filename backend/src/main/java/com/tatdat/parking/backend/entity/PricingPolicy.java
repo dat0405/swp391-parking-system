@@ -28,4 +28,7 @@ public class PricingPolicy {
 
     @Column(name = "price_per_hour", nullable = false)
     private BigDecimal pricePerHour;
+
+    @Column(name = "overtime_fee")
+    private BigDecimal overtimeFee;
 }
