@@ -28,13 +28,13 @@ Responsible SCRUMs: 23, 24, 25, 30
 
 
 
-\## SCRUM-25: Parking Zone / Slot CRUD
+\## SCRUM-25: Parking Zone CRUD
 
-\- Entity: ParkingZone, ParkingSlot
+\- Entity: ParkingZone
 
-\- Repository: ParkingZoneRepository, ParkingSlotRepository
+\- Repository: ParkingZoneRepository
 
-\- Controller: ParkingZoneController, ParkingSlotController
+\- Controller: ParkingZoneController
 
 \- Tested Create / Update / Delete
 
