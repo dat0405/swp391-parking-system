@@ -1,11 +1,12 @@
 package com.tatdat.parking.backend.controller;
 
-
 import com.tatdat.parking.backend.dto.AuthResponse;
+import com.tatdat.parking.backend.dto.ForgotPasswordRequest;
 import com.tatdat.parking.backend.dto.LoginRequest;
 import com.tatdat.parking.backend.dto.LogoutRequest;
 import com.tatdat.parking.backend.dto.RefreshTokenRequest;
 import com.tatdat.parking.backend.dto.RegisterRequest;
+import com.tatdat.parking.backend.dto.ResetForgotPasswordRequest;
 import com.tatdat.parking.backend.entity.RefreshToken;
 import com.tatdat.parking.backend.entity.Role;
 import com.tatdat.parking.backend.entity.User;
@@ -14,6 +15,8 @@ import com.tatdat.parking.backend.repository.RoleRepository;
 import com.tatdat.parking.backend.repository.UserRepository;
 import com.tatdat.parking.backend.security.JwtService;
 import com.tatdat.parking.backend.security.RefreshTokenService;
+import com.tatdat.parking.backend.service.PasswordResetService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -30,12 +33,27 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final PasswordResetService passwordResetService;
 
     @PostMapping("/register")
-    public String register(@RequestBody RegisterRequest request) {
+    public String register(@Valid @RequestBody RegisterRequest request) {
 
-        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
-            return "Email already exists";
+        if (!request.getPassword().equals(request.getConfirmPassword())) {
+            throw new RuntimeException("Password and confirm password do not match");
+        }
+
+        User existingUser = userRepository.findByEmail(request.getEmail()).orElse(null);
+
+        if (existingUser != null) {
+            if ("BANNED".equals(existingUser.getStatus())) {
+                throw new RuntimeException("Email này đã bị vô hiệu hóa và không thể đăng ký lại");
+            }
+
+            throw new RuntimeException("Email already exists");
+        }
+
+        if (userRepository.findByPhone(request.getPhone()).isPresent()) {
+            throw new RuntimeException("Phone number already exists");
         }
 
         Role driverRole = roleRepository.findByRoleName("DRIVER")
@@ -56,7 +74,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public AuthResponse login(@RequestBody LoginRequest request) {
+    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
 
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("Invalid email or password"));
@@ -116,5 +134,22 @@ public class AuthController {
     public String logout(@RequestBody LogoutRequest request) {
         refreshTokenService.revokeRefreshToken(request.getRefreshToken());
         return "Logout successfully";
+    }
+
+    @PostMapping("/forgot-password")
+    public String forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        passwordResetService.forgotPassword(request.getEmail());
+        return "OTP has been sent to your email";
+    }
+
+    @PostMapping("/reset-password")
+    public String resetPassword(@Valid @RequestBody ResetForgotPasswordRequest request) {
+        passwordResetService.resetPassword(
+                request.getEmail(),
+                request.getOtp(),
+                request.getNewPassword()
+        );
+
+        return "Password has been reset successfully";
     }
 }
