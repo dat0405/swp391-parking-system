@@ -1,13 +1,13 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  Layers, 
-  ArrowLeftRight, 
-  CalendarDays, 
-  Users, 
-  CircleDollarSign, 
-  BarChart3, 
-  Settings 
+import {
+  LayoutDashboard,
+  Layers,
+  ArrowLeftRight,
+  CalendarDays,
+  Users,
+  CircleDollarSign,
+  BarChart3,
+  Settings
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -15,7 +15,6 @@ function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Hàm check chuẩn React - dùng location của hook thay vì dùng window.location
   const isActive = (path) => location.pathname === path;
 
   return (
@@ -29,68 +28,61 @@ function Sidebar() {
       </div>
 
       <nav className="sidebar-menu">
-        {/* 1. DASHBOARD */}
-        <div 
-          className={`menu-item ${isActive('/dashboard') ? 'active' : ''}`} 
+        <div
+          className={`menu-item ${isActive('/dashboard') ? 'active' : ''}`}
           onClick={() => navigate('/dashboard')}
           style={{ cursor: 'pointer' }}
         >
-          <LayoutDashboard size={18} /> 
+          <LayoutDashboard size={18} />
           <span>Dashboard</span>
         </div>
 
-        {/* 2. PARKING FLOORS */}
         <div className="menu-item">
-          <Layers size={18} /> 
+          <Layers size={18} />
           <span>Parking Floors</span>
         </div>
-        
-        {/* 3. CHECK-IN/OUT */}
-        <div 
-          className={`menu-item ${isActive('/check-in-out') ? 'active' : ''}`} 
+
+        <div
+          className={`menu-item ${isActive('/check-in-out') ? 'active' : ''}`}
           onClick={() => navigate('/check-in-out')}
           style={{ cursor: 'pointer' }}
         >
-          <ArrowLeftRight size={18} /> 
+          <ArrowLeftRight size={18} />
           <span>Check-in/out</span>
         </div>
 
-        {/* 4. RESERVATIONS */}
         <div className="menu-item">
-          <CalendarDays size={18} /> 
+          <CalendarDays size={18} />
           <span>Reservations</span>
         </div>
-        
-        {/* 5. USER MANAGEMENT (Đã fix dùng đồng bộ navigate để không vỡ CSS của .menu-item) */}
-        <div 
+
+        <div
           className={`menu-item ${isActive('/user-management') ? 'active' : ''}`}
           onClick={() => navigate('/user-management')}
           style={{ cursor: 'pointer' }}
         >
-          <Users size={18} /> 
+          <Users size={18} />
           <span>User Management</span>
         </div>
 
-        {/* 6. PRICING POLICIES */}
-        <div 
-          className={`menu-item ${isActive('/pricing-policies') ? 'active' : ''}`} 
+        <div
+          className={`menu-item ${isActive('/pricing-policies') ? 'active' : ''}`}
           onClick={() => navigate('/pricing-policies')}
           style={{ cursor: 'pointer' }}
         >
-          <CircleDollarSign size={18} /> 
+          <CircleDollarSign size={18} />
           <span>Pricing Policies</span>
         </div>
 
-        {/* 7. REPORTS */}
         <div className="menu-item">
-          <BarChart3 size={18} /> 
+          <BarChart3 size={18} />
           <span>Reports</span>
         </div>
       </nav>
 
       <div className="sidebar-footer">
         <div className="menu-item">
-          <Settings size={18} /> 
+          <Settings size={18} />
           <span>Admin Settings</span>
         </div>
       </div>
