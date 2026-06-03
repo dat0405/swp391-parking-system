@@ -165,7 +165,7 @@ public class ParkingSlotServiceImpl
     ) {
 
         return parkingSlotRepository
-                .findByVehicleTypeIdAndStatus(
+                .findByVehicleType_IdAndStatus(
                         vehicleTypeId,
                         SlotStatus.AVAILABLE.name()
                 );

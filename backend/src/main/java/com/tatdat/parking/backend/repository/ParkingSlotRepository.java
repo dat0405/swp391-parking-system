@@ -13,7 +13,7 @@ public interface ParkingSlotRepository extends JpaRepository<ParkingSlot, Intege
 
     List<ParkingSlot> findByStatus(String status);
 
-    List<ParkingSlot> findByVehicleTypeIdAndStatus(Integer vehicleTypeId, String status);
+    List<ParkingSlot> findByVehicleType_IdAndStatus(Integer vehicleTypeId, String status);
 
     long countByStatus(String status);
 }
