@@ -16,7 +16,6 @@ function DashboardPage() {
     utilization: 67
   });
 
-  // 2. CƠ CHẾ GỌI API REAL-TIME (CẬP NHẬT MỖI 5 GIÂY)
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
@@ -57,7 +56,6 @@ function DashboardPage() {
         {/* 2. THANH HEADER TOP */}
         <Header fullName="Võ Hoàng Anh" role="Administrator" />
 
-        {/* Tiêu đề trang cố định */}
         <div className="dashboard-title">
           <h1>System Performance</h1>
           <p>Real-time infrastructure status across all parking sectors.</p>
@@ -68,7 +66,6 @@ function DashboardPage() {
 
         {/* 4. KHỐI BIỂU ĐỒ */}
         <ChartsSection />
-
       </main>
     </div>
   );

@@ -15,7 +15,6 @@ function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Hàm check xem menu nào trùng với URL hiện tại để sáng đèn
   const isActive = (path) => location.pathname === path;
 
   return (

@@ -39,12 +39,14 @@ public class SecurityConfig {
                                 "/api/auth/refresh-token",
                                 "/api/auth/logout",
                                 "/api/test/**",
-
+                                "/api/auth/forgot-password",
+                                "/api/auth/reset-password",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"
                         ).permitAll()
 
+                        .requestMatchers("/api/admin/**").hasRole("SYSTEM_ADMIN")
                         .requestMatchers("/api/users/**").hasRole("SYSTEM_ADMIN")
                         .requestMatchers("/api/roles/**").hasRole("SYSTEM_ADMIN")
 
