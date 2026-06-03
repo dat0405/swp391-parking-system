@@ -15,6 +15,7 @@ function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Hàm check chuẩn React - dùng location của hook thay vì dùng window.location
   const isActive = (path) => location.pathname === path;
 
   return (
@@ -39,7 +40,10 @@ function Sidebar() {
         </div>
 
         {/* 2. PARKING FLOORS */}
-        <div className="menu-item"><Layers size={18} /> <span>Parking Floors</span></div>
+        <div className="menu-item">
+          <Layers size={18} /> 
+          <span>Parking Floors</span>
+        </div>
         
         {/* 3. CHECK-IN/OUT */}
         <div 
@@ -52,12 +56,22 @@ function Sidebar() {
         </div>
 
         {/* 4. RESERVATIONS */}
-        <div className="menu-item"><CalendarDays size={18} /> <span>Reservations</span></div>
+        <div className="menu-item">
+          <CalendarDays size={18} /> 
+          <span>Reservations</span>
+        </div>
         
-        {/* 5. USER MANAGEMENT */}
-        <div className="menu-item"><Users size={18} /> <span>User Management</span></div>
-        
-        {/* 6. PRICING POLICIES  */}
+        {/* 5. USER MANAGEMENT (Đã fix dùng đồng bộ navigate để không vỡ CSS của .menu-item) */}
+        <div 
+          className={`menu-item ${isActive('/user-management') ? 'active' : ''}`}
+          onClick={() => navigate('/user-management')}
+          style={{ cursor: 'pointer' }}
+        >
+          <Users size={18} /> 
+          <span>User Management</span>
+        </div>
+
+        {/* 6. PRICING POLICIES */}
         <div 
           className={`menu-item ${isActive('/pricing-policies') ? 'active' : ''}`} 
           onClick={() => navigate('/pricing-policies')}
@@ -68,11 +82,17 @@ function Sidebar() {
         </div>
 
         {/* 7. REPORTS */}
-        <div className="menu-item"><BarChart3 size={18} /> <span>Reports</span></div>
+        <div className="menu-item">
+          <BarChart3 size={18} /> 
+          <span>Reports</span>
+        </div>
       </nav>
 
       <div className="sidebar-footer">
-        <div className="menu-item"><Settings size={18} /> <span>Admin Settings</span></div>
+        <div className="menu-item">
+          <Settings size={18} /> 
+          <span>Admin Settings</span>
+        </div>
       </div>
     </aside>
   );
