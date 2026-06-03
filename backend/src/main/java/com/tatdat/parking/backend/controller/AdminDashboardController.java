@@ -18,13 +18,33 @@ public class AdminDashboardController {
 
     @GetMapping("/dashboard")
     public AdminDashboardResponse getDashboard() {
+        long totalSlots = parkingSlotRepository.count();
+
+        long availableSlots = parkingSlotRepository.countByStatus("AVAILABLE");
+        long occupiedSlots = parkingSlotRepository.countByStatus("OCCUPIED");
+        long reservedSlots = parkingSlotRepository.countByStatus("RESERVED");
+        long maintenanceSlots = parkingSlotRepository.countByStatus("MAINTENANCE");
+
         return AdminDashboardResponse.builder()
+                // System admin data
                 .totalUsers(userRepository.count())
                 .activeUsers(userRepository.countByStatus("ACTIVE"))
                 .bannedUsers(userRepository.countByStatus("BANNED"))
                 .inactiveUsers(userRepository.countByStatus("INACTIVE"))
                 .totalParkingFacilities(parkingFacilityRepository.count())
-                .totalParkingSlots(parkingSlotRepository.count())
+                .totalParkingSlots(totalSlots)
+
+                // FE dashboard data
+                .totalSlots(totalSlots)
+                .activeOccupancy(occupiedSlots)
+                .availableSlots(availableSlots)
+                .occupiedSlots(occupiedSlots)
+                .reservedSlots(reservedSlots)
+                .maintenanceSlots(maintenanceSlots)
+
+                // Chưa có payment/reservation entity xử lý thực tế thì để 0 trước
+                .todayRevenue(0)
+                .pendingRes(0)
                 .build();
     }
 }
