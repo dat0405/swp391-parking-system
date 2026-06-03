@@ -80,6 +80,16 @@ public class SecurityConfig {
                         .requestMatchers("/api/payments/**")
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
+                        .requestMatchers("/api/parking-operations/**")
+                        .hasAnyAuthority(
+                                "ROLE_PARKING_STAFF",
+                                "ROLE_PARKING_MANAGER",
+                                "ROLE_SYSTEM_ADMIN",
+                                "PARKING_STAFF",
+                                "PARKING_MANAGER",
+                                "SYSTEM_ADMIN"
+                        )
+
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
