@@ -7,13 +7,15 @@ import java.time.LocalDateTime;
 
 @Data
 @Builder
-public class CheckInResponse {
+public class ActiveParkingSessionResponse {
 
     private Integer sessionId;
 
     private String ticketId;
 
     private String licensePlate;
+
+    private String vehicleType;
 
     private String slotCode;
 
