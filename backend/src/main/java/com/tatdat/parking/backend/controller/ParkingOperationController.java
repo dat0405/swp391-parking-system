@@ -1,5 +1,6 @@
 package com.tatdat.parking.backend.controller;
 
+import com.tatdat.parking.backend.dto.ActiveParkingSessionResponse;
 import com.tatdat.parking.backend.dto.CheckInRequest;
 import com.tatdat.parking.backend.dto.CheckInResponse;
 import com.tatdat.parking.backend.dto.CheckOutRequest;
@@ -13,6 +14,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Random;
 
 @RestController
 @RequestMapping("/api/parking-operations")
@@ -25,6 +28,8 @@ public class ParkingOperationController {
     private final ParkingSessionRepository parkingSessionRepository;
     private final PricingPolicyRepository pricingPolicyRepository;
     private final PaymentRepository paymentRepository;
+
+    private final Random random = new Random();
 
     @PostMapping("/check-in")
     public CheckInResponse checkIn(@RequestBody CheckInRequest request) {
@@ -61,9 +66,11 @@ public class ParkingOperationController {
                 .orElseThrow(() -> new RuntimeException("No available slot for this vehicle type"));
 
         LocalDateTime now = LocalDateTime.now();
+        String ticketId = generateUniqueTicketId();
 
         ParkingSession savedSession = parkingSessionRepository.save(
                 ParkingSession.builder()
+                        .ticketId(ticketId)
                         .vehicle(vehicle)
                         .slot(slot)
                         .checkInTime(now)
@@ -76,6 +83,7 @@ public class ParkingOperationController {
 
         return CheckInResponse.builder()
                 .sessionId(savedSession.getId())
+                .ticketId(savedSession.getTicketId())
                 .licensePlate(vehicle.getLicensePlate())
                 .slotCode(slot.getSlotCode())
                 .checkInTime(savedSession.getCheckInTime())
@@ -85,15 +93,7 @@ public class ParkingOperationController {
 
     @PostMapping("/check-out")
     public CheckOutResponse checkOut(@RequestBody CheckOutRequest request) {
-        if (request.getLicensePlate() == null || request.getLicensePlate().isBlank()) {
-            throw new RuntimeException("License plate is required");
-        }
-
-        String licensePlate = request.getLicensePlate().trim().toUpperCase();
-
-        ParkingSession session = parkingSessionRepository
-                .findFirstByVehicle_LicensePlateAndStatus(licensePlate, "ACTIVE")
-                .orElseThrow(() -> new RuntimeException("Active parking session not found"));
+        ParkingSession session = findActiveSessionForCheckout(request);
 
         LocalDateTime checkOutTime = LocalDateTime.now();
 
@@ -149,5 +149,53 @@ public class ParkingOperationController {
                 .totalAmount(totalAmount)
                 .paymentStatus("PAID")
                 .build();
+    }
+
+    @GetMapping("/active")
+    public List<ActiveParkingSessionResponse> getActiveParkingSessions() {
+        return parkingSessionRepository
+                .findByStatusOrderByCheckInTimeDesc("ACTIVE")
+                .stream()
+                .map(session -> ActiveParkingSessionResponse.builder()
+                        .sessionId(session.getId())
+                        .ticketId(session.getTicketId())
+                        .licensePlate(session.getVehicle().getLicensePlate())
+                        .vehicleType(session.getVehicle().getVehicleType().getTypeName())
+                        .slotCode(session.getSlot().getSlotCode())
+                        .checkInTime(session.getCheckInTime())
+                        .status(session.getStatus())
+                        .build())
+                .toList();
+    }
+
+    private ParkingSession findActiveSessionForCheckout(CheckOutRequest request) {
+        if (request.getTicketId() != null && !request.getTicketId().isBlank()) {
+            String ticketId = request.getTicketId().trim().toUpperCase();
+
+            return parkingSessionRepository
+                    .findFirstByTicketIdAndStatus(ticketId, "ACTIVE")
+                    .orElseThrow(() -> new RuntimeException("Active parking session not found"));
+        }
+
+        if (request.getLicensePlate() != null && !request.getLicensePlate().isBlank()) {
+            String licensePlate = request.getLicensePlate().trim().toUpperCase();
+
+            return parkingSessionRepository
+                    .findFirstByVehicle_LicensePlateAndStatus(licensePlate, "ACTIVE")
+                    .orElseThrow(() -> new RuntimeException("Active parking session not found"));
+        }
+
+        throw new RuntimeException("License plate or ticket id is required");
+    }
+
+    private String generateUniqueTicketId() {
+        String ticketId;
+
+        do {
+            int number = 100000 + random.nextInt(900000);
+            ticketId = "TK-" + number;
+        } while (parkingSessionRepository.existsByTicketId(ticketId));
+
+        return ticketId;
     }
 }

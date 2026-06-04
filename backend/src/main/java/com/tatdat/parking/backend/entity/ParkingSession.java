@@ -19,6 +19,9 @@ public class ParkingSession {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
+    @Column(name = "ticket_id", length = 20, unique = true)
+    private String ticketId;
+
     @ManyToOne
     @JoinColumn(name = "vehicle_id", nullable = false)
     @JsonIgnoreProperties({

@@ -7,5 +7,7 @@ public class CheckOutRequest {
 
     private String licensePlate;
 
+    private String ticketId;
+
     private String paymentMethod;
 }
