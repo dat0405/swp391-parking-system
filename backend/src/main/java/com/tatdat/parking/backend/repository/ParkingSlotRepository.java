@@ -7,17 +7,13 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 @Repository
-public interface ParkingSlotRepository
-        extends JpaRepository<ParkingSlot, Integer> {
+public interface ParkingSlotRepository extends JpaRepository<ParkingSlot, Integer> {
 
     List<ParkingSlot> findByZoneId(Integer zoneId);
 
     List<ParkingSlot> findByStatus(String status);
 
-    List<ParkingSlot> findByVehicleTypeIdAndStatus(
-            Integer vehicleTypeId,
-            String status
-    );
+    List<ParkingSlot> findByVehicleType_IdAndStatus(Integer vehicleTypeId, String status);
 
     long countByStatus(String status);
 }

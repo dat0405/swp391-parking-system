@@ -60,10 +60,10 @@ public class SecurityConfig {
                         .hasAnyRole("DRIVER", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
                         .requestMatchers("/api/parking-floors/**")
-                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
                         .requestMatchers("/api/parking-zones/**")
-                        .hasAnyRole("DRIVER", "PARKING_MANAGER", "SYSTEM_ADMIN")
+                        .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
                         .requestMatchers("/api/parking-slots/**")
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
@@ -79,6 +79,12 @@ public class SecurityConfig {
 
                         .requestMatchers("/api/payments/**")
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers("/api/parking-operations/**")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers("/api/parking/**")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
                         .anyRequest().authenticated()
                 )
