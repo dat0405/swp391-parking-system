@@ -40,8 +40,12 @@ public class PricingPolicyController {
                 pricingPolicyRepository.findById(id).orElse(null);
 
         if (pricingPolicy != null) {
-            pricingPolicy.setVehicleType(updatedPricingPolicy.getVehicleType());
+
             pricingPolicy.setBasePrice(updatedPricingPolicy.getBasePrice());
+
+            pricingPolicy.setPricePerHour(updatedPricingPolicy.getPricePerHour());
+
+            pricingPolicy.setOvertimeFee(updatedPricingPolicy.getOvertimeFee());
 
             return pricingPolicyRepository.save(pricingPolicy);
         }
@@ -53,5 +57,38 @@ public class PricingPolicyController {
     public String deletePricingPolicy(@PathVariable Integer id) {
         pricingPolicyRepository.deleteById(id);
         return "Deleted Successfully";
+    }
+
+    @GetMapping("/vehicle-type/{vehicleTypeId}")
+    public List<PricingPolicy> getPricingPolicyByVehicleType(
+            @PathVariable Integer vehicleTypeId
+    ) {
+        return pricingPolicyRepository.findByVehicleTypeId(vehicleTypeId);
+    }
+    @PutMapping("/vehicle-type/{vehicleTypeId}")
+    public List<PricingPolicy> updatePricingByVehicleType(
+            @PathVariable Integer vehicleTypeId,
+            @RequestBody PricingPolicy updatedPricingPolicy
+    ) {
+
+        List<PricingPolicy> pricingPolicies =
+                pricingPolicyRepository.findByVehicleTypeId(vehicleTypeId);
+
+        for (PricingPolicy pricingPolicy : pricingPolicies) {
+
+            pricingPolicy.setBasePrice(
+                    updatedPricingPolicy.getBasePrice()
+            );
+
+            pricingPolicy.setPricePerHour(
+                    updatedPricingPolicy.getPricePerHour()
+            );
+
+            pricingPolicy.setOvertimeFee(
+                    updatedPricingPolicy.getOvertimeFee()
+            );
+        }
+
+        return pricingPolicyRepository.saveAll(pricingPolicies);
     }
 }

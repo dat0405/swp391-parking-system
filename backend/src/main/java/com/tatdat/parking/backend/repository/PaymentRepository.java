@@ -14,6 +14,17 @@ public interface PaymentRepository extends JpaRepository<Payment, Integer> {
             SELECT COALESCE(SUM(p.amount), 0)
             FROM Payment p
             WHERE p.paymentStatus = 'PAID'
+feature/be-auth
+            """)
+    BigDecimal getTotalRevenue();
+
+    long countByPaymentStatus(String paymentStatus);
+
+    @Query("""
+            SELECT COALESCE(SUM(p.amount), 0)
+            FROM Payment p
+            WHERE p.paymentStatus = 'PAID'
+ main
             AND p.paymentTime >= :startOfDay
             AND p.paymentTime < :endOfDay
             """)
