@@ -56,7 +56,11 @@ function Sidebar() {
           <span>Reservations</span>
         </div>
 
-        <div className="menu-item">
+        <div
+          className={`menu-item ${isActive('/user-management') ? 'active' : ''}`}
+          onClick={() => navigate('/user-management')}
+          style={{ cursor: 'pointer' }}
+        >
           <Users size={18} />
           <span>User Management</span>
         </div>

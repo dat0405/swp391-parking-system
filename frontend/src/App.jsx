@@ -12,6 +12,9 @@ import DashboardPage from "./DashboardPage";
 import CheckInOutPage from './check-in-out/CheckInOutPage';
 import PricingPoliciesPage from './pricing-policies/PricingPoliciesPage';
 
+// 🎯 1. IMPORT THÊM TRANG USER MANAGEMENT (Khớp chuẩn tên thư mục viết hoa của mày)
+import UserManagementPage from './UserManagementPage/UserManagementPage';
+
 // Bộ lọc chặn truy cập trái phép (Nếu không có token -> Đá về trang Login)
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -39,6 +42,9 @@ function App() {
       <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
       <Route path="/check-in-out" element={<PrivateRoute><CheckInOutPage /></PrivateRoute>} />
       <Route path="/pricing-policies" element={<PrivateRoute><PricingPoliciesPage /></PrivateRoute>} />
+      
+      {/* 🎯 2. KHAI BÁO THÊM ROUTE CHO USER MANAGEMENT TẠI ĐÂY */}
+      <Route path="/user-management" element={<PrivateRoute><UserManagementPage /></PrivateRoute>} />
 
       {/* Tự động bắt các URL gõ bậy bạ gộp về trang chủ */}
       <Route path="*" element={<Navigate to="/" replace />} />
