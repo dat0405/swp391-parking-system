@@ -5,8 +5,18 @@ import com.tatdat.parking.backend.dto.CheckInRequest;
 import com.tatdat.parking.backend.dto.CheckInResponse;
 import com.tatdat.parking.backend.dto.CheckOutRequest;
 import com.tatdat.parking.backend.dto.CheckOutResponse;
-import com.tatdat.parking.backend.entity.*;
-import com.tatdat.parking.backend.repository.*;
+import com.tatdat.parking.backend.entity.ParkingSession;
+import com.tatdat.parking.backend.entity.ParkingSlot;
+import com.tatdat.parking.backend.entity.Payment;
+import com.tatdat.parking.backend.entity.PricingPolicy;
+import com.tatdat.parking.backend.entity.Vehicle;
+import com.tatdat.parking.backend.entity.VehicleType;
+import com.tatdat.parking.backend.repository.ParkingSessionRepository;
+import com.tatdat.parking.backend.repository.ParkingSlotRepository;
+import com.tatdat.parking.backend.repository.PaymentRepository;
+import com.tatdat.parking.backend.repository.PricingPolicyRepository;
+import com.tatdat.parking.backend.repository.VehicleRepository;
+import com.tatdat.parking.backend.repository.VehicleTypeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -47,7 +57,13 @@ public class ParkingOperationController {
                 .orElseThrow(() -> new RuntimeException("Vehicle type not found"));
 
         Vehicle vehicle = vehicleRepository.findByLicensePlate(licensePlate)
-                .orElseThrow(() -> new RuntimeException("Vehicle not found. Please create vehicle first"));
+                .orElseGet(() -> {
+                    Vehicle newVehicle = new Vehicle();
+                    newVehicle.setLicensePlate(licensePlate);
+                    newVehicle.setVehicleType(vehicleType);
+
+                    return vehicleRepository.save(newVehicle);
+                });
 
         if (!vehicle.getVehicleType().getId().equals(vehicleType.getId())) {
             throw new RuntimeException("Vehicle type does not match this license plate");
@@ -90,31 +106,27 @@ public class ParkingOperationController {
                 .status(savedSession.getStatus())
                 .build();
     }
+    @GetMapping("/check-out/search")
+    public CheckOutResponse searchCheckOut(
+            @RequestParam(required = false) String ticketId,
+            @RequestParam(required = false) String licensePlate
+    ) {
+        CheckOutRequest request = new CheckOutRequest();
+        request.setTicketId(ticketId);
+        request.setLicensePlate(licensePlate);
+
+        ParkingSession session = findActiveSessionForCheckout(request);
+
+        return buildCheckOutPreview(session);
+    }
 
     @PostMapping("/check-out")
     public CheckOutResponse checkOut(@RequestBody CheckOutRequest request) {
         ParkingSession session = findActiveSessionForCheckout(request);
 
+        CheckOutResponse preview = buildCheckOutPreview(session);
+
         LocalDateTime checkOutTime = LocalDateTime.now();
-
-        long minutes = Duration.between(session.getCheckInTime(), checkOutTime).toMinutes();
-        long durationHours = (long) Math.ceil(minutes / 60.0);
-
-        if (durationHours <= 0) {
-            durationHours = 1;
-        }
-
-        Integer vehicleTypeId = session.getVehicle().getVehicleType().getId();
-
-        PricingPolicy pricingPolicy = pricingPolicyRepository
-                .findFirstByVehicleType_IdAndStatus(vehicleTypeId, "ACTIVE")
-                .orElseThrow(() -> new RuntimeException("Active pricing policy not found"));
-
-        BigDecimal pricePerHour = pricingPolicy.getPricePerHour();
-
-        BigDecimal totalAmount = pricePerHour
-                .multiply(BigDecimal.valueOf(durationHours))
-                .setScale(2, RoundingMode.HALF_UP);
 
         session.setCheckOutTime(checkOutTime);
         session.setStatus("COMPLETED");
@@ -126,7 +138,7 @@ public class ParkingOperationController {
 
         Payment payment = Payment.builder()
                 .parkingSession(session)
-                .amount(totalAmount)
+                .amount(preview.getTotalAmount())
                 .paymentMethod(
                         request.getPaymentMethod() == null || request.getPaymentMethod().isBlank()
                                 ? "CASH"
@@ -140,13 +152,14 @@ public class ParkingOperationController {
 
         return CheckOutResponse.builder()
                 .sessionId(session.getId())
+                .ticketId(session.getTicketId())
                 .licensePlate(session.getVehicle().getLicensePlate())
                 .slotCode(slot.getSlotCode())
                 .checkInTime(session.getCheckInTime())
                 .checkOutTime(checkOutTime)
-                .durationHours(durationHours)
-                .pricePerHour(pricePerHour)
-                .totalAmount(totalAmount)
+                .durationHours(preview.getDurationHours())
+                .pricePerHour(preview.getPricePerHour())
+                .totalAmount(preview.getTotalAmount())
                 .paymentStatus("PAID")
                 .build();
     }
@@ -166,6 +179,42 @@ public class ParkingOperationController {
                         .status(session.getStatus())
                         .build())
                 .toList();
+    }
+
+    private CheckOutResponse buildCheckOutPreview(ParkingSession session) {
+        LocalDateTime currentTime = LocalDateTime.now();
+
+        long minutes = Duration.between(session.getCheckInTime(), currentTime).toMinutes();
+        long durationHours = (long) Math.ceil(minutes / 60.0);
+
+        if (durationHours <= 0) {
+            durationHours = 1;
+        }
+
+        Integer vehicleTypeId = session.getVehicle().getVehicleType().getId();
+
+        PricingPolicy pricingPolicy = pricingPolicyRepository
+                .findFirstByVehicleType_IdAndStatus(vehicleTypeId, "ACTIVE")
+                .orElseThrow(() -> new RuntimeException("Active pricing policy not found"));
+
+        BigDecimal pricePerHour = pricingPolicy.getPricePerHour();
+
+        BigDecimal totalAmount = pricePerHour
+                .multiply(BigDecimal.valueOf(durationHours))
+                .setScale(2, RoundingMode.HALF_UP);
+
+        return CheckOutResponse.builder()
+                .sessionId(session.getId())
+                .ticketId(session.getTicketId())
+                .licensePlate(session.getVehicle().getLicensePlate())
+                .slotCode(session.getSlot().getSlotCode())
+                .checkInTime(session.getCheckInTime())
+                .checkOutTime(currentTime)
+                .durationHours(durationHours)
+                .pricePerHour(pricePerHour)
+                .totalAmount(totalAmount)
+                .paymentStatus("PENDING")
+                .build();
     }
 
     private ParkingSession findActiveSessionForCheckout(CheckOutRequest request) {
