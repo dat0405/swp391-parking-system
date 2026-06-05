@@ -27,4 +27,6 @@ public class CheckOutResponse {
     private BigDecimal totalAmount;
 
     private String paymentStatus;
+
+    private String ticketId;
 }

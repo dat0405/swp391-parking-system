@@ -38,11 +38,29 @@ public class AuthController {
     @PostMapping("/register")
     public String register(@Valid @RequestBody RegisterRequest request) {
 
+        if (request.getFullName() == null || request.getFullName().isBlank()) {
+            throw new RuntimeException("Full name is required");
+        }
+
+        if (request.getEmail() == null || request.getEmail().isBlank()) {
+            throw new RuntimeException("Email is required");
+        }
+
+        if (request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new RuntimeException("Password is required");
+        }
+
+        if (request.getConfirmPassword() == null || request.getConfirmPassword().isBlank()) {
+            throw new RuntimeException("Confirm password is required");
+        }
+
         if (!request.getPassword().equals(request.getConfirmPassword())) {
             throw new RuntimeException("Password and confirm password do not match");
         }
 
-        User existingUser = userRepository.findByEmail(request.getEmail()).orElse(null);
+        String email = request.getEmail().trim().toLowerCase();
+
+        User existingUser = userRepository.findByEmail(email).orElse(null);
 
         if (existingUser != null) {
             if ("BANNED".equals(existingUser.getStatus())) {
@@ -52,18 +70,24 @@ public class AuthController {
             throw new RuntimeException("Email already exists");
         }
 
-        if (userRepository.findByPhone(request.getPhone()).isPresent()) {
-            throw new RuntimeException("Phone number already exists");
+        String phone = null;
+
+        if (request.getPhone() != null && !request.getPhone().isBlank()) {
+            phone = request.getPhone().trim();
+
+            if (userRepository.findByPhone(phone).isPresent()) {
+                throw new RuntimeException("Phone number already exists");
+            }
         }
 
         Role driverRole = roleRepository.findByRoleName("DRIVER")
                 .orElseThrow(() -> new RuntimeException("Driver role not found"));
 
         User user = new User();
-        user.setFullName(request.getFullName());
-        user.setEmail(request.getEmail());
+        user.setFullName(request.getFullName().trim());
+        user.setEmail(email);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setPhone(request.getPhone());
+        user.setPhone(phone);
         user.setRole(driverRole);
         user.setStatus("ACTIVE");
         user.setCreatedAt(LocalDateTime.now());
@@ -76,7 +100,7 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
 
-        User user = userRepository.findByEmail(request.getEmail())
+        User user = userRepository.findByEmail(request.getEmail().trim().toLowerCase())
                 .orElseThrow(() -> new RuntimeException("Invalid email or password"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
