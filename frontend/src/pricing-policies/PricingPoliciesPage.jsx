@@ -19,7 +19,7 @@ import {
   Trash2
 } from 'lucide-react';
 
-// Thành phần phụ trợ hiển thị các ô thống kê (StatBox Component)
+// Thành phần  trợ hiển thị các ô thống kê (StatBox Component)
 const StatBox = ({ label, value, sub, color }) => (
   <div style={{ backgroundColor: '#1e293b', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
     <div>
