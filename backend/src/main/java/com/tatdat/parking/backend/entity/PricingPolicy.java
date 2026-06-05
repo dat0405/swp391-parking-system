@@ -37,9 +37,17 @@ public class PricingPolicy {
     @Column(name = "base_price")
     private BigDecimal basePrice;
 
+ feature/be-auth
+    @Column(name = "price_per_hour", nullable = false)
+    private BigDecimal pricePerHour;
+
+    @Column(name = "overtime_fee")
+    private BigDecimal overtimeFee;
+
     @Column(length = 20)
     private String status;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+ main
 }
