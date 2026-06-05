@@ -1,10 +1,8 @@
 package com.tatdat.parking.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
@@ -14,26 +12,42 @@ import java.time.LocalDateTime;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class ParkingSession {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
+    @Column(name = "ticket_id", length = 20, unique = true)
+    private String ticketId;
+
     @ManyToOne
     @JoinColumn(name = "vehicle_id", nullable = false)
+    @JsonIgnoreProperties({
+            "user",
+            "vehicleType",
+            "hibernateLazyInitializer",
+            "handler"
+    })
     private Vehicle vehicle;
 
     @ManyToOne
     @JoinColumn(name = "slot_id", nullable = false)
+    @JsonIgnoreProperties({
+            "zone",
+            "vehicleType",
+            "hibernateLazyInitializer",
+            "handler"
+    })
     private ParkingSlot slot;
 
-    @Column(name = "check_in_time", nullable = false)
+    @Column(name = "check_in_time")
     private LocalDateTime checkInTime;
 
     @Column(name = "check_out_time")
     private LocalDateTime checkOutTime;
 
     @Column(length = 20)
-    private String status = "ACTIVE";;
+    private String status;
 }
