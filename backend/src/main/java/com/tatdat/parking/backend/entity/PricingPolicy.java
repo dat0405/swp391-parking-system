@@ -1,6 +1,5 @@
 package com.tatdat.parking.backend.entity;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -20,12 +19,8 @@ public class PricingPolicy {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "vehicle_type_id", nullable = false)
-    @JsonIgnoreProperties({
-            "hibernateLazyInitializer",
-            "handler"
-    })
     private VehicleType vehicleType;
 
     @Column(name = "price_per_hour")
@@ -34,20 +29,12 @@ public class PricingPolicy {
     @Column(name = "overtime_fee")
     private BigDecimal overtimeFee;
 
-    @Column(name = "base_price")
-    private BigDecimal basePrice;
-
- feature/be-auth
-    @Column(name = "price_per_hour", nullable = false)
-    private BigDecimal pricePerHour;
-
-    @Column(name = "overtime_fee")
-    private BigDecimal overtimeFee;
-
-    @Column(length = 20)
+    @Column(name = "status", length = 20)
     private String status;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
- main
+
+    @Column(name = "base_price", nullable = false)
+    private BigDecimal basePrice;
 }
