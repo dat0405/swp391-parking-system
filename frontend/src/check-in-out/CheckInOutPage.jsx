@@ -8,35 +8,12 @@ function CheckInOutPage() {
   const generateTicketId = () =>
     `TK-${Math.floor(100000 + Math.random() * 900000)}`;
 
-  const [floorsData, setFloorsData] = useState([
-    {
-      id: "G",
-      name: "Floor G",
-      availableSlots: 150,
-      totalSlots: 150,
-      type: "Motorbike",
-    },
-    {
-      id: "A1",
-      name: "Floor A1",
-      availableSlots: 42,
-      totalSlots: 100,
-      type: "Car",
-    },
-    {
-      id: "A2",
-      name: "Floor A2",
-      availableSlots: 0,
-      totalSlots: 100,
-      type: "Car",
-    },
-  ]);
-
+  const [floorsData, setFloorsData] = useState([]);
   const [activeSessions, setActiveSessions] = useState([]);
 
   const [licensePlateIn, setLicensePlateIn] = useState("");
   const [vehicleType, setVehicleType] = useState("Car");
-  const [parkingFloor, setParkingFloor] = useState("A1");
+  const [parkingFloor, setParkingFloor] = useState("");
   const [entryTime, setEntryTime] = useState("--:--:--");
   const [ticketId, setTicketId] = useState(() => generateTicketId());
 
@@ -45,18 +22,10 @@ function CheckInOutPage() {
   const [checkoutData, setCheckoutData] = useState(null);
 
   const formatPlate = (value) => {
-    let raw = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    if (raw.length > 8) raw = raw.slice(0, 8);
-    if (raw.length <= 3) return raw;
-
-    const prefix = raw.slice(0, 3);
-    const suffix = raw.slice(3);
-
-    if (suffix.length > 3) {
-      return `${prefix}-${suffix.slice(0, 3)}.${suffix.slice(3, 5)}`;
-    }
-
-    return `${prefix}-${suffix}`;
+    return value
+      .toUpperCase()
+      .replace(/[^A-Z0-9.-]/g, "")
+      .slice(0, 12);
   };
 
   const formatTicket = (value) => {
@@ -64,6 +33,7 @@ function CheckInOutPage() {
     let raw = clean.replace(/[^0-9]/g, "");
 
     if (raw.length > 6) raw = raw.slice(0, 6);
+
     return raw.length ? `TK-${raw}` : "";
   };
 
@@ -91,6 +61,32 @@ function CheckInOutPage() {
     });
   };
 
+  const normalizeVehicleType = (value) => {
+    const text = String(value || "").trim().toLowerCase();
+
+    if (
+      text === "car" ||
+      text === "cars" ||
+      text === "oto" ||
+      text === "ô tô" ||
+      text === "automobile"
+    ) {
+      return "car";
+    }
+
+    if (
+      text === "motorbike" ||
+      text === "motorbikes" ||
+      text === "bike" ||
+      text === "motorcycle" ||
+      text === "xe máy"
+    ) {
+      return "motorbike";
+    }
+
+    return text;
+  };
+
   const loadActiveSessions = async () => {
     try {
       const res = await parkingSessionApi.getActiveSessions();
@@ -98,25 +94,57 @@ function CheckInOutPage() {
 
       setActiveSessions(sessions);
     } catch (error) {
+      console.error("Load active sessions failed:", error);
       setActiveSessions([]);
+    }
+  };
+
+  const loadParkingFloorStats = async () => {
+    console.log("Đang gọi API floor-stats...");
+
+    try {
+      const res = await parkingSessionApi.getParkingFloorStats();
+
+      console.log("Floor stats raw response:", res);
+      console.log("Floor stats response:", res.data);
+
+      
+
+      const floors = Array.isArray(res.data) ? res.data : [];
+
+      console.table(floors);
+
+      setFloorsData(floors);
+
+      setFloorsData(floors);
+    } catch (error) {
+      console.error("Load parking floor stats failed:", error);
+      console.error("Floor stats error response:", error.response?.data);
+
+      setFloorsData([]);
     }
   };
 
   useEffect(() => {
     loadActiveSessions();
+    loadParkingFloorStats();
   }, []);
 
   useEffect(() => {
     const availableFloors = floorsData.filter(
-      (floor) => floor.type === vehicleType
+      (floor) =>
+        normalizeVehicleType(floor.vehicleType) ===
+        normalizeVehicleType(vehicleType)
     );
 
     if (availableFloors.length > 0) {
       const defaultFloor =
-        availableFloors.find((f) => f.availableSlots > 0) ||
+        availableFloors.find((f) => Number(f.availableSlots) > 0) ||
         availableFloors[0];
 
-      setParkingFloor(defaultFloor.id);
+      setParkingFloor(String(defaultFloor.floorId));
+    } else {
+      setParkingFloor("");
     }
   }, [vehicleType, floorsData]);
 
@@ -127,6 +155,7 @@ function CheckInOutPage() {
     };
 
     updateTime();
+
     const interval = setInterval(updateTime, 1000);
 
     return () => clearInterval(interval);
@@ -137,12 +166,28 @@ function CheckInOutPage() {
 
     if (!licensePlateIn.trim()) return;
 
-    try {
-      const vehicleTypeId = vehicleType === "Car" ? 1 : 2;
+    const selectedFloor = floorsData.find(
+      (floor) =>
+        String(floor.floorId) === String(parkingFloor) &&
+        normalizeVehicleType(floor.vehicleType) ===
+        normalizeVehicleType(vehicleType)
+    );
 
+    if (!selectedFloor) {
+      alert("No available parking floor for selected vehicle type");
+      return;
+    }
+
+    if (Number(selectedFloor.availableSlots) === 0) {
+      alert("Selected parking floor is full");
+      return;
+    }
+
+    try {
       const payload = {
-        licensePlate: licensePlateIn,
-        vehicleTypeId,
+        licensePlate: licensePlateIn.trim().toUpperCase(),
+        vehicleTypeId: selectedFloor.vehicleTypeId,
+        floorId: selectedFloor.floorId,
       };
 
       const res = await parkingSessionApi.checkIn(payload);
@@ -155,9 +200,10 @@ function CheckInOutPage() {
       );
 
       setLicensePlateIn("");
-      setTicketId(generateTicketId());
+      setTicketId(res.data?.ticketId || generateTicketId());
 
       await loadActiveSessions();
+      await loadParkingFloorStats();
     } catch (error) {
       alert(
         error.response?.data?.message ||
@@ -214,10 +260,17 @@ function CheckInOutPage() {
       setCheckoutData(null);
 
       await loadActiveSessions();
+      await loadParkingFloorStats();
     } catch (error) {
       alert(error.response?.data?.message || "Check-out thất bại");
     }
   };
+
+  const filteredFloors = floorsData.filter(
+    (floor) =>
+      normalizeVehicleType(floor.vehicleType) ===
+      normalizeVehicleType(vehicleType)
+  );
 
   return (
     <div className="dashboard-layout">
@@ -229,7 +282,10 @@ function CheckInOutPage() {
       >
         <Header />
 
-        <div className="dashboard-title" style={{ padding: "1.5rem 0 0.5rem 0" }}>
+        <div
+          className="dashboard-title"
+          style={{ padding: "1.5rem 0 0.5rem 0" }}
+        >
           <h1
             style={{
               color: "#fff",
@@ -239,6 +295,7 @@ function CheckInOutPage() {
           >
             Check-in/out Portal
           </h1>
+
           <p style={{ color: "#64748b", margin: 0, fontSize: "0.9rem" }}>
             Manage vehicle flow and real-time gate operations.
           </p>
@@ -272,8 +329,8 @@ function CheckInOutPage() {
                 marginTop: 0,
               }}
             >
-              <SquarePlay size={18} style={{ color: "#3b82f6" }} /> Check-in
-              Entry
+              <SquarePlay size={18} style={{ color: "#3b82f6" }} />
+              Check-in Entry
             </h3>
 
             <form onSubmit={handleCheckInSubmit}>
@@ -289,11 +346,12 @@ function CheckInOutPage() {
                 >
                   LICENSE PLATE NUMBER
                 </label>
+
                 <input
                   type="text"
                   value={licensePlateIn}
-                  placeholder="e.g., 51K-111.11"
-                  maxLength={10}
+                  placeholder="e.g., 51A-123.45 / 59S1-123.45"
+                  maxLength={12}
                   style={{
                     width: "100%",
                     padding: "0.75rem",
@@ -330,6 +388,7 @@ function CheckInOutPage() {
                   >
                     VEHICLE TYPE
                   </label>
+
                   <select
                     value={vehicleType}
                     onChange={(e) => setVehicleType(e.target.value)}
@@ -361,9 +420,11 @@ function CheckInOutPage() {
                   >
                     PARKING FLOOR
                   </label>
+
                   <select
                     value={parkingFloor}
                     onChange={(e) => setParkingFloor(e.target.value)}
+                    disabled={filteredFloors.length === 0}
                     style={{
                       width: "100%",
                       padding: "0.75rem",
@@ -371,25 +432,28 @@ function CheckInOutPage() {
                       border: "1px solid #334155",
                       borderRadius: "0.375rem",
                       color: "#fff",
-                      cursor: "pointer",
+                      cursor:
+                        filteredFloors.length === 0 ? "not-allowed" : "pointer",
                       outline: "none",
                     }}
                   >
-                    {floorsData
-                      .filter((floor) => floor.type === vehicleType)
-                      .map((floor) => (
+                    {filteredFloors.length === 0 ? (
+                      <option value="">No floor available</option>
+                    ) : (
+                      filteredFloors.map((floor) => (
                         <option
-                          key={floor.id}
-                          value={floor.id}
-                          disabled={floor.availableSlots === 0}
+                          key={`${floor.floorId}-${floor.vehicleTypeId}`}
+                          value={String(floor.floorId)}
+                          disabled={Number(floor.availableSlots) === 0}
                         >
-                          {floor.name} (
-                          {floor.availableSlots > 0
+                          {floor.floorName} (
+                          {Number(floor.availableSlots) > 0
                             ? `Vacant: ${floor.availableSlots}/${floor.totalSlots}`
                             : "Full House"}
                           )
                         </option>
-                      ))}
+                      ))
+                    )}
                   </select>
                 </div>
               </div>
@@ -414,6 +478,7 @@ function CheckInOutPage() {
                   >
                     ENTRY TIME
                   </label>
+
                   <input
                     type="text"
                     value={entryTime}
@@ -442,6 +507,7 @@ function CheckInOutPage() {
                   >
                     TICKET ID
                   </label>
+
                   <input
                     type="text"
                     value={ticketId}
@@ -461,15 +527,18 @@ function CheckInOutPage() {
 
               <button
                 type="submit"
+                disabled={filteredFloors.length === 0}
                 style={{
                   width: "100%",
                   padding: "1rem",
-                  backgroundColor: "#3b82f6",
-                  color: "#fff",
+                  backgroundColor:
+                    filteredFloors.length === 0 ? "#334155" : "#3b82f6",
+                  color: filteredFloors.length === 0 ? "#64748b" : "#fff",
                   border: "none",
                   borderRadius: "0.5rem",
                   fontWeight: "600",
-                  cursor: "pointer",
+                  cursor:
+                    filteredFloors.length === 0 ? "not-allowed" : "pointer",
                 }}
               >
                 Confirm Check-in
@@ -496,17 +565,22 @@ function CheckInOutPage() {
                 marginTop: 0,
               }}
             >
-              <LogOut size={18} style={{ color: "#10b981" }} /> Check-out Exit
+              <LogOut size={18} style={{ color: "#10b981" }} />
+              Check-out Exit
             </h3>
 
             <form
               onSubmit={handleSearchCheckout}
-              style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}
+              style={{
+                display: "flex",
+                gap: "0.5rem",
+                marginBottom: "1.5rem",
+              }}
             >
               <input
                 type="text"
                 value={searchPlate}
-                placeholder="Biển số (51K-666.66)"
+                placeholder="Biển số (51A-123.45)"
                 onChange={(e) => setSearchPlate(formatPlate(e.target.value))}
                 style={{
                   flex: 1,
@@ -660,14 +734,24 @@ function CheckInOutPage() {
                     gap: "0.5rem",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                    }}
+                  >
                     <span>Parking Fee</span>
                     <span style={{ color: "#fff" }}>
                       {formatCurrency(checkoutData.totalAmount)}
                     </span>
                   </div>
 
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                    }}
+                  >
                     <span>Service Charge</span>
                     <span style={{ color: "#fff" }}>{formatCurrency(0)}</span>
                   </div>
@@ -704,8 +788,8 @@ function CheckInOutPage() {
                   fontSize: "0.9rem",
                 }}
               >
-                No payment information available. Please enter a license plate number or
-                ticket ID and click SEARCH to check.
+                No payment information available. Please enter a license plate
+                number or ticket ID and click SEARCH to check.
               </div>
             )}
 
@@ -746,8 +830,8 @@ function CheckInOutPage() {
               gap: "0.5rem",
             }}
           >
-            <ReceiptText size={18} style={{ color: "#3b82f6" }} /> Danh Sách Xe
-            Đang Đỗ Trong Hệ Thống ({activeSessions.length} xe)
+            <ReceiptText size={18} style={{ color: "#3b82f6" }} />
+            Danh Sách Xe Đang Đỗ Trong Hệ Thống ({activeSessions.length} xe)
           </h3>
 
           {activeSessions.length === 0 ? (
@@ -774,6 +858,7 @@ function CheckInOutPage() {
                         error.response?.data?.message ||
                         "Không lấy được thông tin checkout"
                       );
+
                       setCheckoutData(null);
                     }
                   }}
@@ -798,6 +883,7 @@ function CheckInOutPage() {
                   >
                     {session.licensePlate}
                   </span>
+
                   <span style={{ color: "#3b82f6", fontSize: "0.7rem" }}>
                     Slot: {session.slotCode || "N/A"} | {session.ticketId}
                   </span>

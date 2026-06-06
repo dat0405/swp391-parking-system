@@ -19,6 +19,7 @@ import com.tatdat.parking.backend.repository.VehicleRepository;
 import com.tatdat.parking.backend.repository.VehicleTypeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import com.tatdat.parking.backend.dto.ParkingFloorStatsResponse;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -75,12 +76,19 @@ public class ParkingOperationController {
                     throw new RuntimeException("Vehicle is already checked in");
                 });
 
+        if (request.getFloorId() == null) {
+            throw new RuntimeException("Parking floor is required");
+        }
+
         ParkingSlot slot = parkingSlotRepository
-                .findByVehicleType_IdAndStatus(request.getVehicleTypeId(), "AVAILABLE")
+                .findByVehicleType_IdAndZone_Floor_IdAndStatus(
+                        request.getVehicleTypeId(),
+                        request.getFloorId(),
+                        "AVAILABLE"
+                )
                 .stream()
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException("No available slot for this vehicle type"));
-
+                .orElseThrow(() -> new RuntimeException("No available slot for this vehicle type on selected floor"));
         LocalDateTime now = LocalDateTime.now();
         String ticketId = generateUniqueTicketId();
 
@@ -179,6 +187,11 @@ public class ParkingOperationController {
                         .status(session.getStatus())
                         .build())
                 .toList();
+    }
+
+    @GetMapping("/floor-stats")
+    public List<ParkingFloorStatsResponse> getParkingFloorStats() {
+        return parkingSlotRepository.getParkingFloorStats();
     }
 
     private CheckOutResponse buildCheckOutPreview(ParkingSession session) {

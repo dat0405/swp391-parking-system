@@ -8,4 +8,6 @@ public class CheckInRequest {
     private String licensePlate;
 
     private Integer vehicleTypeId;
+
+    private Integer floorId;
 }

@@ -18,4 +18,8 @@ export const parkingSessionApi = {
   getActiveSessions() {
     return axiosClient.get("/parking-operations/active");
   },
+
+  getParkingFloorStats() {
+    return axiosClient.get("/parking-operations/floor-stats");
+  },
 };
