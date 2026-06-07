@@ -100,30 +100,15 @@ function CheckInOutPage() {
   };
 
   const loadParkingFloorStats = async () => {
-    console.log("Đang gọi API floor-stats...");
+  try {
+    const res = await parkingSessionApi.getParkingFloorStats();
+    const floors = Array.isArray(res.data) ? res.data : [];
 
-    try {
-      const res = await parkingSessionApi.getParkingFloorStats();
-
-      console.log("Floor stats raw response:", res);
-      console.log("Floor stats response:", res.data);
-
-      
-
-      const floors = Array.isArray(res.data) ? res.data : [];
-
-      console.table(floors);
-
-      setFloorsData(floors);
-
-      setFloorsData(floors);
-    } catch (error) {
-      console.error("Load parking floor stats failed:", error);
-      console.error("Floor stats error response:", error.response?.data);
-
-      setFloorsData([]);
-    }
-  };
+    setFloorsData(floors);
+  } catch (error) {
+    setFloorsData([]);
+  }
+};
 
   useEffect(() => {
     loadActiveSessions();

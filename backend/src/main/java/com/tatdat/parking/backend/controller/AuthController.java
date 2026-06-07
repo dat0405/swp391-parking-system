@@ -91,6 +91,9 @@ public class AuthController {
         user.setRole(driverRole);
         user.setStatus("ACTIVE");
         user.setCreatedAt(LocalDateTime.now());
+        user.setUpdatedAt(null);
+        user.setLastLoginAt(null);
+        user.setLastActiveAt(null);
 
         userRepository.save(user);
 
@@ -118,6 +121,13 @@ public class AuthController {
         if (!"ACTIVE".equals(user.getStatus())) {
             throw new RuntimeException("Tài khoản không thể đăng nhập với trạng thái hiện tại");
         }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setLastLoginAt(now);
+        user.setLastActiveAt(now);
+        user.setUpdatedAt(now);
+        userRepository.save(user);
 
         String accessToken = jwtService.generateAccessToken(user);
         RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
