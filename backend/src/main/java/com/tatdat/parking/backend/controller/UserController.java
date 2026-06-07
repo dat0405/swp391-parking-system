@@ -39,6 +39,26 @@ public class UserController {
                 .toList();
     }
 
+    @PutMapping("/me/heartbeat")
+    public UserResponse heartbeat() {
+        User currentUser = getCurrentUser();
+
+        currentUser.setLastActiveAt(LocalDateTime.now());
+        User savedUser = userRepository.save(currentUser);
+
+        return mapToUserResponse(savedUser);
+    }
+
+    @PutMapping("/me/offline")
+    public UserResponse offline() {
+        User currentUser = getCurrentUser();
+
+        currentUser.setLastActiveAt(null);
+        User savedUser = userRepository.save(currentUser);
+
+        return mapToUserResponse(savedUser);
+    }
+
     @GetMapping("/{id}")
     public UserResponse getUserById(@PathVariable Integer id) {
         User user = userRepository.findById(id)

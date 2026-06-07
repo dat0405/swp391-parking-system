@@ -164,8 +164,14 @@ function UserManagementPage() {
   };
 
   useEffect(() => {
+  fetchData();
+
+  const intervalId = setInterval(() => {
     fetchData();
-  }, []);
+  }, 30000);
+
+  return () => clearInterval(intervalId);
+}, []);
 
   const openEditRoleModal = (user) => {
     setEditingUser(user);

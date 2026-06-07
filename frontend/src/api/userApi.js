@@ -24,4 +24,12 @@ export const userApi = {
   resetPassword(userId, data) {
     return axiosClient.put(`/users/${userId}/reset-password`, data);
   },
+
+  heartbeat() {
+  return axiosClient.put("/users/me/heartbeat");
+},
+
+offline() {
+  return axiosClient.put("/users/me/offline");
+},
 };
