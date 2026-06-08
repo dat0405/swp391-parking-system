@@ -144,3 +144,45 @@
 .anh-dong {
   animation: movepic 4s ease-in-out infinite;
 }
+
+/* Dashboard layout */
+.dashboard-layout {
+  display: flex !important;
+  min-height: 100vh !important;
+  width: 100vw !important;
+  background-color: #020617 !important;
+  overflow: hidden !important;
+}
+
+/* Sidebar giữ cố định bên trái */
+.sidebar {
+  flex-shrink: 0 !important;
+  height: 100vh !important;
+  overflow-y: auto !important;
+}
+
+/* Nội dung chính bên phải */
+.main-content {
+  flex: 1 !important;
+  height: 100vh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 2rem !important;
+  box-sizing: border-box !important;
+}
+
+/* Cho bảng pricing không bị cắt dòng */
+.pricing-table-wrapper {
+  width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+}
+
+.pricing-table-wrapper table {
+  width: 100% !important;
+  min-width: 1050px !important;
+}
+
+.pricing-table-wrapper tr {
+  height: 76px !important;
+}

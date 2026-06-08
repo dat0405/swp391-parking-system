@@ -11,20 +11,16 @@ import {
 
 import { userApi } from '../api/userApi';
 
+const NOTIFICATION_STORAGE_KEY = 'parking_notifications';
+
 function Header() {
   const [currentUser, setCurrentUser] = useState({
     name: 'Loading...',
-    role: 'Staff'
+    role: 'Staff',
+    rawRole: 'PARKING_STAFF'
   });
 
-  const [notifications, setNotifications] = useState([
-    { id: 1, text: 'Staff John Doe checked in at Floor 3', time: 'Just now', isRead: false },
-    { id: 2, text: 'Gate 2 automated opening triggered', time: '2m ago', isRead: false },
-    { id: 3, text: 'Floor 1 occupancy reached 90%', time: '10m ago', isRead: true },
-    { id: 4, text: 'System backup completed successfully', time: '1h ago', isRead: true },
-    { id: 5, text: 'New staff registration alert', time: '2h ago', isRead: true }
-  ]);
-
+  const [notifications, setNotifications] = useState([]);
   const [isOpenDropdown, setIsOpenDropdown] = useState(false);
   const [isOpenSettings, setIsOpenSettings] = useState(false);
   const [activeToast, setActiveToast] = useState(null);
@@ -38,44 +34,140 @@ function Header() {
 
   const dropdownRef = useRef(null);
   const settingsRef = useRef(null);
+  const currentUserRef = useRef(currentUser);
 
-  const displayNotifications = notifications.slice(0, 5);
+  const displayNotifications = notifications.slice(0, 8);
   const unreadCount = notifications.filter((notification) => !notification.isRead).length;
+
+  const formatRole = (role) => {
+    if (!role) return 'Staff';
+
+    if (role === 'SYSTEM_ADMIN') return 'System Admin';
+    if (role === 'PARKING_MANAGER') return 'Parking Manager';
+    if (role === 'PARKING_STAFF') return 'Parking Staff';
+    if (role === 'DRIVER') return 'Driver';
+    if (role === 'USER') return 'User';
+
+    return role
+      .toLowerCase()
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  const getCurrentUserFromStorage = () => {
+    const savedUser = localStorage.getItem('user');
+
+    if (!savedUser) {
+      return {
+        name: 'Guest User',
+        role: 'Staff',
+        rawRole: 'PARKING_STAFF'
+      };
+    }
+
+    try {
+      const parsedUser = JSON.parse(savedUser);
+      const rawRole = parsedUser.role || parsedUser.roleName || 'PARKING_STAFF';
+
+      return {
+        name: parsedUser.fullName || parsedUser.name || parsedUser.email || 'Parking User',
+        role: formatRole(rawRole),
+        rawRole
+      };
+    } catch (error) {
+      console.error('Không thể đọc dữ liệu user từ localStorage:', error);
+
+      return {
+        name: 'Parking User',
+        role: 'Staff',
+        rawRole: 'PARKING_STAFF'
+      };
+    }
+  };
+
+  const getTimeText = (createdAt) => {
+    if (!createdAt) return 'Just now';
+
+    const diffMs = Date.now() - new Date(createdAt).getTime();
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffSeconds < 60) return 'Just now';
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+
+    return `${diffDays}d ago`;
+  };
+
+  const loadNotificationsFromStorage = () => {
+    const savedNotifications = localStorage.getItem(NOTIFICATION_STORAGE_KEY);
+
+    if (!savedNotifications) {
+      setNotifications([]);
+      return;
+    }
+
+    try {
+      const parsedNotifications = JSON.parse(savedNotifications);
+
+      setNotifications(Array.isArray(parsedNotifications) ? parsedNotifications : []);
+    } catch (error) {
+      console.error('Không thể đọc notifications từ localStorage:', error);
+      setNotifications([]);
+    }
+  };
+
+  const saveNotificationsToStorage = (nextNotifications) => {
+    localStorage.setItem(
+      NOTIFICATION_STORAGE_KEY,
+      JSON.stringify(nextNotifications.slice(0, 30))
+    );
+  };
+
+  const buildNotificationText = (payload, actor) => {
+    if (typeof payload === 'string') {
+      return `${actor.name} (${actor.role}) ${payload}`;
+    }
+
+    const action = payload?.action || 'performed an action';
+    const target = payload?.target ? ` ${payload.target}` : '';
+    const detail = payload?.detail ? ` - ${payload.detail}` : '';
+
+    return `${actor.name} (${actor.role}) ${action}${target}${detail}`;
+  };
+
+  const triggerNewNotification = (payload) => {
+    const actor = currentUserRef.current;
+    const text = buildNotificationText(payload, actor);
+
+    const newNotification = {
+      id: Date.now(),
+      text,
+      actorName: actor.name,
+      actorRole: actor.role,
+      rawRole: actor.rawRole,
+      createdAt: new Date().toISOString(),
+      isRead: false
+    };
+
+    setNotifications((prev) => {
+      const nextNotifications = [newNotification, ...prev].slice(0, 30);
+      saveNotificationsToStorage(nextNotifications);
+      return nextNotifications;
+    });
+
+    setActiveToast(newNotification);
+  };
 
   useEffect(() => {
     const loadUserInformation = () => {
-      const savedUser = localStorage.getItem('user');
+      const nextUser = getCurrentUserFromStorage();
 
-      if (!savedUser) {
-        setCurrentUser({
-          name: 'Guest User',
-          role: 'Staff'
-        });
-        return;
-      }
-
-      try {
-        const parsedUser = JSON.parse(savedUser);
-
-        let displayRole = parsedUser.role || 'Staff';
-
-        if (displayRole === 'SYSTEM_ADMIN') displayRole = 'System Admin';
-        else if (displayRole === 'PARKING_MANAGER') displayRole = 'Parking Manager';
-        else if (displayRole === 'PARKING_STAFF') displayRole = 'Parking Staff';
-        else if (displayRole === 'DRIVER') displayRole = 'Driver';
-
-        setCurrentUser({
-          name: parsedUser.fullName || parsedUser.name || 'User',
-          role: displayRole
-        });
-      } catch (error) {
-        console.error('Không thể đọc dữ liệu user từ localStorage:', error);
-
-        setCurrentUser({
-          name: 'Parking User',
-          role: 'Staff'
-        });
-      }
+      setCurrentUser(nextUser);
+      currentUserRef.current = nextUser;
     };
 
     const handlePageNotification = (event) => {
@@ -83,6 +175,7 @@ function Header() {
     };
 
     loadUserInformation();
+    loadNotificationsFromStorage();
 
     window.addEventListener('storage', loadUserInformation);
     window.addEventListener('dispatchParkingNotification', handlePageNotification);
@@ -93,17 +186,9 @@ function Header() {
     };
   }, []);
 
-  const triggerNewNotification = (text) => {
-    const newNotification = {
-      id: Date.now(),
-      text,
-      time: 'Just now',
-      isRead: false
-    };
-
-    setNotifications((prev) => [newNotification, ...prev]);
-    setActiveToast(newNotification);
-  };
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   useEffect(() => {
     if (!activeToast) return;
@@ -131,12 +216,17 @@ function Header() {
 
   const handleBellClick = () => {
     setIsOpenDropdown(!isOpenDropdown);
-    setNotifications((prev) =>
-      prev.map((notification) => ({
+
+    setNotifications((prev) => {
+      const nextNotifications = prev.map((notification) => ({
         ...notification,
         isRead: true
-      }))
-    );
+      }));
+
+      saveNotificationsToStorage(nextNotifications);
+
+      return nextNotifications;
+    });
   };
 
   const handleLogOut = async () => {
@@ -154,13 +244,21 @@ function Header() {
     }
   };
 
+  const handleClearNotifications = () => {
+    setNotifications([]);
+    localStorage.removeItem(NOTIFICATION_STORAGE_KEY);
+  };
+
   const handleSaveConfig = (event) => {
     event.preventDefault();
 
     console.log('System config:', systemConfig);
 
     setIsOpenSettingsModal(false);
-    triggerNewNotification('System configurations updated successfully.');
+
+    triggerNewNotification({
+      action: 'updated system configurations'
+    });
   };
 
   return (
@@ -243,7 +341,7 @@ function Header() {
                 position: 'absolute',
                 top: '40px',
                 right: '0',
-                width: '280px',
+                width: '320px',
                 backgroundColor: '#1e293b',
                 border: '1px solid #3b82f6',
                 boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
@@ -287,7 +385,7 @@ function Header() {
                 position: 'absolute',
                 top: '40px',
                 right: '0',
-                width: '320px',
+                width: '360px',
                 backgroundColor: '#0f172a',
                 border: '1px solid #1e293b',
                 borderRadius: '0.5rem',
@@ -302,46 +400,79 @@ function Header() {
                   borderBottom: '1px solid #1e293b',
                   display: 'flex',
                   justifyContent: 'space-between',
-                  alignItems: 'center'
+                  alignItems: 'center',
+                  gap: '0.75rem'
                 }}
               >
                 <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#ffffff' }}>
                   Notifications
                 </span>
 
-                <span
-                  style={{
-                    fontSize: '0.7rem',
-                    backgroundColor: '#1e293b',
-                    color: '#94a3b8',
-                    padding: '0.1rem 0.4rem',
-                    borderRadius: '0.25rem'
-                  }}
-                >
-                  Total: {notifications.length}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span
+                    style={{
+                      fontSize: '0.7rem',
+                      backgroundColor: '#1e293b',
+                      color: '#94a3b8',
+                      padding: '0.1rem 0.4rem',
+                      borderRadius: '0.25rem'
+                    }}
+                  >
+                    Total: {notifications.length}
+                  </span>
+
+                  {notifications.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearNotifications}
+                      style={{
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        color: '#ef4444',
+                        fontSize: '0.7rem',
+                        cursor: 'pointer',
+                        fontWeight: '600'
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
-                {displayNotifications.map((notification) => (
+                {displayNotifications.length === 0 ? (
                   <div
-                    key={notification.id}
                     style={{
-                      padding: '0.75rem 1rem',
-                      borderBottom: '1px solid rgba(255,255,255,0.02)',
-                      backgroundColor: notification.isRead ? 'transparent' : 'rgba(59, 130, 246, 0.03)',
-                      cursor: 'pointer'
+                      padding: '1rem',
+                      color: '#64748b',
+                      fontSize: '0.78rem',
+                      textAlign: 'center'
                     }}
                   >
-                    <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.78rem', color: '#cbd5e1', lineHeight: '1.4' }}>
-                      {notification.text}
-                    </p>
-
-                    <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
-                      {notification.time}
-                    </span>
+                    No notifications yet.
                   </div>
-                ))}
+                ) : (
+                  displayNotifications.map((notification) => (
+                    <div
+                      key={notification.id}
+                      style={{
+                        padding: '0.75rem 1rem',
+                        borderBottom: '1px solid rgba(255,255,255,0.02)',
+                        backgroundColor: notification.isRead ? 'transparent' : 'rgba(59, 130, 246, 0.03)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <p style={{ margin: '0 0 0.35rem 0', fontSize: '0.78rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                        {notification.text}
+                      </p>
+
+                      <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                        {getTimeText(notification.createdAt)}
+                      </span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
