@@ -21,11 +21,152 @@ function CheckInOutPage() {
   const [searchTicketId, setSearchTicketId] = useState("");
   const [checkoutData, setCheckoutData] = useState(null);
 
-  const formatPlate = (value) => {
-    return value
+  const normalizeVehicleType = (value) => {
+    const text = String(value || "").trim().toLowerCase();
+
+    if (
+      text === "car" ||
+      text === "cars" ||
+      text === "oto" ||
+      text === "ô tô" ||
+      text === "automobile"
+    ) {
+      return "car";
+    }
+
+    if (
+      text === "motorbike" ||
+      text === "motorbikes" ||
+      text === "bike" ||
+      text === "motorcycle" ||
+      text === "xe máy"
+    ) {
+      return "motorbike";
+    }
+
+    return text;
+  };
+
+  const cleanPlateInput = (value) => {
+    return String(value || "")
       .toUpperCase()
-      .replace(/[^A-Z0-9.-]/g, "")
-      .slice(0, 12);
+      .replace(/[^A-Z0-9]/g, "");
+  };
+
+  const formatCarPlate = (value) => {
+    const raw = cleanPlateInput(value).slice(0, 8);
+
+    const provinceCode = raw.slice(0, 2);
+    const series = raw.slice(2, 3);
+    const numbers = raw.slice(3, 8);
+
+    let result = provinceCode;
+
+    if (series) {
+      result += series;
+    }
+
+    if (numbers.length > 0) {
+      result += `-${numbers.slice(0, 3)}`;
+    }
+
+    if (numbers.length > 3) {
+      result += `.${numbers.slice(3, 5)}`;
+    }
+
+    return result;
+  };
+
+  const formatMotorbikePlate = (value) => {
+    const raw = cleanPlateInput(value).slice(0, 9);
+
+    const provinceCode = raw.slice(0, 2);
+    const rest = raw.slice(2);
+
+    let series = "";
+    let numberStartIndex = 0;
+
+    if (/^[A-Z]{2}/.test(rest)) {
+      series = rest.slice(0, 2);
+      numberStartIndex = 2;
+    } else if (/^[A-Z]\d/.test(rest)) {
+      series = rest.slice(0, 2);
+      numberStartIndex = 2;
+    } else if (/^[A-Z]/.test(rest)) {
+      series = rest.slice(0, 1);
+      numberStartIndex = 1;
+    }
+
+    const numbers = rest.slice(numberStartIndex, numberStartIndex + 5);
+
+    let result = provinceCode;
+
+    if (series) {
+      result += `-${series}`;
+    }
+
+    if (numbers.length > 0) {
+      result += ` ${numbers.slice(0, 3)}`;
+    }
+
+    if (numbers.length > 3) {
+      result += `.${numbers.slice(3, 5)}`;
+    }
+
+    return result;
+  };
+
+  const formatPlateByVehicleType = (value, type) => {
+    if (normalizeVehicleType(type) === "car") {
+      return formatCarPlate(value);
+    }
+
+    return formatMotorbikePlate(value);
+  };
+
+  const getPlatePlaceholder = (type) => {
+    if (normalizeVehicleType(type) === "car") {
+      return "e.g., 30F-256.58";
+    }
+
+    return "e.g., 29-K6 447.43 / 59-AA 123.56";
+  };
+
+  const getPlateHint = (type) => {
+    if (normalizeVehicleType(type) === "car") {
+      return "Car format: 30F-256.58";
+    }
+
+    return "Motorbike format: 29-K6 447.43 or 59-AA 123.56";
+  };
+
+  const validateVietnamPlate = (plate, type) => {
+    const value = String(plate || "").trim().toUpperCase();
+
+    const carRegex = /^\d{2}[A-Z]-\d{3}\.\d{2}$/;
+    const motorbikeRegex = /^\d{2}-[A-Z]{1,2}\d?\s\d{3}\.\d{2}$/;
+
+    if (normalizeVehicleType(type) === "car") {
+      return carRegex.test(value);
+    }
+
+    return motorbikeRegex.test(value);
+  };
+
+  const formatPlateForSearch = (value) => {
+    const raw = String(value || "").toUpperCase();
+
+    if (raw.includes(" ")) {
+      return formatMotorbikePlate(raw);
+    }
+
+    const cleaned = cleanPlateInput(raw);
+
+    if (/^\d{2}[A-Z]\d/.test(cleaned) || /^\d{2}[A-Z]{2}/.test(cleaned)) {
+      return formatMotorbikePlate(cleaned);
+    }
+
+    return formatCarPlate(cleaned);
   };
 
   const formatTicket = (value) => {
@@ -61,32 +202,6 @@ function CheckInOutPage() {
     });
   };
 
-  const normalizeVehicleType = (value) => {
-    const text = String(value || "").trim().toLowerCase();
-
-    if (
-      text === "car" ||
-      text === "cars" ||
-      text === "oto" ||
-      text === "ô tô" ||
-      text === "automobile"
-    ) {
-      return "car";
-    }
-
-    if (
-      text === "motorbike" ||
-      text === "motorbikes" ||
-      text === "bike" ||
-      text === "motorcycle" ||
-      text === "xe máy"
-    ) {
-      return "motorbike";
-    }
-
-    return text;
-  };
-
   const loadActiveSessions = async () => {
     try {
       const res = await parkingSessionApi.getActiveSessions();
@@ -100,27 +215,12 @@ function CheckInOutPage() {
   };
 
   const loadParkingFloorStats = async () => {
-    console.log("Đang gọi API floor-stats...");
-
     try {
       const res = await parkingSessionApi.getParkingFloorStats();
-
-      console.log("Floor stats raw response:", res);
-      console.log("Floor stats response:", res.data);
-
-      
-
       const floors = Array.isArray(res.data) ? res.data : [];
-
-      console.table(floors);
-
-      setFloorsData(floors);
 
       setFloorsData(floors);
     } catch (error) {
-      console.error("Load parking floor stats failed:", error);
-      console.error("Floor stats error response:", error.response?.data);
-
       setFloorsData([]);
     }
   };
@@ -164,13 +264,24 @@ function CheckInOutPage() {
   const handleCheckInSubmit = async (e) => {
     e.preventDefault();
 
-    if (!licensePlateIn.trim()) return;
+    const formattedPlate = licensePlateIn.trim().toUpperCase();
+
+    if (!formattedPlate) return;
+
+    if (!validateVietnamPlate(formattedPlate, vehicleType)) {
+      alert(
+        normalizeVehicleType(vehicleType) === "car"
+          ? "Invalid car license plate format. Example: 30F-256.58"
+          : "Invalid motorbike license plate format. Example: 29-K6 447.43 or 59-AA 123.56"
+      );
+      return;
+    }
 
     const selectedFloor = floorsData.find(
       (floor) =>
         String(floor.floorId) === String(parkingFloor) &&
         normalizeVehicleType(floor.vehicleType) ===
-        normalizeVehicleType(vehicleType)
+          normalizeVehicleType(vehicleType)
     );
 
     if (!selectedFloor) {
@@ -185,7 +296,7 @@ function CheckInOutPage() {
 
     try {
       const payload = {
-        licensePlate: licensePlateIn.trim().toUpperCase(),
+        licensePlate: formattedPlate,
         vehicleTypeId: selectedFloor.vehicleTypeId,
         floorId: selectedFloor.floorId,
       };
@@ -194,8 +305,11 @@ function CheckInOutPage() {
 
       window.dispatchEvent(
         new CustomEvent("dispatchParkingNotification", {
-          detail: `Check-in thành công xe ${res.data?.licensePlate || licensePlateIn
-            }`,
+          detail: {
+            action: "checked in vehicle",
+            target: res.data?.licensePlate || formattedPlate,
+            detail: `at ${selectedFloor.floorName || "selected floor"}`,
+          },
         })
       );
 
@@ -207,8 +321,8 @@ function CheckInOutPage() {
     } catch (error) {
       alert(
         error.response?.data?.message ||
-        error.response?.data ||
-        "Check-in thất bại"
+          error.response?.data ||
+          "Check-in thất bại"
       );
     }
   };
@@ -251,7 +365,11 @@ function CheckInOutPage() {
 
       window.dispatchEvent(
         new CustomEvent("dispatchParkingNotification", {
-          detail: `Checkout thành công xe ${checkoutData.licensePlate}`,
+          detail: {
+            action: "checked out vehicle",
+            target: checkoutData.licensePlate,
+            detail: `ticket ${checkoutData.ticketId}`,
+          },
         })
       );
 
@@ -350,8 +468,8 @@ function CheckInOutPage() {
                 <input
                   type="text"
                   value={licensePlateIn}
-                  placeholder="e.g., 51A-123.45 / 59S1-123.45"
-                  maxLength={12}
+                  placeholder={getPlatePlaceholder(vehicleType)}
+                  maxLength={normalizeVehicleType(vehicleType) === "car" ? 10 : 13}
                   style={{
                     width: "100%",
                     padding: "0.75rem",
@@ -364,8 +482,22 @@ function CheckInOutPage() {
                     fontWeight: "600",
                   }}
                   required
-                  onChange={(e) => setLicensePlateIn(formatPlate(e.target.value))}
+                  onChange={(e) =>
+                    setLicensePlateIn(
+                      formatPlateByVehicleType(e.target.value, vehicleType)
+                    )
+                  }
                 />
+
+                <p
+                  style={{
+                    margin: "0.35rem 0 0",
+                    color: "#64748b",
+                    fontSize: "0.72rem",
+                  }}
+                >
+                  {getPlateHint(vehicleType)}
+                </p>
               </div>
 
               <div
@@ -391,7 +523,10 @@ function CheckInOutPage() {
 
                   <select
                     value={vehicleType}
-                    onChange={(e) => setVehicleType(e.target.value)}
+                    onChange={(e) => {
+                      setVehicleType(e.target.value);
+                      setLicensePlateIn("");
+                    }}
                     style={{
                       width: "100%",
                       padding: "0.75rem",
@@ -580,8 +715,8 @@ function CheckInOutPage() {
               <input
                 type="text"
                 value={searchPlate}
-                placeholder="Biển số (51A-123.45)"
-                onChange={(e) => setSearchPlate(formatPlate(e.target.value))}
+                placeholder="Biển số"
+                onChange={(e) => setSearchPlate(formatPlateForSearch(e.target.value))}
                 style={{
                   flex: 1,
                   padding: "0.75rem",
@@ -856,7 +991,7 @@ function CheckInOutPage() {
                     } catch (error) {
                       alert(
                         error.response?.data?.message ||
-                        "Không lấy được thông tin checkout"
+                          "Không lấy được thông tin checkout"
                       );
 
                       setCheckoutData(null);
