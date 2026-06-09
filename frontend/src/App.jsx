@@ -7,6 +7,7 @@ import RegisterPage from './RegisterPage';
 import ForgotPasswordPage from './ForgotPasswordPage';
 import ResetPasswordPage from "./ResetPasswordPage";
 import ParkingManagement from './parking-floors/ParkingManagement';
+
 import DashboardPage from "./DashboardPage";
 import CheckInOutPage from './check-in-out/CheckInOutPage';
 import PricingPoliciesPage from './pricing-policies/PricingPoliciesPage';
@@ -41,6 +42,7 @@ function App() {
        <Route path="/reservations" element={<PrivateRoute><ReservationManagementPage /></PrivateRoute>} />
        <Route path="/parking-floors" element={<PrivateRoute><ParkingManagement /></PrivateRoute>} />
         <Route path="/reports" element={<PrivateRoute><Reports /></PrivateRoute>} />
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
