@@ -41,4 +41,6 @@ public class Payment {
 
     @Column(name = "payment_time")
     private LocalDateTime paymentTime;
+
+    private String transactionCode;
 }
