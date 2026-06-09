@@ -23,6 +23,18 @@ public class PricingPolicy {
     @JoinColumn(name = "vehicle_type_id", nullable = false)
     private VehicleType vehicleType;
 
+    @Column(name = "price_per_hour")
+    private BigDecimal pricePerHour;
+
+    @Column(name = "overtime_fee")
+    private BigDecimal overtimeFee;
+
+    @Column(name = "status", length = 20)
+    private String status;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
+
     @Column(name = "base_price", nullable = false)
     private BigDecimal basePrice;
 

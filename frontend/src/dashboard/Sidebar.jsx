@@ -37,6 +37,9 @@ function Sidebar() {
           <span>Dashboard</span>
         </div>
 
+        <div className={`menu-item ${isActive('/parking-floors') ? 'active' : ''}`}
+          onClick={() => navigate('/parking-floors')}
+          style={{ cursor: 'pointer' }}>
         <div className="menu-item">
           <Layers size={18} />
           <span>Parking Floors</span>
@@ -51,6 +54,9 @@ function Sidebar() {
           <span>Check-in/out</span>
         </div>
 
+        <div className={`menu-item ${isActive('/reservations') ? 'active' : ''}`}
+          onClick={() => navigate('/reservations')}
+          style={{ cursor: 'pointer' }}>
         <div className="menu-item">
           <CalendarDays size={18} />
           <span>Reservations</span>
@@ -74,6 +80,9 @@ function Sidebar() {
           <span>Pricing Policies</span>
         </div>
 
+        <div className={`menu-item ${isActive('/reports') ? 'active' : ''}`}
+          onClick={() => navigate('/reports')}
+          style={{ cursor: 'pointer' }}>
         <div className="menu-item">
           <BarChart3 size={18} />
           <span>Reports</span>

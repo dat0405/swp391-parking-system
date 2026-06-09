@@ -6,11 +6,14 @@ import LoginPage from './LoginPage';
 import RegisterPage from './RegisterPage';
 import ForgotPasswordPage from './ForgotPasswordPage';
 import ResetPasswordPage from "./ResetPasswordPage";
+import ParkingManagement from './parking-floors/ParkingManagement';
 
 import DashboardPage from "./DashboardPage";
 import CheckInOutPage from './check-in-out/CheckInOutPage';
 import PricingPoliciesPage from './pricing-policies/PricingPoliciesPage';
 import UserManagementPage from './UserManagementPage/UserManagementPage';
+import ReservationManagementPage from './reservation-admin/ReservationAdmin';
+import Reports from './reports/Reports';
 
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -36,6 +39,9 @@ function App() {
       <Route path="/check-in-out" element={<PrivateRoute><CheckInOutPage /></PrivateRoute>} />
       <Route path="/pricing-policies" element={<PrivateRoute><PricingPoliciesPage /></PrivateRoute>} />
       <Route path="/user-management" element={<PrivateRoute><UserManagementPage /></PrivateRoute>} />
+       <Route path="/reservations" element={<PrivateRoute><ReservationManagementPage /></PrivateRoute>} />
+       <Route path="/parking-floors" element={<PrivateRoute><ParkingManagement /></PrivateRoute>} />
+        <Route path="/reports" element={<PrivateRoute><Reports /></PrivateRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -2,6 +2,7 @@ import React from 'react';
 import { Grid, Car, Banknote, Bookmark } from 'lucide-react';
 
 function StatsGrid({ stats }) {
+  // 🌟 ĐÃ SỬA: Nhận đúng 4 trường dữ liệu mới từ hệ thống bãi xe của Backend xuống
   //  ĐÃ SỬA: Nhận đúng 4 trường dữ liệu mới từ hệ thống bãi xe của Backend xuống
   const {
     totalSlots = 0,
@@ -10,6 +11,7 @@ function StatsGrid({ stats }) {
     pendingReservations = 0
   } = stats || {};
 
+  // 🌟 ĐÃ THÊM: Hàm rút gọn định dạng tiền tệ sang VND (Ví dụ: 8400000 -> 8.4M VND) để giữ giao diện gọn gàng giống ảnh
   //  ĐÃ THÊM: Hàm rút gọn định dạng tiền tệ sang VND (Ví dụ: 8400000 -> 8.4M VND) để giữ giao diện gọn gàng giống ảnh
   const formatShortVND = (value) => {
     if (value >= 1000000) {
@@ -96,6 +98,7 @@ function StatsGrid({ stats }) {
         </div>
         <span style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: '600', letterSpacing: '0.05em' }}>TODAY'S REVENUE</span>
         <h2 style={{ fontSize: '2.25rem', fontWeight: '700', color: '#ffffff', margin: '0.25rem 0 0.75rem 0' }}>
+          {formatShortVND(todayRevenue)} {/* 🌟 HIỂN THỊ CHỮ VND TẠI ĐÂY */}
           {formatShortVND(todayRevenue)} {/*  HIỂN THỊ CHỮ VND TẠI ĐÂY */}
         </h2>
         <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>

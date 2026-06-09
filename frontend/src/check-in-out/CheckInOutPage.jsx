@@ -21,6 +21,152 @@ function CheckInOutPage() {
   const [searchTicketId, setSearchTicketId] = useState("");
   const [checkoutData, setCheckoutData] = useState(null);
 
+  const normalizeVehicleType = (value) => {
+    const text = String(value || "").trim().toLowerCase();
+
+    if (
+      text === "car" ||
+      text === "cars" ||
+      text === "oto" ||
+      text === "ô tô" ||
+      text === "automobile"
+    ) {
+      return "car";
+    }
+
+    if (
+      text === "motorbike" ||
+      text === "motorbikes" ||
+      text === "bike" ||
+      text === "motorcycle" ||
+      text === "xe máy"
+    ) {
+      return "motorbike";
+    }
+
+    return text;
+  };
+
+  const cleanPlateInput = (value) => {
+    return String(value || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+  };
+
+  const formatCarPlate = (value) => {
+    const raw = cleanPlateInput(value).slice(0, 8);
+
+    const provinceCode = raw.slice(0, 2);
+    const series = raw.slice(2, 3);
+    const numbers = raw.slice(3, 8);
+
+    let result = provinceCode;
+
+    if (series) {
+      result += series;
+    }
+
+    if (numbers.length > 0) {
+      result += `-${numbers.slice(0, 3)}`;
+    }
+
+    if (numbers.length > 3) {
+      result += `.${numbers.slice(3, 5)}`;
+    }
+
+    return result;
+  };
+
+  const formatMotorbikePlate = (value) => {
+    const raw = cleanPlateInput(value).slice(0, 9);
+
+    const provinceCode = raw.slice(0, 2);
+    const rest = raw.slice(2);
+
+    let series = "";
+    let numberStartIndex = 0;
+
+    if (/^[A-Z]{2}/.test(rest)) {
+      series = rest.slice(0, 2);
+      numberStartIndex = 2;
+    } else if (/^[A-Z]\d/.test(rest)) {
+      series = rest.slice(0, 2);
+      numberStartIndex = 2;
+    } else if (/^[A-Z]/.test(rest)) {
+      series = rest.slice(0, 1);
+      numberStartIndex = 1;
+    }
+
+    const numbers = rest.slice(numberStartIndex, numberStartIndex + 5);
+
+    let result = provinceCode;
+
+    if (series) {
+      result += `-${series}`;
+    }
+
+    if (numbers.length > 0) {
+      result += ` ${numbers.slice(0, 3)}`;
+    }
+
+    if (numbers.length > 3) {
+      result += `.${numbers.slice(3, 5)}`;
+    }
+
+    return result;
+  };
+
+  const formatPlateByVehicleType = (value, type) => {
+    if (normalizeVehicleType(type) === "car") {
+      return formatCarPlate(value);
+    }
+
+    return formatMotorbikePlate(value);
+  };
+
+  const getPlatePlaceholder = (type) => {
+    if (normalizeVehicleType(type) === "car") {
+      return "e.g., 30F-256.58";
+    }
+
+    return "e.g., 29-K6 447.43 / 59-AA 123.56";
+  };
+
+  const getPlateHint = (type) => {
+    if (normalizeVehicleType(type) === "car") {
+      return "Car format: 30F-256.58";
+    }
+
+    return "Motorbike format: 29-K6 447.43 or 59-AA 123.56";
+  };
+
+  const validateVietnamPlate = (plate, type) => {
+    const value = String(plate || "").trim().toUpperCase();
+
+    const carRegex = /^\d{2}[A-Z]-\d{3}\.\d{2}$/;
+    const motorbikeRegex = /^\d{2}-[A-Z]{1,2}\d?\s\d{3}\.\d{2}$/;
+
+    if (normalizeVehicleType(type) === "car") {
+      return carRegex.test(value);
+    }
+
+    return motorbikeRegex.test(value);
+  };
+
+  const formatPlateForSearch = (value) => {
+    const raw = String(value || "").toUpperCase();
+
+    if (raw.includes(" ")) {
+      return formatMotorbikePlate(raw);
+    }
+
+    const cleaned = cleanPlateInput(raw);
+
+    if (/^\d{2}[A-Z]\d/.test(cleaned) || /^\d{2}[A-Z]{2}/.test(cleaned)) {
+      return formatMotorbikePlate(cleaned);
+    }
+
+    return formatCarPlate(cleaned);
   const formatPlate = (value) => {
     return value
       .toUpperCase()
@@ -100,6 +246,22 @@ function CheckInOutPage() {
   };
 
   const loadParkingFloorStats = async () => {
+    try {
+      const res = await parkingSessionApi.getParkingFloorStats();
+      const floors = Array.isArray(res.data) ? res.data : [];
+
+      setFloorsData(floors);
+    } catch (error) {
+      setFloorsData([]);
+    }
+  };
+
+  useEffect(() => {
+    loadActiveSessions();
+    loadParkingFloorStats();
+  }, []);
+
+  useEffect(() => {
   try {
     const res = await parkingSessionApi.getParkingFloorStats();
     const floors = Array.isArray(res.data) ? res.data : [];
@@ -148,6 +310,68 @@ function CheckInOutPage() {
 
   const handleCheckInSubmit = async (e) => {
     e.preventDefault();
+
+    const formattedPlate = licensePlateIn.trim().toUpperCase();
+
+    if (!formattedPlate) return;
+
+    if (!validateVietnamPlate(formattedPlate, vehicleType)) {
+      alert(
+        normalizeVehicleType(vehicleType) === "car"
+          ? "Invalid car license plate format. Example: 30F-256.58"
+          : "Invalid motorbike license plate format. Example: 29-K6 447.43 or 59-AA 123.56"
+      );
+      return;
+    }
+
+    const selectedFloor = floorsData.find(
+      (floor) =>
+        String(floor.floorId) === String(parkingFloor) &&
+        normalizeVehicleType(floor.vehicleType) ===
+          normalizeVehicleType(vehicleType)
+    );
+
+    if (!selectedFloor) {
+      alert("No available parking floor for selected vehicle type");
+      return;
+    }
+
+    if (Number(selectedFloor.availableSlots) === 0) {
+      alert("Selected parking floor is full");
+      return;
+    }
+
+    try {
+      const payload = {
+        licensePlate: formattedPlate,
+        vehicleTypeId: selectedFloor.vehicleTypeId,
+        floorId: selectedFloor.floorId,
+      };
+
+      const res = await parkingSessionApi.checkIn(payload);
+
+      window.dispatchEvent(
+        new CustomEvent("dispatchParkingNotification", {
+          detail: {
+            action: "checked in vehicle",
+            target: res.data?.licensePlate || formattedPlate,
+            detail: `at ${selectedFloor.floorName || "selected floor"}`,
+          },
+        })
+      );
+
+      setLicensePlateIn("");
+      setTicketId(res.data?.ticketId || generateTicketId());
+
+      await loadActiveSessions();
+      await loadParkingFloorStats();
+    } catch (error) {
+      alert(
+        error.response?.data?.message ||
+          error.response?.data ||
+          "Check-in thất bại"
+      );
+    }
 
     if (!licensePlateIn.trim()) return;
 
@@ -236,6 +460,11 @@ function CheckInOutPage() {
 
       window.dispatchEvent(
         new CustomEvent("dispatchParkingNotification", {
+          detail: {
+            action: "checked out vehicle",
+            target: checkoutData.licensePlate,
+            detail: `ticket ${checkoutData.ticketId}`,
+          },
           detail: `Checkout thành công xe ${checkoutData.licensePlate}`,
         })
       );
@@ -335,6 +564,8 @@ function CheckInOutPage() {
                 <input
                   type="text"
                   value={licensePlateIn}
+                  placeholder={getPlatePlaceholder(vehicleType)}
+                  maxLength={normalizeVehicleType(vehicleType) === "car" ? 10 : 13}
                   placeholder="e.g., 51A-123.45 / 59S1-123.45"
                   maxLength={12}
                   style={{
@@ -349,8 +580,23 @@ function CheckInOutPage() {
                     fontWeight: "600",
                   }}
                   required
+                  onChange={(e) =>
+                    setLicensePlateIn(
+                      formatPlateByVehicleType(e.target.value, vehicleType)
+                    )
+                  }
                   onChange={(e) => setLicensePlateIn(formatPlate(e.target.value))}
                 />
+
+                <p
+                  style={{
+                    margin: "0.35rem 0 0",
+                    color: "#64748b",
+                    fontSize: "0.72rem",
+                  }}
+                >
+                  {getPlateHint(vehicleType)}
+                </p>
               </div>
 
               <div
@@ -376,6 +622,10 @@ function CheckInOutPage() {
 
                   <select
                     value={vehicleType}
+                    onChange={(e) => {
+                      setVehicleType(e.target.value);
+                      setLicensePlateIn("");
+                    }}
                     onChange={(e) => setVehicleType(e.target.value)}
                     style={{
                       width: "100%",
@@ -402,6 +652,26 @@ function CheckInOutPage() {
                       display: "block",
                       marginBottom: "0.5rem",
                     }}
+                  >
+                    PARKING FLOOR
+                  </label>
+
+                  <select
+                    value={parkingFloor}
+                    onChange={(e) => setParkingFloor(e.target.value)}
+                    disabled={filteredFloors.length === 0}
+                    style={{
+                      width: "100%",
+                      padding: "0.75rem",
+                      backgroundColor: "#0f172a",
+                      border: "1px solid #334155",
+                      borderRadius: "0.375rem",
+                      color: "#fff",
+                      cursor:
+                        filteredFloors.length === 0 ? "not-allowed" : "pointer",
+                      outline: "none",
+                    }}
+                  >
                   >
                     PARKING FLOOR
                   </label>
@@ -565,6 +835,8 @@ function CheckInOutPage() {
               <input
                 type="text"
                 value={searchPlate}
+                placeholder="Biển số"
+                onChange={(e) => setSearchPlate(formatPlateForSearch(e.target.value))}
                 placeholder="Biển số (51A-123.45)"
                 onChange={(e) => setSearchPlate(formatPlate(e.target.value))}
                 style={{
@@ -710,6 +982,17 @@ function CheckInOutPage() {
                   </div>
                 </div>
 
+
+                  <div>
+                    PRICE PER HOUR
+                    <div style={{ color: "#fff", marginTop: "0.2rem" }}>
+                      {checkoutData.pricePerHour
+                        ? `${formatCurrency(checkoutData.pricePerHour)} / giờ`
+                        : "N/A"}
+                    </div>
+                  </div>
+                </div>
+
                 <div
                   style={{
                     fontSize: "0.85rem",
@@ -841,6 +1124,7 @@ function CheckInOutPage() {
                     } catch (error) {
                       alert(
                         error.response?.data?.message ||
+                          "Không lấy được thông tin checkout"
                         "Không lấy được thông tin checkout"
                       );
 
