@@ -13,6 +13,7 @@ import PricingPoliciesPage from './pricing-policies/PricingPoliciesPage';
 import UserManagementPage from './UserManagementPage/UserManagementPage';
 import ReservationManagementPage from './reservation-admin/ReservationAdmin';
 import Reports from './reports/Reports';
+import Booking from './user-ui/Booking';
 
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -34,6 +35,7 @@ function App() {
       <Route path="/forgot-password" element={<AuthRoute><ForgotPasswordPage /></AuthRoute>} />
       <Route path="/reset-password" element={<AuthRoute><ResetPasswordPage /></AuthRoute>} />
 
+       <Route path="/user-ui" element={<Booking />} />
       <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
       <Route path="/check-in-out" element={<PrivateRoute><CheckInOutPage /></PrivateRoute>} />
       <Route path="/pricing-policies" element={<PrivateRoute><PricingPoliciesPage /></PrivateRoute>} />

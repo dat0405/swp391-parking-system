@@ -2,7 +2,7 @@ import React from 'react';
 import { Grid, Car, Banknote, Bookmark } from 'lucide-react';
 
 function StatsGrid({ stats }) {
-  // 🌟 ĐÃ SỬA: Nhận đúng 4 trường dữ liệu mới từ hệ thống bãi xe của Backend xuống
+  //  ĐÃ SỬA: Nhận đúng 4 trường dữ liệu mới từ hệ thống bãi xe của Backend xuống
   const {
     totalSlots = 0,
     activeOccupancy = 0,
@@ -10,7 +10,7 @@ function StatsGrid({ stats }) {
     pendingReservations = 0
   } = stats || {};
 
-  // 🌟 ĐÃ THÊM: Hàm rút gọn định dạng tiền tệ sang VND (Ví dụ: 8400000 -> 8.4M VND) để giữ giao diện gọn gàng giống ảnh
+  //  ĐÃ THÊM: Hàm rút gọn định dạng tiền tệ sang VND (Ví dụ: 8400000 -> 8.4M VND) để giữ giao diện gọn gàng giống ảnh
   const formatShortVND = (value) => {
     if (value >= 1000000) {
       return `${(value / 1000000).toFixed(1)}M VND`; // Định dạng theo Triệu (M)
