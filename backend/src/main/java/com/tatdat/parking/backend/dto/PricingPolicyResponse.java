@@ -5,35 +5,30 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class UserResponse {
+public class PricingPolicyResponse {
 
     private Integer id;
 
-    private String fullName;
+    private Integer vehicleTypeId;
 
-    private String email;
+    private String vehicleTypeName;
 
-    private String phone;
+    private BigDecimal basePrice;
+
+    private BigDecimal pricePerHour;
+
+    private BigDecimal overtimeFee;
 
     private String status;
-
-    private Integer roleId;
-
-    private String roleName;
 
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
-
-    private LocalDateTime lastLoginAt;
-
-    private LocalDateTime lastActiveAt;
-
-    private Boolean online;
 }

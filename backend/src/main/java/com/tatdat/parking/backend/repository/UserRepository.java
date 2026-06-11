@@ -3,6 +3,7 @@ package com.tatdat.parking.backend.repository;
 import com.tatdat.parking.backend.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Integer> {
@@ -11,5 +12,15 @@ public interface UserRepository extends JpaRepository<User, Integer> {
 
     Optional<User> findByPhone(String phone);
 
+    boolean existsByEmail(String email);
+
+    boolean existsByPhone(String phone);
+
     long countByStatus(String status);
+
+    List<User> findAllByOrderByIdDesc();
+
+    List<User> findByRole_RoleNameOrderByIdDesc(String roleName);
+
+    List<User> findByStatusOrderByIdDesc(String status);
 }

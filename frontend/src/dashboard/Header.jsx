@@ -39,6 +39,7 @@ function Header() {
   const displayNotifications = notifications.slice(0, 8);
   const unreadCount = notifications.filter((notification) => !notification.isRead).length;
 
+  // --- Helper & Utility Functions ---
   const formatRole = (role) => {
     if (!role) return 'Staff';
 
@@ -112,7 +113,6 @@ function Header() {
 
     try {
       const parsedNotifications = JSON.parse(savedNotifications);
-
       setNotifications(Array.isArray(parsedNotifications) ? parsedNotifications : []);
     } catch (error) {
       console.error('Không thể đọc notifications từ localStorage:', error);
@@ -162,12 +162,42 @@ function Header() {
     setActiveToast(newNotification);
   };
 
+  // --- Effects Lifecycle ---
+  
+  // Sync local current user changes to the mutable Ref wrapper to bypass stale closures
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  // Toast Auto-dismissal setup
+  useEffect(() => {
+    if (!activeToast) return;
+
+    const timer = setTimeout(() => setActiveToast(null), 3500);
+    return () => clearTimeout(timer);
+  }, [activeToast]);
+
+  // Click Outside Listener for dropdown and config triggers
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpenDropdown(false);
+      }
+
+      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
+        setIsOpenSettings(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Application initialization & Custom Event binding
   useEffect(() => {
     const loadUserInformation = () => {
       const nextUser = getCurrentUserFromStorage();
-
       setCurrentUser(nextUser);
-      currentUserRef.current = nextUser;
     };
 
     const handlePageNotification = (event) => {
@@ -184,36 +214,9 @@ function Header() {
       window.removeEventListener('storage', loadUserInformation);
       window.removeEventListener('dispatchParkingNotification', handlePageNotification);
     };
-  }, []);
+  }, []); // Explicit, safe dependency run on mount
 
-  useEffect(() => {
-    currentUserRef.current = currentUser;
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!activeToast) return;
-
-    const timer = setTimeout(() => setActiveToast(null), 3500);
-
-    return () => clearTimeout(timer);
-  }, [activeToast]);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpenDropdown(false);
-      }
-
-      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
-        setIsOpenSettings(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
+  // --- Handlers ---
   const handleBellClick = () => {
     setIsOpenDropdown(!isOpenDropdown);
 
@@ -224,7 +227,6 @@ function Header() {
       }));
 
       saveNotificationsToStorage(nextNotifications);
-
       return nextNotifications;
     });
   };
@@ -253,7 +255,6 @@ function Header() {
     event.preventDefault();
 
     console.log('System config:', systemConfig);
-
     setIsOpenSettingsModal(false);
 
     triggerNewNotification({
@@ -274,6 +275,7 @@ function Header() {
         width: '100%'
       }}
     >
+      {/* Search Bar Container */}
       <div style={{ position: 'relative', width: '320px' }}>
         <Search
           size={16}
@@ -302,7 +304,9 @@ function Header() {
         />
       </div>
 
+      {/* Control Tools Panel */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', position: 'relative' }}>
+        {/* Notification Bell section */}
         <div ref={dropdownRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <button
             onClick={handleBellClick}
@@ -478,6 +482,7 @@ function Header() {
           )}
         </div>
 
+        {/* Settings Flyout */}
         <div ref={settingsRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <button
             onClick={() => setIsOpenSettings(!isOpenSettings)}
@@ -550,8 +555,10 @@ function Header() {
           )}
         </div>
 
+        {/* Separator Line */}
         <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.08)' }} />
 
+        {/* User Card Badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div style={{ textAlign: 'right' }}>
             <h4
@@ -598,6 +605,7 @@ function Header() {
         </div>
       </div>
 
+      {/* System Configurations Modal */}
       {isOpenSettingsModal && (
         <div
           style={{

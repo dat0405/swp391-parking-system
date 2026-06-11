@@ -97,6 +97,7 @@ function StatsGrid({ stats }) {
         <span style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: '600', letterSpacing: '0.05em' }}>TODAY'S REVENUE</span>
         <h2 style={{ fontSize: '2.25rem', fontWeight: '700', color: '#ffffff', margin: '0.25rem 0 0.75rem 0' }}>
           {formatShortVND(todayRevenue)} {/* 🌟 HIỂN THỊ CHỮ VND TẠI ĐÂY */}
+          {formatShortVND(todayRevenue)} {/*  HIỂN THỊ CHỮ VND TẠI ĐÂY */}
         </h2>
         <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
           Projected: {formatShortVND(todayRevenue * 1.45 || 12200000)} total

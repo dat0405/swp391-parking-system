@@ -13,10 +13,13 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.security.core.userdetails.UserDetails;
+import com.tatdat.parking.backend.dto.CreateUserRequest;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -30,10 +33,30 @@ public class UserController {
 
     @GetMapping
     public List<UserResponse> getAllUsers() {
-        return userRepository.findAll()
+        return userRepository.findAllByOrderByIdDesc()
                 .stream()
                 .map(this::mapToUserResponse)
                 .toList();
+    }
+
+    @PutMapping("/me/heartbeat")
+    public UserResponse heartbeat() {
+        User currentUser = getCurrentUser();
+
+        currentUser.setLastActiveAt(LocalDateTime.now());
+        User savedUser = userRepository.save(currentUser);
+
+        return mapToUserResponse(savedUser);
+    }
+
+    @PutMapping("/me/offline")
+    public UserResponse offline() {
+        User currentUser = getCurrentUser();
+
+        currentUser.setLastActiveAt(null);
+        User savedUser = userRepository.save(currentUser);
+
+        return mapToUserResponse(savedUser);
     }
 
     @GetMapping("/{id}")
@@ -42,6 +65,44 @@ public class UserController {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         return mapToUserResponse(user);
+    }
+
+    @PostMapping
+    public UserResponse createUser(@Valid @RequestBody CreateUserRequest request) {
+        String email = request.getEmail().trim().toLowerCase();
+
+        if (userRepository.existsByEmail(email)) {
+            throw new RuntimeException("Email already exists");
+        }
+
+        String phone = null;
+
+        if (request.getPhone() != null && !request.getPhone().isBlank()) {
+            phone = request.getPhone().trim();
+
+            if (userRepository.existsByPhone(phone)) {
+                throw new RuntimeException("Phone already exists");
+            }
+        }
+
+        Role role = roleRepository.findById(request.getRoleId())
+                .orElseThrow(() -> new RuntimeException("Role not found"));
+
+        User user = new User();
+        user.setFullName(request.getFullName().trim());
+        user.setEmail(email);
+        user.setPhone(phone);
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setRole(role);
+        user.setStatus("ACTIVE");
+        user.setCreatedAt(LocalDateTime.now());
+        user.setUpdatedAt(null);
+        user.setLastLoginAt(null);
+        user.setLastActiveAt(null);
+
+        User savedUser = userRepository.save(user);
+
+        return mapToUserResponse(savedUser);
     }
 
     @PutMapping("/{id}")
@@ -53,23 +114,36 @@ public class UserController {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (request.getFullName() != null && !request.getFullName().isBlank()) {
-            user.setFullName(request.getFullName());
+            user.setFullName(request.getFullName().trim());
         }
 
         if (request.getEmail() != null && !request.getEmail().isBlank()) {
-            userRepository.findByEmail(request.getEmail())
+            String email = request.getEmail().trim().toLowerCase();
+
+            userRepository.findByEmail(email)
                     .ifPresent(existingUser -> {
                         if (!existingUser.getId().equals(id)) {
                             throw new RuntimeException("Email already exists");
                         }
                     });
 
-            user.setEmail(request.getEmail());
+            user.setEmail(email);
         }
 
         if (request.getPhone() != null && !request.getPhone().isBlank()) {
-            user.setPhone(request.getPhone());
+            String phone = request.getPhone().trim();
+
+            userRepository.findByPhone(phone)
+                    .ifPresent(existingUser -> {
+                        if (!existingUser.getId().equals(id)) {
+                            throw new RuntimeException("Phone already exists");
+                        }
+                    });
+
+            user.setPhone(phone);
         }
+
+        user.setUpdatedAt(LocalDateTime.now());
 
         User savedUser = userRepository.save(user);
 
@@ -84,10 +158,16 @@ public class UserController {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        if (request.getRoleId() == null) {
+            throw new RuntimeException("Role is required");
+        }
+
         Role role = roleRepository.findById(request.getRoleId())
                 .orElseThrow(() -> new RuntimeException("Role not found"));
 
         user.setRole(role);
+        user.setUpdatedAt(LocalDateTime.now());
+
         User savedUser = userRepository.save(user);
 
         return mapToUserResponse(savedUser);
@@ -96,7 +176,7 @@ public class UserController {
     @PutMapping("/{id}/status")
     public UserResponse updateUserStatus(
             @PathVariable Integer id,
-            @RequestBody UpdateUserStatusRequest request
+            @Valid @RequestBody UpdateUserStatusRequest request
     ) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -117,6 +197,8 @@ public class UserController {
         }
 
         user.setStatus(status);
+        user.setUpdatedAt(LocalDateTime.now());
+
         User savedUser = userRepository.save(user);
 
         return mapToUserResponse(savedUser);
@@ -125,7 +207,7 @@ public class UserController {
     @PutMapping("/{id}/reset-password")
     public UserResponse resetPassword(
             @PathVariable Integer id,
-            @RequestBody ResetPasswordRequest request
+            @Valid @RequestBody ResetPasswordRequest request
     ) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -135,6 +217,8 @@ public class UserController {
         }
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setUpdatedAt(LocalDateTime.now());
+
         User savedUser = userRepository.save(user);
 
         return mapToUserResponse(savedUser);
@@ -178,7 +262,23 @@ public class UserController {
                 .email(user.getEmail())
                 .phone(user.getPhone())
                 .status(user.getStatus())
+                .roleId(user.getRole().getId())
                 .roleName(user.getRole().getRoleName())
+                .createdAt(user.getCreatedAt())
+                .updatedAt(user.getUpdatedAt())
+                .lastLoginAt(user.getLastLoginAt())
+                .lastActiveAt(user.getLastActiveAt())
+                .online(isOnline(user.getLastActiveAt()))
                 .build();
+    }
+
+    private boolean isOnline(LocalDateTime lastActiveAt) {
+        if (lastActiveAt == null) {
+            return false;
+        }
+
+        long minutes = Duration.between(lastActiveAt, LocalDateTime.now()).toMinutes();
+
+        return minutes <= 5;
     }
 }
