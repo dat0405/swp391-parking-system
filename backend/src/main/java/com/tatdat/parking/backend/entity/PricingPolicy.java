@@ -23,18 +23,6 @@ public class PricingPolicy {
     @JoinColumn(name = "vehicle_type_id", nullable = false)
     private VehicleType vehicleType;
 
-    @Column(name = "price_per_hour")
-    private BigDecimal pricePerHour;
-
-    @Column(name = "overtime_fee")
-    private BigDecimal overtimeFee;
-
-    @Column(name = "status", length = 20)
-    private String status;
-
-    @Column(name = "created_at")
-    private LocalDateTime createdAt;
-
     @Column(name = "base_price", nullable = false)
     private BigDecimal basePrice;
 
@@ -45,7 +33,7 @@ public class PricingPolicy {
     private BigDecimal overtimeFee;
 
     @Column(name = "status", length = 20)
-    private String status = "ACTIVE";
+    private String status;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -62,26 +50,30 @@ public class PricingPolicy {
         }
 
         updatedAt = now;
-
-        if (status == null || status.isBlank()) {
-            status = "ACTIVE";
-        }
-
-        if (overtimeFee == null) {
-            overtimeFee = BigDecimal.ZERO;
-        }
+        applyDefaultValues();
     }
 
     @PreUpdate
     public void onUpdate() {
         updatedAt = LocalDateTime.now();
+        applyDefaultValues();
+    }
 
+    private void applyDefaultValues() {
         if (status == null || status.isBlank()) {
             status = "ACTIVE";
         }
 
         if (overtimeFee == null) {
             overtimeFee = BigDecimal.ZERO;
+        }
+
+        if (basePrice == null) {
+            basePrice = BigDecimal.ZERO;
+        }
+
+        if (pricePerHour == null) {
+            pricePerHour = BigDecimal.ZERO;
         }
     }
 }

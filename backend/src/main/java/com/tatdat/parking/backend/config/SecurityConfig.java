@@ -4,6 +4,7 @@ import com.tatdat.parking.backend.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -40,14 +41,13 @@ public class SecurityConfig {
                         .accessDeniedHandler(new AccessDeniedHandlerImpl())
                 )
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        .requestMatchers("/api/auth/me").authenticated()
+
                         .requestMatchers(
-                                "/api/auth/register",
-                                "/api/auth/login",
-                                "/api/auth/refresh-token",
-                                "/api/auth/logout",
+                                "/api/auth/**",
                                 "/api/test/**",
-                                "/api/auth/forgot-password",
-                                "/api/auth/reset-password",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"
@@ -61,25 +61,70 @@ public class SecurityConfig {
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
                         .requestMatchers("/api/vehicle-types/**")
-                        .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
-
-                        .requestMatchers("/api/parking-facilities/**")
-                        .hasAnyRole("DRIVER", "PARKING_MANAGER", "SYSTEM_ADMIN")
-
-                        .requestMatchers("/api/parking-floors/**")
                         .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
-                        .requestMatchers("/api/parking-zones/**")
-                        .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/parking-facilities/**")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
-                        .requestMatchers("/api/parking-slots/**")
-                        .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/parking-facilities/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.PUT, "/api/parking-facilities/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.DELETE, "/api/parking-facilities/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.GET, "/api/parking-floors/**")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.POST, "/api/parking-floors/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.PUT, "/api/parking-floors/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.DELETE, "/api/parking-floors/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.GET, "/api/parking-zones/**")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.POST, "/api/parking-zones/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.PUT, "/api/parking-zones/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.DELETE, "/api/parking-zones/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.GET, "/api/parking-slots/**")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.POST, "/api/parking-slots/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.PUT, "/api/parking-slots/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.DELETE, "/api/parking-slots/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
 
                         .requestMatchers("/api/parking-sessions/**")
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
-                        .requestMatchers("/api/pricing-policies/**")
-                        .hasAnyRole("DRIVER", "PARKING_MANAGER", "SYSTEM_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/pricing-policies/**")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.POST, "/api/pricing-policies/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.PUT, "/api/pricing-policies/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.DELETE, "/api/pricing-policies/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
 
                         .requestMatchers("/api/bookings/**")
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")

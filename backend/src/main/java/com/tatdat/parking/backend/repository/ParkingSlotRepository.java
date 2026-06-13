@@ -7,23 +7,45 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface ParkingSlotRepository extends JpaRepository<ParkingSlot, Integer> {
 
     List<ParkingSlot> findByZoneId(Integer zoneId);
 
-    List<ParkingSlot> findByStatus(String status);
+    List<ParkingSlot> findByZone_Floor_Id(Integer floorId);
 
-    List<ParkingSlot> findByVehicleType_IdAndStatus(Integer vehicleTypeId, String status);
+    List<ParkingSlot> findByStatusIgnoreCase(String status);
 
-    List<ParkingSlot> findByVehicleType_IdAndZone_Floor_IdAndStatus(
+    Optional<ParkingSlot> findByIdAndStatusIgnoreCase(Integer id, String status);
+
+    Optional<ParkingSlot> findBySlotCodeIgnoreCase(String slotCode);
+
+    List<ParkingSlot> findByVehicleType_IdAndStatusIgnoreCase(
+            Integer vehicleTypeId,
+            String status
+    );
+
+    List<ParkingSlot> findByVehicleType_IdAndZone_Floor_IdAndStatusIgnoreCase(
             Integer vehicleTypeId,
             Integer floorId,
             String status
     );
 
-    long countByStatus(String status);
+    List<ParkingSlot> findByZone_Floor_IdAndVehicleType_IdAndStatusIgnoreCase(
+            Integer floorId,
+            Integer vehicleTypeId,
+            String status
+    );
+
+    List<ParkingSlot> findByZone_Floor_IdAndVehicleType_TypeNameIgnoreCaseAndStatusIgnoreCase(
+            Integer floorId,
+            String typeName,
+            String status
+    );
+
+    long countByStatusIgnoreCase(String status);
 
     @Query("""
             SELECT new com.tatdat.parking.backend.dto.ParkingFloorStatsResponse(
@@ -31,7 +53,7 @@ public interface ParkingSlotRepository extends JpaRepository<ParkingSlot, Intege
                 f.floorName,
                 vt.id,
                 vt.typeName,
-                SUM(CASE WHEN s.status = 'AVAILABLE' THEN 1L ELSE 0L END),
+                SUM(CASE WHEN UPPER(s.status) = 'AVAILABLE' THEN 1L ELSE 0L END),
                 COUNT(s.id)
             )
             FROM ParkingSlot s

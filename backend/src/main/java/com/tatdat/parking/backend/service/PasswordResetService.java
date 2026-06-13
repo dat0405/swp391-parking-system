@@ -4,6 +4,7 @@ import com.tatdat.parking.backend.entity.PasswordResetToken;
 import com.tatdat.parking.backend.entity.User;
 import com.tatdat.parking.backend.repository.PasswordResetTokenRepository;
 import com.tatdat.parking.backend.repository.UserRepository;
+import com.tatdat.parking.backend.security.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -20,18 +21,25 @@ public class PasswordResetService {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final RefreshTokenService refreshTokenService;
 
     private static final SecureRandom secureRandom = new SecureRandom();
 
     public void forgotPassword(String email) {
-        User user = userRepository.findByEmail(email)
+        if (email == null || email.isBlank()) {
+            throw new RuntimeException("Email is required");
+        }
+
+        String normalizedEmail = email.trim().toLowerCase();
+
+        User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new RuntimeException("Email not found"));
 
-        if ("BANNED".equals(user.getStatus())) {
+        if ("BANNED".equalsIgnoreCase(user.getStatus())) {
             throw new RuntimeException("Tài khoản của bạn đã bị khóa");
         }
 
-        revokeOldTokens(user);
+        revokeOldPasswordResetTokens(user);
 
         String otp = generateOtp();
         String otpHash = passwordEncoder.encode(otp);
@@ -43,6 +51,7 @@ public class PasswordResetService {
                 .expiryDate(LocalDateTime.now().plusMinutes(10))
                 .used(false)
                 .createdAt(LocalDateTime.now())
+                .usedAt(null)
                 .build();
 
         passwordResetTokenRepository.save(resetToken);
@@ -51,10 +60,24 @@ public class PasswordResetService {
     }
 
     public void resetPassword(String email, String otp, String newPassword) {
-        User user = userRepository.findByEmail(email)
+        if (email == null || email.isBlank()) {
+            throw new RuntimeException("Email is required");
+        }
+
+        if (otp == null || otp.isBlank()) {
+            throw new RuntimeException("OTP is required");
+        }
+
+        if (newPassword == null || newPassword.isBlank()) {
+            throw new RuntimeException("New password is required");
+        }
+
+        String normalizedEmail = email.trim().toLowerCase();
+
+        User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new RuntimeException("Email not found"));
 
-        if ("BANNED".equals(user.getStatus())) {
+        if ("BANNED".equalsIgnoreCase(user.getStatus())) {
             throw new RuntimeException("Tài khoản của bạn đã bị khóa");
         }
 
@@ -65,35 +88,46 @@ public class PasswordResetService {
             throw new RuntimeException("OTP not found");
         }
 
-        PasswordResetToken token = tokens.get(0);
+        PasswordResetToken resetToken = tokens.get(0);
 
-        if (token.getExpiryDate().isBefore(LocalDateTime.now())) {
+        if (resetToken.getExpiryDate() == null ||
+                resetToken.getExpiryDate().isBefore(LocalDateTime.now())) {
+
+            resetToken.setUsed(true);
+            resetToken.setUsedAt(LocalDateTime.now());
+            passwordResetTokenRepository.save(resetToken);
+
             throw new RuntimeException("OTP has expired");
         }
 
-        if (!passwordEncoder.matches(otp, token.getOtpHash())) {
+        if (!passwordEncoder.matches(otp.trim(), resetToken.getOtpHash())) {
             throw new RuntimeException("Invalid OTP");
         }
 
-        if (newPassword == null || newPassword.isBlank()) {
-            throw new RuntimeException("New password is required");
-        }
-
         user.setPassword(passwordEncoder.encode(newPassword));
+        user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
 
-        token.setUsed(true);
-        token.setUsedAt(LocalDateTime.now());
-        passwordResetTokenRepository.save(token);
+        resetToken.setUsed(true);
+        resetToken.setUsedAt(LocalDateTime.now());
+        passwordResetTokenRepository.save(resetToken);
+
+        refreshTokenService.deleteAllRefreshTokensByUser(user);
     }
 
-    private void revokeOldTokens(User user) {
+    private void revokeOldPasswordResetTokens(User user) {
         List<PasswordResetToken> oldTokens =
                 passwordResetTokenRepository.findByUserAndUsedFalseOrderByCreatedAtDesc(user);
 
+        if (oldTokens.isEmpty()) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
         for (PasswordResetToken token : oldTokens) {
             token.setUsed(true);
-            token.setUsedAt(LocalDateTime.now());
+            token.setUsedAt(now);
         }
 
         passwordResetTokenRepository.saveAll(oldTokens);

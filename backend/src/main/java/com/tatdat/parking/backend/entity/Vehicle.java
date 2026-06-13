@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class Vehicle {
 
     @Id
@@ -31,6 +32,30 @@ public class Vehicle {
     @Column(length = 30)
     private String color;
 
-    @Column(name = "created_at")
+    @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
+
+    @PrePersist
+    public void prePersist() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+
+        normalizeData();
+    }
+
+    @PreUpdate
+    public void preUpdate() {
+        normalizeData();
+    }
+
+    private void normalizeData() {
+        if (licensePlate != null) {
+            licensePlate = licensePlate.trim().toUpperCase();
+        }
+
+        if (color != null) {
+            color = color.trim();
+        }
+    }
 }

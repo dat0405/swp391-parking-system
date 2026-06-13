@@ -11,8 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -34,10 +32,10 @@ public class AdminDashboardController {
     public AdminDashboardResponse getDashboard() {
         long totalSlots = parkingSlotRepository.count();
 
-        long availableSlots = parkingSlotRepository.countByStatus("AVAILABLE");
-        long occupiedSlots = parkingSlotRepository.countByStatus("OCCUPIED");
-        long reservedSlots = parkingSlotRepository.countByStatus("RESERVED");
-        long maintenanceSlots = parkingSlotRepository.countByStatus("MAINTENANCE");
+        long availableSlots = parkingSlotRepository.countByStatusIgnoreCase("AVAILABLE");
+        long occupiedSlots = parkingSlotRepository.countByStatusIgnoreCase("OCCUPIED");
+        long reservedSlots = parkingSlotRepository.countByStatusIgnoreCase("RESERVED");
+        long maintenanceSlots = parkingSlotRepository.countByStatusIgnoreCase("MAINTENANCE");
 
         long activeOccupancy = parkingSessionRepository.countByStatus("ACTIVE");
 
@@ -76,7 +74,7 @@ public class AdminDashboardController {
     public List<DashboardTrendResponse> getDashboardTrends(
             @RequestParam(defaultValue = "DAILY") String mode
     ) {
-        String normalizedMode = mode.trim().toUpperCase();
+        String normalizedMode = mode == null ? "DAILY" : mode.trim().toUpperCase();
 
         if ("WEEKLY".equals(normalizedMode)) {
             return getWeeklyTrend();
@@ -125,18 +123,51 @@ public class AdminDashboardController {
 
     private List<DashboardTrendResponse> getWeeklyTrend() {
         LocalDate today = LocalDate.now();
-
         LocalDate monday = today.with(DayOfWeek.MONDAY);
 
         List<DashboardTrendResponse> trends = new ArrayList<>();
 
-        trends.add(buildTrendItem("Mon", monday.atStartOfDay(), monday.plusDays(1).atStartOfDay()));
-        trends.add(buildTrendItem("Tue", monday.plusDays(1).atStartOfDay(), monday.plusDays(2).atStartOfDay()));
-        trends.add(buildTrendItem("Wed", monday.plusDays(2).atStartOfDay(), monday.plusDays(3).atStartOfDay()));
-        trends.add(buildTrendItem("Thu", monday.plusDays(3).atStartOfDay(), monday.plusDays(4).atStartOfDay()));
-        trends.add(buildTrendItem("Fri", monday.plusDays(4).atStartOfDay(), monday.plusDays(5).atStartOfDay()));
-        trends.add(buildTrendItem("Sat", monday.plusDays(5).atStartOfDay(), monday.plusDays(6).atStartOfDay()));
-        trends.add(buildTrendItem("Sun", monday.plusDays(6).atStartOfDay(), monday.plusDays(7).atStartOfDay()));
+        trends.add(buildTrendItem(
+                "Mon",
+                monday.atStartOfDay(),
+                monday.plusDays(1).atStartOfDay()
+        ));
+
+        trends.add(buildTrendItem(
+                "Tue",
+                monday.plusDays(1).atStartOfDay(),
+                monday.plusDays(2).atStartOfDay()
+        ));
+
+        trends.add(buildTrendItem(
+                "Wed",
+                monday.plusDays(2).atStartOfDay(),
+                monday.plusDays(3).atStartOfDay()
+        ));
+
+        trends.add(buildTrendItem(
+                "Thu",
+                monday.plusDays(3).atStartOfDay(),
+                monday.plusDays(4).atStartOfDay()
+        ));
+
+        trends.add(buildTrendItem(
+                "Fri",
+                monday.plusDays(4).atStartOfDay(),
+                monday.plusDays(5).atStartOfDay()
+        ));
+
+        trends.add(buildTrendItem(
+                "Sat",
+                monday.plusDays(5).atStartOfDay(),
+                monday.plusDays(6).atStartOfDay()
+        ));
+
+        trends.add(buildTrendItem(
+                "Sun",
+                monday.plusDays(6).atStartOfDay(),
+                monday.plusDays(7).atStartOfDay()
+        ));
 
         return trends;
     }
