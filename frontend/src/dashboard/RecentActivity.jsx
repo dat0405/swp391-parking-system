@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Car, ChevronLeft, ChevronRight, X, ListFilter } from 'lucide-react';
 
 function RecentActivity({ activities = [] }) {
-  // ĐÃ SỬA: Loại bỏ hoàn toàn biến mock cũ, dùng trực tiếp mảng từ Backend truyền vào
+  // 🌟 ĐÃ SỬA: Loại bỏ hoàn toàn biến mock cũ, dùng trực tiếp mảng từ Backend truyền vào
   const finalData = activities || [];
 
   // Cấu hình hiển thị tại Dashboard chính (Cố định tối đa 3 xe mới nhất)

@@ -18,7 +18,7 @@ public class RefreshToken {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @Column(nullable = false, unique = true, length = 500)
+    @Column(name = "token", nullable = false, unique = true, length = 500)
     private String token;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -28,7 +28,7 @@ public class RefreshToken {
     @Column(name = "expiry_date", nullable = false)
     private LocalDateTime expiryDate;
 
-    @Column(nullable = false)
+    @Column(name = "revoked", nullable = false)
     private Boolean revoked;
 
     @Column(name = "created_at", nullable = false)
@@ -39,10 +39,37 @@ public class RefreshToken {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
 
-        if (this.revoked == null) {
-            this.revoked = false;
+        if (createdAt == null) {
+            createdAt = now;
+        }
+
+        if (revoked == null) {
+            revoked = false;
+        }
+
+        if (!revoked) {
+            revokedAt = null;
+        }
+
+        if (revoked && revokedAt == null) {
+            revokedAt = now;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        if (revoked == null) {
+            revoked = false;
+        }
+
+        if (!revoked) {
+            revokedAt = null;
+        }
+
+        if (revoked && revokedAt == null) {
+            revokedAt = LocalDateTime.now();
         }
     }
 }

@@ -16,17 +16,25 @@ import com.tatdat.parking.backend.repository.UserRepository;
 import com.tatdat.parking.backend.security.JwtService;
 import com.tatdat.parking.backend.security.RefreshTokenService;
 import com.tatdat.parking.backend.service.PasswordResetService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
+
+    private static final String ACCESS_TOKEN_COOKIE = "access_token";
+    private static final String REFRESH_TOKEN_COOKIE = "refresh_token";
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -37,7 +45,6 @@ public class AuthController {
 
     @PostMapping("/register")
     public String register(@Valid @RequestBody RegisterRequest request) {
-
         if (request.getFullName() == null || request.getFullName().isBlank()) {
             throw new RuntimeException("Full name is required");
         }
@@ -63,7 +70,7 @@ public class AuthController {
         User existingUser = userRepository.findByEmail(email).orElse(null);
 
         if (existingUser != null) {
-            if ("BANNED".equals(existingUser.getStatus())) {
+            if ("BANNED".equalsIgnoreCase(existingUser.getStatus())) {
                 throw new RuntimeException("Email này đã bị vô hiệu hóa và không thể đăng ký lại");
             }
 
@@ -101,26 +108,20 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
+    public AuthResponse login(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletResponse response
+    ) {
+        String email = request.getEmail().trim().toLowerCase();
 
-        User user = userRepository.findByEmail(request.getEmail().trim().toLowerCase())
+        User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Invalid email or password"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new RuntimeException("Invalid email or password");
         }
 
-        if ("BANNED".equals(user.getStatus())) {
-            throw new AccountBannedException("Tài khoản của bạn đã bị khóa");
-        }
-
-        if ("INACTIVE".equals(user.getStatus())) {
-            throw new RuntimeException("Tài khoản của bạn chưa được kích hoạt");
-        }
-
-        if (!"ACTIVE".equals(user.getStatus())) {
-            throw new RuntimeException("Tài khoản không thể đăng nhập với trạng thái hiện tại");
-        }
+        validateUserCanAuthenticate(user);
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -132,42 +133,90 @@ public class AuthController {
         String accessToken = jwtService.generateAccessToken(user);
         RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
 
-        return AuthResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken.getToken())
-                .userId(user.getId())
-                .fullName(user.getFullName())
-                .email(user.getEmail())
-                .role(user.getRole().getRoleName())
-                .build();
+        addAuthCookies(response, accessToken, refreshToken.getToken());
+
+        return buildAuthResponse(user, accessToken, refreshToken.getToken());
     }
 
     @PostMapping("/refresh-token")
-    public AuthResponse refreshToken(@RequestBody RefreshTokenRequest request) {
+    public AuthResponse refreshToken(
+            @CookieValue(name = REFRESH_TOKEN_COOKIE, required = false) String refreshTokenFromCookie,
+            @RequestBody(required = false) RefreshTokenRequest request,
+            HttpServletResponse response
+    ) {
+        String refreshTokenValue = refreshTokenFromCookie;
 
-        RefreshToken oldRefreshToken = refreshTokenService.verifyRefreshToken(request.getRefreshToken());
+        if ((refreshTokenValue == null || refreshTokenValue.isBlank())
+                && request != null
+                && request.getRefreshToken() != null
+                && !request.getRefreshToken().isBlank()) {
+            refreshTokenValue = request.getRefreshToken();
+        }
+
+        if (refreshTokenValue == null || refreshTokenValue.isBlank()) {
+            throw new RuntimeException("Refresh token is required");
+        }
+
+        RefreshToken oldRefreshToken = refreshTokenService.verifyRefreshToken(refreshTokenValue);
 
         User user = oldRefreshToken.getUser();
 
+        validateUserCanAuthenticate(user);
+
         refreshTokenService.revokeRefreshToken(oldRefreshToken.getToken());
+
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setLastActiveAt(now);
+        user.setUpdatedAt(now);
+        userRepository.save(user);
 
         String newAccessToken = jwtService.generateAccessToken(user);
         RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(user);
 
-        return AuthResponse.builder()
-                .accessToken(newAccessToken)
-                .refreshToken(newRefreshToken.getToken())
-                .userId(user.getId())
-                .fullName(user.getFullName())
-                .email(user.getEmail())
-                .role(user.getRole().getRoleName())
-                .build();
+        addAuthCookies(response, newAccessToken, newRefreshToken.getToken());
+
+        return buildAuthResponse(user, newAccessToken, newRefreshToken.getToken());
     }
 
     @PostMapping("/logout")
-    public String logout(@RequestBody LogoutRequest request) {
-        refreshTokenService.revokeRefreshToken(request.getRefreshToken());
+    public String logout(
+            @CookieValue(name = REFRESH_TOKEN_COOKIE, required = false) String refreshTokenFromCookie,
+            @RequestBody(required = false) LogoutRequest request,
+            HttpServletResponse response
+    ) {
+        String refreshTokenValue = refreshTokenFromCookie;
+
+        if ((refreshTokenValue == null || refreshTokenValue.isBlank())
+                && request != null
+                && request.getRefreshToken() != null
+                && !request.getRefreshToken().isBlank()) {
+            refreshTokenValue = request.getRefreshToken();
+        }
+
+        if (refreshTokenValue != null && !refreshTokenValue.isBlank()) {
+            refreshTokenService.revokeRefreshToken(refreshTokenValue);
+        }
+
+        clearAuthCookies(response);
+
         return "Logout successfully";
+    }
+
+    @GetMapping("/me")
+    public AuthResponse getCurrentUser(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new RuntimeException("Unauthenticated");
+        }
+
+        String email = authentication.getName().trim().toLowerCase();
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        validateUserCanAuthenticate(user);
+
+        return buildAuthResponse(user, null, null);
     }
 
     @PostMapping("/forgot-password")
@@ -185,5 +234,80 @@ public class AuthController {
         );
 
         return "Password has been reset successfully";
+    }
+
+    private void addAuthCookies(
+            HttpServletResponse response,
+            String accessToken,
+            String refreshToken
+    ) {
+        ResponseCookie accessTokenCookie = ResponseCookie.from(ACCESS_TOKEN_COOKIE, accessToken)
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(Duration.ofMinutes(15))
+                .build();
+
+        ResponseCookie refreshTokenCookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, refreshToken)
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/api/auth")
+                .maxAge(Duration.ofDays(7))
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, accessTokenCookie.toString());
+        response.addHeader(HttpHeaders.SET_COOKIE, refreshTokenCookie.toString());
+    }
+
+    private void clearAuthCookies(HttpServletResponse response) {
+        ResponseCookie accessTokenCookie = ResponseCookie.from(ACCESS_TOKEN_COOKIE, "")
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(0)
+                .build();
+
+        ResponseCookie refreshTokenCookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, "")
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/api/auth")
+                .maxAge(0)
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, accessTokenCookie.toString());
+        response.addHeader(HttpHeaders.SET_COOKIE, refreshTokenCookie.toString());
+    }
+
+    private void validateUserCanAuthenticate(User user) {
+        if ("BANNED".equalsIgnoreCase(user.getStatus())) {
+            throw new AccountBannedException("Tài khoản của bạn đã bị khóa");
+        }
+
+        if ("INACTIVE".equalsIgnoreCase(user.getStatus())) {
+            throw new RuntimeException("Tài khoản của bạn chưa được kích hoạt");
+        }
+
+        if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+            throw new RuntimeException("Tài khoản không thể đăng nhập với trạng thái hiện tại");
+        }
+    }
+
+    private AuthResponse buildAuthResponse(
+            User user,
+            String accessToken,
+            String refreshToken
+    ) {
+        return AuthResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .userId(user.getId())
+                .fullName(user.getFullName())
+                .email(user.getEmail())
+                .role(user.getRole().getRoleName())
+                .build();
     }
 }

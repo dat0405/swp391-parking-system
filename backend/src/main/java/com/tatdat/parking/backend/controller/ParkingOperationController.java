@@ -5,6 +5,7 @@ import com.tatdat.parking.backend.dto.CheckInRequest;
 import com.tatdat.parking.backend.dto.CheckInResponse;
 import com.tatdat.parking.backend.dto.CheckOutRequest;
 import com.tatdat.parking.backend.dto.CheckOutResponse;
+import com.tatdat.parking.backend.dto.ParkingFloorStatsResponse;
 import com.tatdat.parking.backend.entity.ParkingSession;
 import com.tatdat.parking.backend.entity.ParkingSlot;
 import com.tatdat.parking.backend.entity.Payment;
@@ -19,7 +20,6 @@ import com.tatdat.parking.backend.repository.VehicleRepository;
 import com.tatdat.parking.backend.repository.VehicleTypeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
-import com.tatdat.parking.backend.dto.ParkingFloorStatsResponse;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -52,6 +52,10 @@ public class ParkingOperationController {
             throw new RuntimeException("Vehicle type is required");
         }
 
+        if (request.getFloorId() == null) {
+            throw new RuntimeException("Parking floor is required");
+        }
+
         String licensePlate = request.getLicensePlate().trim().toUpperCase();
 
         VehicleType vehicleType = vehicleTypeRepository.findById(request.getVehicleTypeId())
@@ -62,7 +66,6 @@ public class ParkingOperationController {
                     Vehicle newVehicle = new Vehicle();
                     newVehicle.setLicensePlate(licensePlate);
                     newVehicle.setVehicleType(vehicleType);
-
                     return vehicleRepository.save(newVehicle);
                 });
 
@@ -76,19 +79,18 @@ public class ParkingOperationController {
                     throw new RuntimeException("Vehicle is already checked in");
                 });
 
-        if (request.getFloorId() == null) {
-            throw new RuntimeException("Parking floor is required");
-        }
-
         ParkingSlot slot = parkingSlotRepository
-                .findByVehicleType_IdAndZone_Floor_IdAndStatus(
+                .findByVehicleType_IdAndZone_Floor_IdAndStatusIgnoreCase(
                         request.getVehicleTypeId(),
                         request.getFloorId(),
                         "AVAILABLE"
                 )
                 .stream()
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException("No available slot for this vehicle type on selected floor"));
+                .orElseThrow(() ->
+                        new RuntimeException("No available slot for this vehicle type on selected floor")
+                );
+
         LocalDateTime now = LocalDateTime.now();
         String ticketId = generateUniqueTicketId();
 
@@ -114,6 +116,7 @@ public class ParkingOperationController {
                 .status(savedSession.getStatus())
                 .build();
     }
+
     @GetMapping("/check-out/search")
     public CheckOutResponse searchCheckOut(
             @RequestParam(required = false) String ticketId,
@@ -150,7 +153,7 @@ public class ParkingOperationController {
                 .paymentMethod(
                         request.getPaymentMethod() == null || request.getPaymentMethod().isBlank()
                                 ? "CASH"
-                                : request.getPaymentMethod()
+                                : request.getPaymentMethod().trim().toUpperCase()
                 )
                 .paymentStatus("PAID")
                 .paymentTime(checkOutTime)

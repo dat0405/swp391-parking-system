@@ -177,6 +177,19 @@ public class PricingPolicyController {
             throw new RuntimeException("Price per hour is required");
         }
 
+        if (request.getBasePrice().compareTo(BigDecimal.ZERO) < 0) {
+            throw new RuntimeException("Base price cannot be negative");
+        }
+
+        if (request.getPricePerHour().compareTo(BigDecimal.ZERO) < 0) {
+            throw new RuntimeException("Price per hour cannot be negative");
+        }
+
+        if (request.getOvertimeFee() != null
+                && request.getOvertimeFee().compareTo(BigDecimal.ZERO) < 0) {
+            throw new RuntimeException("Overtime fee cannot be negative");
+        }
+
         List<PricingPolicy> pricingPolicies =
                 pricingPolicyRepository.findByVehicleType_Id(vehicleTypeId);
 

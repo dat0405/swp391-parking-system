@@ -52,65 +52,51 @@ function LoginPage() {
     return '/dashboard';
   };
 
-  const handleLogin = async (event) => {
-    event.preventDefault();
-    setIsLoading(true);
+const handleLogin = async (event) => {
+  event.preventDefault();
+  setIsLoading(true);
 
-    const email = formData.email.trim().toLowerCase();
+  const email = formData.email.trim().toLowerCase();
 
-    try {
-      const response = await axiosClient.post('/auth/login', {
-        email,
-        password: formData.password
-      });
+  try {
+    await axiosClient.post('/auth/login', {
+      email,
+      password: formData.password
+    });
 
-      const data = response.data;
+    const meResponse = await axiosClient.get('/auth/me');
+    const data = meResponse.data || {};
 
-      const accessToken = data.accessToken || data.token || data.jwt;
-      const refreshToken = data.refreshToken;
+    const userObj = {
+      userId: data.userId,
+      fullName: data.fullName || data.name || data.email || email,
+      email: data.email || email,
+      role: data.role || 'PARKING_STAFF'
+    };
 
-      const userObj = {
-        userId: data.userId,
-        fullName: data.fullName || data.name || data.email || email,
-        email: data.email || email,
-        role: data.role || 'PARKING_STAFF'
-      };
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.setItem('user', JSON.stringify(userObj));
 
-      if (!accessToken) {
-        showToast('Missing access token from server payload.', 'error');
-        setIsLoading(false);
-        return;
-      }
+    showToast('Login successful! Redirecting...', 'success');
 
-      if (!refreshToken) {
-        showToast('Missing refresh token from server payload.', 'error');
-        setIsLoading(false);
-        return;
-      }
-
-      localStorage.setItem('token', accessToken);
-      localStorage.setItem('refreshToken', refreshToken);
-      localStorage.setItem('user', JSON.stringify(userObj));
-
-      showToast('Login successful! Redirecting...', 'success');
-
-      setTimeout(() => {
-        setIsLoading(false);
-        navigate(getRedirectPathByRole(userObj.role), { replace: true });
-      }, 800);
-    } catch (error) {
-      console.error('Lỗi API login:', error);
-
-      showToast(
-        error.response?.data?.message ||
-          error.response?.data ||
-          'Invalid email or password.',
-        'error'
-      );
-
+    setTimeout(() => {
       setIsLoading(false);
-    }
-  };
+      window.location.href = getRedirectPathByRole(userObj.role);
+    }, 800);
+  } catch (error) {
+    console.error('Lỗi API login:', error);
+
+    showToast(
+      error.response?.data?.message ||
+        error.response?.data ||
+        'Invalid email or password.',
+      'error'
+    );
+
+    setIsLoading(false);
+  }
+};
 
   return (
     <div className="auth-container" style={{ position: 'relative' }}>
@@ -146,7 +132,9 @@ function LoginPage() {
             <span style={{ fontWeight: '800', color: '#fff' }}>P</span>
           </div>
 
-          <span style={{ fontWeight: '600', color: '#f8fafc' }}>ParkSystem Pro</span>
+          <span style={{ fontWeight: '600', color: '#f8fafc' }}>
+            ParkSystem Pro
+          </span>
         </div>
 
         <div style={{ margin: 'auto 0', maxWidth: '400px', width: '100%' }}>
@@ -237,7 +225,11 @@ function LoginPage() {
                   cursor: 'pointer'
                 }}
               >
-                <input type="checkbox" style={{ accentColor: '#3b82f6' }} disabled={isLoading} />
+                <input
+                  type="checkbox"
+                  style={{ accentColor: '#3b82f6' }}
+                  disabled={isLoading}
+                />
                 Remember me
               </label>
 
@@ -284,7 +276,7 @@ function LoginPage() {
               textAlign: 'center'
             }}
           >
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <span
               style={{
                 color: '#3b82f6',

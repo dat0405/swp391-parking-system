@@ -2,27 +2,36 @@ package com.tatdat.parking.backend.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
+import lombok.*;
 
 @Entity
 @Table(name = "parking_slots")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class ParkingSlot {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "zone_id", nullable = false)
     @JsonIgnoreProperties({
-            "parkingFloor",
+            "parkingSlots",
+            "slots",
             "hibernateLazyInitializer",
             "handler"
     })
     private ParkingZone zone;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "vehicle_type_id", nullable = false)
     @JsonIgnoreProperties({
+            "parkingSlots",
+            "slots",
             "hibernateLazyInitializer",
             "handler"
     })
@@ -31,46 +40,28 @@ public class ParkingSlot {
     @Column(name = "slot_code", nullable = false, length = 50)
     private String slotCode;
 
-    @Column(length = 20)
+    @Column(name = "status", length = 20)
     private String status;
 
-    public Integer getId() {
-        return id;
+    @PrePersist
+    public void onCreate() {
+        applyDefaultValues();
     }
 
-    public void setId(Integer id) {
-        this.id = id;
+    @PreUpdate
+    public void onUpdate() {
+        applyDefaultValues();
     }
 
-    public ParkingZone getZone() {
-        return zone;
-    }
+    private void applyDefaultValues() {
+        if (status == null || status.isBlank()) {
+            status = "AVAILABLE";
+        }
 
-    public void setZone(ParkingZone zone) {
-        this.zone = zone;
-    }
+        status = status.trim().toUpperCase();
 
-    public VehicleType getVehicleType() {
-        return vehicleType;
-    }
-
-    public void setVehicleType(VehicleType vehicleType) {
-        this.vehicleType = vehicleType;
-    }
-
-    public String getSlotCode() {
-        return slotCode;
-    }
-
-    public void setSlotCode(String slotCode) {
-        this.slotCode = slotCode;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
+        if (slotCode != null) {
+            slotCode = slotCode.trim().toUpperCase();
+        }
     }
 }

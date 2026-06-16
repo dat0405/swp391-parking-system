@@ -8,4 +8,8 @@ import java.util.Optional;
 public interface VehicleRepository extends JpaRepository<Vehicle, Integer> {
 
     Optional<Vehicle> findByLicensePlate(String licensePlate);
+
+    Optional<Vehicle> findByLicensePlateIgnoreCase(String licensePlate);
+
+    boolean existsByLicensePlateIgnoreCase(String licensePlate);
 }

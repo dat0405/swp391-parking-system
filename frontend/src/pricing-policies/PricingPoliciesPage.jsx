@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { pricingPolicyApi } from '../api/pricingPolicyApi';
 
+// Thành phần  trợ hiển thị các ô thống kê (StatBox Component)
 const StatBox = ({ label, value, sub, color }) => (
   <div
     style={{

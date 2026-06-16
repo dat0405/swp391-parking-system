@@ -3,9 +3,10 @@ import React from 'react';
 function ChartsSection({
   trendMode = 'DAILY',
   setTrendMode,
-  trendData = [],
-  trendLoading = false
+  trendData = []
 }) {
+  const hasTrendData = Array.isArray(trendData) && trendData.length > 0;
+
   const maxValue = Math.max(
     ...trendData.map((item) => Number(item.value || 0)),
     1
@@ -24,7 +25,7 @@ function ChartsSection({
   };
 
   const handleChangeMode = (mode) => {
-    if (setTrendMode) {
+    if (setTrendMode && mode !== trendMode) {
       setTrendMode(mode);
     }
   };
@@ -61,7 +62,6 @@ function ChartsSection({
               className={`tab-btn ${trendMode === 'DAILY' ? 'active' : ''}`}
               type="button"
               onClick={() => handleChangeMode('DAILY')}
-              disabled={trendLoading}
             >
               DAILY
             </button>
@@ -70,27 +70,13 @@ function ChartsSection({
               className={`tab-btn ${trendMode === 'WEEKLY' ? 'active' : ''}`}
               type="button"
               onClick={() => handleChangeMode('WEEKLY')}
-              disabled={trendLoading}
             >
               WEEKLY
             </button>
           </div>
         </div>
 
-        {trendLoading ? (
-          <div
-            style={{
-              height: '250px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#94a3b8',
-              fontSize: '0.85rem'
-            }}
-          >
-            Loading trend data...
-          </div>
-        ) : trendData.length === 0 ? (
+        {!hasTrendData ? (
           <div
             style={{
               height: '250px',

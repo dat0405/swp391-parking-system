@@ -1,7 +1,12 @@
 package com.tatdat.parking.backend.service.impl;
 
-import com.tatdat.parking.backend.dto.*;
-import com.tatdat.parking.backend.repository.*;
+import com.tatdat.parking.backend.dto.DashboardDTO;
+import com.tatdat.parking.backend.dto.OccupancyReportDTO;
+import com.tatdat.parking.backend.dto.RevenueReportDTO;
+import com.tatdat.parking.backend.dto.VehicleTrafficDTO;
+import com.tatdat.parking.backend.repository.ParkingSessionRepository;
+import com.tatdat.parking.backend.repository.ParkingSlotRepository;
+import com.tatdat.parking.backend.repository.PaymentRepository;
 import com.tatdat.parking.backend.service.ReportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,12 +25,13 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public RevenueReportDTO getRevenueReport() {
+        BigDecimal revenue = paymentRepository.getTotalRevenue();
 
-        BigDecimal revenue =
-                paymentRepository.getTotalRevenue();
+        if (revenue == null) {
+            revenue = BigDecimal.ZERO;
+        }
 
-        long totalTransactions =
-                paymentRepository.countByPaymentStatus("PAID");
+        long totalTransactions = paymentRepository.countByPaymentStatus("PAID");
 
         return new RevenueReportDTO(
                 revenue,
@@ -35,18 +41,16 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public OccupancyReportDTO getOccupancyReport() {
-
-        long totalSlots =
-                parkingSlotRepository.count();
+        long totalSlots = parkingSlotRepository.count();
 
         long occupiedSlots =
-                parkingSlotRepository.countByStatus("OCCUPIED");
+                parkingSlotRepository.countByStatusIgnoreCase("OCCUPIED");
 
         long availableSlots =
-                parkingSlotRepository.countByStatus("AVAILABLE");
+                parkingSlotRepository.countByStatusIgnoreCase("AVAILABLE");
 
         long reservedSlots =
-                parkingSlotRepository.countByStatus("RESERVED");
+                parkingSlotRepository.countByStatusIgnoreCase("RESERVED");
 
         double occupancyRate =
                 totalSlots == 0
@@ -64,22 +68,16 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public VehicleTrafficDTO getVehicleTraffic() {
-
         LocalDate today = LocalDate.now();
 
-        LocalDateTime start =
-                today.atStartOfDay();
-
-        LocalDateTime end =
-                today.plusDays(1).atStartOfDay();
+        LocalDateTime start = today.atStartOfDay();
+        LocalDateTime end = today.plusDays(1).atStartOfDay();
 
         long checkIns =
-                parkingSessionRepository
-                        .countByCheckInTimeBetween(start, end);
+                parkingSessionRepository.countByCheckInTimeBetween(start, end);
 
         long checkOuts =
-                parkingSessionRepository
-                        .countByCheckOutTimeBetween(start, end);
+                parkingSessionRepository.countByCheckOutTimeBetween(start, end);
 
         return new VehicleTrafficDTO(
                 checkIns,
@@ -89,15 +87,9 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public DashboardDTO getDashboard() {
-
-        RevenueReportDTO revenue =
-                getRevenueReport();
-
-        OccupancyReportDTO occupancy =
-                getOccupancyReport();
-
-        VehicleTrafficDTO traffic =
-                getVehicleTraffic();
+        RevenueReportDTO revenue = getRevenueReport();
+        OccupancyReportDTO occupancy = getOccupancyReport();
+        VehicleTrafficDTO traffic = getVehicleTraffic();
 
         return new DashboardDTO(
                 revenue.getTotalRevenue(),

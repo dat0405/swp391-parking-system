@@ -164,14 +164,14 @@ function UserManagementPage() {
   };
 
   useEffect(() => {
-  fetchData();
-
-  const intervalId = setInterval(() => {
     fetchData();
-  }, 30000);
 
-  return () => clearInterval(intervalId);
-}, []);
+    const intervalId = setInterval(() => {
+      fetchData();
+    }, 30000);
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   const openEditRoleModal = (user) => {
     setEditingUser(user);
@@ -310,7 +310,7 @@ function UserManagementPage() {
           overflow: "hidden",
         }}
       >
-        <Header fullName="Võ Hoàng Anh" role="Administrator" />
+        <Header />
 
         <div
           style={{

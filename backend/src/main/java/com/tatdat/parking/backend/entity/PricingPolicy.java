@@ -45,7 +45,7 @@ public class PricingPolicy {
     private BigDecimal overtimeFee;
 
     @Column(name = "status", length = 20)
-    private String status = "ACTIVE";
+    private String status;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -62,26 +62,30 @@ public class PricingPolicy {
         }
 
         updatedAt = now;
-
-        if (status == null || status.isBlank()) {
-            status = "ACTIVE";
-        }
-
-        if (overtimeFee == null) {
-            overtimeFee = BigDecimal.ZERO;
-        }
+        applyDefaultValues();
     }
 
     @PreUpdate
     public void onUpdate() {
         updatedAt = LocalDateTime.now();
+        applyDefaultValues();
+    }
 
+    private void applyDefaultValues() {
         if (status == null || status.isBlank()) {
             status = "ACTIVE";
         }
 
         if (overtimeFee == null) {
             overtimeFee = BigDecimal.ZERO;
+        }
+
+        if (basePrice == null) {
+            basePrice = BigDecimal.ZERO;
+        }
+
+        if (pricePerHour == null) {
+            pricePerHour = BigDecimal.ZERO;
         }
     }
 }
