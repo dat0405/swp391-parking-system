@@ -65,6 +65,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/parking-zones/**")
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
+                        .requestMatchers("/api/parking-zone-management/**")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+
                         .requestMatchers("/api/parking-slots/**")
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
