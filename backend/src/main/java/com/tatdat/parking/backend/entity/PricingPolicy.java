@@ -42,4 +42,7 @@ public class PricingPolicy {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    private BigDecimal weekendMultiplier;
+    private BigDecimal holidayMultiplier;
 }

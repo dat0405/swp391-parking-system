@@ -50,4 +50,7 @@ public class ParkingSession {
 
     @Column(length = 20)
     private String status;
+
+    @Column(length = 20)
+    private String ticketStatus; // ACTIVE, LOST, CLOSED
 }

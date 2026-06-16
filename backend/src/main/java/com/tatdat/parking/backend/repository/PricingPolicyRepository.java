@@ -14,4 +14,6 @@ public interface PricingPolicyRepository extends JpaRepository<PricingPolicy, In
             Integer vehicleTypeId,
             String status
     );
+
+
 }

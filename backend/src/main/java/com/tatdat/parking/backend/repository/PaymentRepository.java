@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, Integer> {
 
@@ -30,4 +31,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Integer> {
             @Param("startOfDay") LocalDateTime startOfDay,
             @Param("endOfDay") LocalDateTime endOfDay
     );
+
+    Optional<Payment> findByParkingSessionId(Integer parkingSessionId);
 }
