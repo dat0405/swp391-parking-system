@@ -12,8 +12,11 @@ import com.tatdat.parking.backend.repository.VehicleRepository;
 import com.tatdat.parking.backend.service.BookingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
+import com.tatdat.parking.backend.dto.CreateBookingDTO;
+import com.tatdat.parking.backend.entity.ParkingSlot;
+import com.tatdat.parking.backend.repository.ParkingSlotRepository;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -23,7 +26,7 @@ public class BookingServiceImpl implements BookingService {
     private final BookingHistoryRepository bookingHistoryRepository;
     private final VehicleRepository vehicleRepository;
     private final UserRepository userRepository;
-
+    private final ParkingSlotRepository parkingSlotRepository;
     @Override
     public Booking updateVehicleInfo(
             Integer bookingId,
@@ -95,4 +98,66 @@ public class BookingServiceImpl implements BookingService {
 
         return booking;
     }
-}
+    @Override
+    public Booking createBooking(CreateBookingDTO dto) {
+
+        User user = userRepository.findById(dto.getUserId())
+                .orElseThrow(() ->
+                        new RuntimeException("User not found"));
+
+        Vehicle vehicle = vehicleRepository.findById(dto.getVehicleId())
+                .orElseThrow(() ->
+                        new RuntimeException("Vehicle not found"));
+
+        ParkingSlot slot = parkingSlotRepository.findById(dto.getSlotId())
+                .orElseThrow(() ->
+                        new RuntimeException("Slot not found"));
+
+        if (!"AVAILABLE".equals(slot.getStatus())) {
+
+            throw new RuntimeException(
+                    "Slot is not available");
+        }
+
+        Booking booking = Booking.builder()
+                .user(user)
+                .vehicle(vehicle)
+                .slot(slot)
+                .bookingTime(LocalDateTime.now())
+                .startTime(dto.getStartTime())
+                .endTime(dto.getEndTime())
+                .status("PENDING")
+                .build();
+
+        slot.setStatus("RESERVED");
+
+        parkingSlotRepository.save(slot);
+
+        return bookingRepository.save(booking);
+    }
+
+    @Override
+    public Booking cancelBooking(Integer bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found"));
+
+        if (!"PENDING".equals(booking.getStatus())) {
+            throw new RuntimeException("Only PENDING bookings can be cancelled");
+        }
+
+        booking.setStatus("CANCELLED");
+
+        ParkingSlot slot = booking.getSlot();
+        if (slot != null) {
+            slot.setStatus("AVAILABLE");
+            parkingSlotRepository.save(slot);
+        }
+
+        return bookingRepository.save(booking);
+    }
+
+    @Override
+    public List<Booking> getBookingHistoryByUser(Integer userId) {
+        return bookingRepository.findByUserIdOrderByBookingTimeDesc(userId);
+    }
+}
