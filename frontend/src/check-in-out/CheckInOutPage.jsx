@@ -167,10 +167,15 @@ function CheckInOutPage() {
     }
 
     return formatCarPlate(cleaned);
+  const formatPlate = (value) => {
+    return value
+      .toUpperCase()
+      .replace(/[^A-Z0-9.-]/g, "")
+      .slice(0, 12);
   };
 
   const formatTicket = (value) => {
-    let clean = String(value || "").toUpperCase().replace(/^TK-/, "");
+    let clean = value.toUpperCase().replace(/^TK-/, "");
     let raw = clean.replace(/[^0-9]/g, "");
 
     if (raw.length > 6) raw = raw.slice(0, 6);
@@ -202,6 +207,32 @@ function CheckInOutPage() {
     });
   };
 
+  const normalizeVehicleType = (value) => {
+    const text = String(value || "").trim().toLowerCase();
+
+    if (
+      text === "car" ||
+      text === "cars" ||
+      text === "oto" ||
+      text === "ô tô" ||
+      text === "automobile"
+    ) {
+      return "car";
+    }
+
+    if (
+      text === "motorbike" ||
+      text === "motorbikes" ||
+      text === "bike" ||
+      text === "motorcycle" ||
+      text === "xe máy"
+    ) {
+      return "motorbike";
+    }
+
+    return text;
+  };
+
   const loadActiveSessions = async () => {
     try {
       const res = await parkingSessionApi.getActiveSessions();
@@ -221,10 +252,25 @@ function CheckInOutPage() {
 
       setFloorsData(floors);
     } catch (error) {
-      console.error("Load parking floor stats failed:", error);
       setFloorsData([]);
     }
   };
+
+  useEffect(() => {
+    loadActiveSessions();
+    loadParkingFloorStats();
+  }, []);
+
+  useEffect(() => {
+  try {
+    const res = await parkingSessionApi.getParkingFloorStats();
+    const floors = Array.isArray(res.data) ? res.data : [];
+
+    setFloorsData(floors);
+  } catch (error) {
+    setFloorsData([]);
+  }
+};
 
   useEffect(() => {
     loadActiveSessions();
@@ -240,7 +286,7 @@ function CheckInOutPage() {
 
     if (availableFloors.length > 0) {
       const defaultFloor =
-        availableFloors.find((floor) => Number(floor.availableSlots) > 0) ||
+        availableFloors.find((f) => Number(f.availableSlots) > 0) ||
         availableFloors[0];
 
       setParkingFloor(String(defaultFloor.floorId));
@@ -326,6 +372,54 @@ function CheckInOutPage() {
           "Check-in thất bại"
       );
     }
+
+    if (!licensePlateIn.trim()) return;
+
+    const selectedFloor = floorsData.find(
+      (floor) =>
+        String(floor.floorId) === String(parkingFloor) &&
+        normalizeVehicleType(floor.vehicleType) ===
+        normalizeVehicleType(vehicleType)
+    );
+
+    if (!selectedFloor) {
+      alert("No available parking floor for selected vehicle type");
+      return;
+    }
+
+    if (Number(selectedFloor.availableSlots) === 0) {
+      alert("Selected parking floor is full");
+      return;
+    }
+
+    try {
+      const payload = {
+        licensePlate: licensePlateIn.trim().toUpperCase(),
+        vehicleTypeId: selectedFloor.vehicleTypeId,
+        floorId: selectedFloor.floorId,
+      };
+
+      const res = await parkingSessionApi.checkIn(payload);
+
+      window.dispatchEvent(
+        new CustomEvent("dispatchParkingNotification", {
+          detail: `Check-in thành công xe ${res.data?.licensePlate || licensePlateIn
+            }`,
+        })
+      );
+
+      setLicensePlateIn("");
+      setTicketId(res.data?.ticketId || generateTicketId());
+
+      await loadActiveSessions();
+      await loadParkingFloorStats();
+    } catch (error) {
+      alert(
+        error.response?.data?.message ||
+        error.response?.data ||
+        "Check-in thất bại"
+      );
+    }
   };
 
   const handleSearchCheckout = async (e) => {
@@ -371,6 +465,7 @@ function CheckInOutPage() {
             target: checkoutData.licensePlate,
             detail: `ticket ${checkoutData.ticketId}`,
           },
+          detail: `Checkout thành công xe ${checkoutData.licensePlate}`,
         })
       );
 
@@ -387,7 +482,8 @@ function CheckInOutPage() {
 
   const filteredFloors = floorsData.filter(
     (floor) =>
-      normalizeVehicleType(floor.vehicleType) === normalizeVehicleType(vehicleType)
+      normalizeVehicleType(floor.vehicleType) ===
+      normalizeVehicleType(vehicleType)
   );
 
   return (
@@ -470,6 +566,8 @@ function CheckInOutPage() {
                   value={licensePlateIn}
                   placeholder={getPlatePlaceholder(vehicleType)}
                   maxLength={normalizeVehicleType(vehicleType) === "car" ? 10 : 13}
+                  placeholder="e.g., 51A-123.45 / 59S1-123.45"
+                  maxLength={12}
                   style={{
                     width: "100%",
                     padding: "0.75rem",
@@ -487,6 +585,7 @@ function CheckInOutPage() {
                       formatPlateByVehicleType(e.target.value, vehicleType)
                     )
                   }
+                  onChange={(e) => setLicensePlateIn(formatPlate(e.target.value))}
                 />
 
                 <p
@@ -527,6 +626,7 @@ function CheckInOutPage() {
                       setVehicleType(e.target.value);
                       setLicensePlateIn("");
                     }}
+                    onChange={(e) => setVehicleType(e.target.value)}
                     style={{
                       width: "100%",
                       padding: "0.75rem",
@@ -552,6 +652,26 @@ function CheckInOutPage() {
                       display: "block",
                       marginBottom: "0.5rem",
                     }}
+                  >
+                    PARKING FLOOR
+                  </label>
+
+                  <select
+                    value={parkingFloor}
+                    onChange={(e) => setParkingFloor(e.target.value)}
+                    disabled={filteredFloors.length === 0}
+                    style={{
+                      width: "100%",
+                      padding: "0.75rem",
+                      backgroundColor: "#0f172a",
+                      border: "1px solid #334155",
+                      borderRadius: "0.375rem",
+                      color: "#fff",
+                      cursor:
+                        filteredFloors.length === 0 ? "not-allowed" : "pointer",
+                      outline: "none",
+                    }}
+                  >
                   >
                     PARKING FLOOR
                   </label>
@@ -717,6 +837,8 @@ function CheckInOutPage() {
                 value={searchPlate}
                 placeholder="Biển số"
                 onChange={(e) => setSearchPlate(formatPlateForSearch(e.target.value))}
+                placeholder="Biển số (51A-123.45)"
+                onChange={(e) => setSearchPlate(formatPlate(e.target.value))}
                 style={{
                   flex: 1,
                   padding: "0.75rem",
@@ -860,6 +982,17 @@ function CheckInOutPage() {
                   </div>
                 </div>
 
+
+                  <div>
+                    PRICE PER HOUR
+                    <div style={{ color: "#fff", marginTop: "0.2rem" }}>
+                      {checkoutData.pricePerHour
+                        ? `${formatCurrency(checkoutData.pricePerHour)} / giờ`
+                        : "N/A"}
+                    </div>
+                  </div>
+                </div>
+
                 <div
                   style={{
                     fontSize: "0.85rem",
@@ -869,14 +1002,24 @@ function CheckInOutPage() {
                     gap: "0.5rem",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                    }}
+                  >
                     <span>Parking Fee</span>
                     <span style={{ color: "#fff" }}>
                       {formatCurrency(checkoutData.totalAmount)}
                     </span>
                   </div>
 
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                    }}
+                  >
                     <span>Service Charge</span>
                     <span style={{ color: "#fff" }}>{formatCurrency(0)}</span>
                   </div>
@@ -982,6 +1125,7 @@ function CheckInOutPage() {
                       alert(
                         error.response?.data?.message ||
                           "Không lấy được thông tin checkout"
+                        "Không lấy được thông tin checkout"
                       );
 
                       setCheckoutData(null);
