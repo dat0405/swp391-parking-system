@@ -1,27 +1,69 @@
+/* ==========================================================================
+   ĐỊNH NGHĨA BIẾN MÀU CHO 2 CHẾ ĐỘ
+   ========================================================================== */
+:root {
+  /* Chế độ tối mặc định (Màu xanh đen hiện tại của bạn) */
+  --bg-auth: #05070c;
+  --bg-column-left: #0c1322;
+  --bg-showcase: radial-gradient(circle at center, #0f1c30 0%, #05070c 100%);
+  --bg-input: #131c2e;
+  --bg-input-focus: #172237;
+  --border-color: #1e293b;
+  --text-main: #ffffff;
+  --text-muted: #64748b;
+  --bg-dashboard: #020617;
+  --bg-card: #0c1322;      /* Nền các ô con bên trong */
+  --bg-sidebar: #05070c;
+}
+
+body.light-mode {
+  /* Chế độ sáng (Tự động đổi khi có class .light-mode ở body) */
+  --bg-auth: #f1f5f9;
+  --bg-column-left: #ffffff;
+  --bg-showcase: radial-gradient(circle at center, #cbd5e1 0%, #f1f5f9 100%);
+  --bg-input: #f8fafc;
+  --bg-input-focus: #ffffff;
+  --border-color: #cbd5e1;
+  --text-main: #0f172a;    /* Chữ đen đậm rõ ràng */
+  --text-muted: #64748b;
+  --bg-dashboard: #f8fafc; /* Nền xám sáng */
+  --bg-card: #ffffff;      /* Ép các ô chứa thông số + chart chuyển sang TRẮNG TINH */
+  --bg-sidebar: #ffffff;
+}
+
+/* Thêm hiệu ứng chuyển màu mượt mà cho toàn bộ website */
+*, *::before, *::after {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
+}
+
+/* ==========================================================================
+    LAYOUT REFACTOR (Thay màu bằng biến)
+   ========================================================================== */
+
 /* Tổng thể Layout chia đôi màn hình */
 .auth-container {
   display: flex !important;
   flex-direction: row !important;
   min-height: 100vh !important;
   width: 100vw !important;
-  background-color: #05070c !important;
+  background-color: var(--bg-auth) !important;
 }
 
 /* Cột trái - Login Form */
 .login-column {
   width: 38% !important;
-  background-color: #0c1322 !important;
+  background-color: var(--bg-column-left) !important;
   padding: 3.5rem 4rem !important;
   display: flex !important;
   flex-direction: column !important;
   justify-content: space-between !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-right: 1px solid var(--border-color) !important;
 }
 
 /* Cột phải - Showcase */
 .showcase-column {
   width: 62% !important;
-  background: radial-gradient(circle at center, #0f1c30 0%, #05070c 100%) !important;
+  background: var(--bg-showcase) !important;
   display: flex !important;
   flex-direction: column !important;
   justify-content: center !important;
@@ -40,7 +82,7 @@
   display: block !important;
   font-size: 0.7rem !important;
   font-weight: 600 !important;
-  color: #64748b !important;
+  color: var(--text-muted) !important;
   letter-spacing: 0.05em !important;
   margin-bottom: 0.5rem !important;
 }
@@ -71,18 +113,17 @@
 .form-input {
   width: 100% !important;
   padding: 0.85rem 1rem 0.85rem 2.75rem !important;
-  background-color: #131c2e !important;
-  border: 1px solid #1e293b !important;
+  background-color: var(--bg-input) !important;
+  border: 1px solid var(--border-color) !important;
   border-radius: 0.5rem !important;
-  color: #ffffff !important;
+  color: var(--text-main) !important;
   font-size: 0.9rem !important;
-  transition: all 0.2s ease !important;
 }
 
 .form-input:focus {
   outline: none !important;
   border-color: #3b82f6 !important;
-  background-color: #172237 !important;
+  background-color: var(--bg-input-focus) !important;
 }
 
 /* Hiệu ứng Phối cảnh 3D cho Màn hình Dashboard */
@@ -140,6 +181,7 @@
     padding: 4rem 2rem !important;
   }
 }
+
 /* Áp dụng hiệu ứng vào class anh-dong */
 .anh-dong {
   animation: movepic 4s ease-in-out infinite;
@@ -150,7 +192,7 @@
   display: flex !important;
   min-height: 100vh !important;
   width: 100vw !important;
-  background-color: #020617 !important;
+  background-color: var(--bg-dashboard) !important;
   overflow: hidden !important;
 }
 
@@ -158,17 +200,61 @@
 .sidebar {
   flex-shrink: 0 !important;
   height: 100vh !important;
+  background-color: var(--bg-sidebar) !important;
+  border-right: 1px solid var(--border-color) !important;
   overflow-y: auto !important;
+}
+
+/* Sửa chữ mờ bên Sidebar */
+body.light-mode .sidebar a,
+body.light-mode .sidebar button,
+body.light-mode .sidebar span,
+body.light-mode .sidebar h4,
+body.light-mode .sidebar div {
+  color: var(--text-main) !important;
 }
 
 /* Nội dung chính bên phải */
 .main-content {
   flex: 1 !important;
   height: 100vh !important;
+  background-color: var(--bg-dashboard) !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   padding: 2rem !important;
   box-sizing: border-box !important;
+  color: var(--text-main) !important;
+}
+
+/* ==========================================================================
+  🔥 ĐOẠN ĐẶC BIỆT: ÉP TOÀN BỘ CÁC CARDS VÀ CÁC HỘP NỘI DUNG ĐỔI MÀU NỀN + CHỮ
+  ==========================================================================
+*/
+.main-content > div > div, 
+.main-content div[style*="background-color"], 
+.main-content .stat-card,
+.main-content .chart-container,
+.main-content .occupancy-trends-box {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-main) !important;
+}
+
+/* Ép toàn bộ các thẻ chữ bên trong Main Content tuân thủ màu chữ chính */
+.main-content h1, 
+.main-content h2, 
+.main-content h3, 
+.main-content h4, 
+.main-content p, 
+.main-content span {
+  color: var(--text-main) !important;
+}
+
+/* Trả lại màu chữ phụ mờ để giao diện có chiều sâu */
+body.light-mode .main-content span[style*="color: rgb(100, 116, 139)"],
+body.light-mode .main-content p[style*="color"],
+body.light-mode .main-content .text-muted {
+  color: var(--text-muted) !important;
 }
 
 /* Cho bảng pricing không bị cắt dòng */
@@ -186,111 +272,10 @@
 .pricing-table-wrapper tr {
   height: 76px !important;
 }
-/* Container chính cho trang Parking */
-.parking-container {
-  padding: 1.5rem;
-  color: #fff;
-  font-family: sans-serif;
-}
 
-.parking-header h1 { margin: 0; font-size: 1.5rem; }
-.parking-header p { color: #64748b; margin-bottom: 2rem; }
-
-/* Stats Bar */
-.stats-bar {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 2rem;
-}
-
-.stat-card {
-  background: #0c1322;
-  padding: 1.5rem;
-  border-radius: 0.75rem;
-  border: 1px solid #1e293b;
-  flex: 1;
-}
-
-.stat-card span { font-size: 0.75rem; color: #64748b; display: block; }
-.stat-card p { font-size: 1.8rem; font-weight: bold; margin: 0.5rem 0 0 0; }
-
-/* Filter Bar */
-.filter-bar {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 1.5rem;
-}
-
-.floor-tabs button {
-  background: #131c2e;
-  border: 1px solid #1e293b;
-  color: #fff;
-  padding: 0.5rem 1.5rem;
-  margin-right: 0.5rem;
-  border-radius: 0.5rem;
-  cursor: pointer;
-}
-
-.floor-tabs button.active {
-  background: #3b82f6;
-  border-color: #3b82f6;
-}
-
-/* Slots Grid */
-.slots-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 1.5rem;
-}
-
-.slot-item {
-  background: #0c1322;
-  padding: 1.5rem;
-  border-radius: 0.75rem;
-  border-left: 4px solid #3b82f6; /* Mặc định */
-  border: 1px solid #1e293b;
-}
-
-.slot-item.occupied { border-left-color: #ef4444; }
-.slot-item.available { border-left-color: #22c55e; }
-.slot-item.reserved { border-left-color: #f59e0b; }
-.slot-item.maintenance { border-left-color: #64748b; }
-
-.slot-item h4 { margin: 0 0 0.5rem 0; }
-.badge { font-size: 0.6rem; background: #1e293b; padding: 2px 6px; border-radius: 4px; }
-.slot-info { margin-top: 1rem; font-weight: bold; color: #94a3b8; }
-/* Container chính cho khu vực chứa slot */
-.slots-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr); /* Ép chuẩn 4 cột */
-  gap: 1.25rem;
-  margin-top: 1.5rem;
-}
-
-/* Card Slot chính */
-.slot-card {
-  background-color: #0c1322;
-  border: 1px solid #1e293b;
-  border-left: 4px solid transparent; /* Màu viền sẽ thay đổi theo class */
-  border-radius: 0.75rem;
-  padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  transition: transform 0.2s;
-}
-
-/* Định nghĩa màu viền cho từng trạng thái */
-.slot-card.available { border-left-color: #10b981; } /* Xanh lá */
-.slot-card.occupied { border-left-color: #3b82f6; }  /* Xanh dương */
-.slot-card.reserved { border-left-color: #f59e0b; }  /* Vàng cam */
-.slot-card.maintenance { border-left-color: #ef4444; } /* Đỏ */
-
-/* Badge trạng thái nhỏ */
-.status-badge {
-  font-size: 0.65rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  background: #1e293b;
-  color: #94a3b8;
-  text-transform: uppercase;
+/* Tạo Keyframe di chuyển ảnh độc lập */
+@keyframes movepic {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+  100% { transform: translateY(0); }
 }

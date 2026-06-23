@@ -22,7 +22,9 @@ import {
   X,
   Sliders,
   DollarSign,
-  ShieldAlert
+  ShieldAlert,
+  Sun,    /* Thêm icon Mặt Trời */
+  Moon    /* Thêm icon Mặt Trăng */
 } from 'lucide-react';
 
 import { userApi } from '../api/userApi';
@@ -41,6 +43,13 @@ function Header() {
   const [isOpenSettings, setIsOpenSettings] = useState(false);
   const [activeToast, setActiveToast] = useState(null);
   const [isOpenSettingsModal, setIsOpenSettingsModal] = useState(false);
+
+  // --- STATE QUẢN LÝ CHẾ ĐỘ SÁNG / TỐI ---
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    // Mặc định kiểm tra trong localStorage xem trước đó có lưu chế độ 'light' không. 
+    // Nếu không có, hệ thống chạy mặc định giao diện tối (true).
+    return localStorage.getItem('theme') !== 'light';
+  });
 
   const [systemConfig, setSystemConfig] = useState({
     basePrice: 5000,
@@ -216,6 +225,17 @@ function Header() {
     setActiveToast(newNotification);
   };
 
+  // --- EFFECT THEO DÕI BIẾN ISDARKMODE ĐỂ BẬT/TẮT CLASS Ở THẺ BODY ---
+  useEffect(() => {
+    if (isDarkMode) {
+      document.body.classList.remove('light-mode');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.body.classList.add('light-mode');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
   useEffect(() => {
     const loadUserInformation = () => {
       const nextUser = getCurrentUserFromStorage();
@@ -358,11 +378,12 @@ function Header() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: '#0b0f19',
+        backgroundColor: 'var(--bg-column-left, #0b0f19)', /* Sử dụng biến CSS để đổi màu nền header */
         padding: '0.75rem 1.5rem',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+        borderBottom: '1px solid var(--border-color, rgba(255, 255, 255, 0.05))', /* Sử dụng biến CSS cho viền dưới */
         position: 'relative',
-        width: '100%'
+        width: '100%',
+        boxSizing: 'border-box'
       }}
     >
       <div style={{ position: 'relative', width: '320px' }}>
@@ -383,16 +404,56 @@ function Header() {
           style={{
             width: '100%',
             padding: '0.5rem 1rem 0.5rem 2.5rem',
-            backgroundColor: '#111827',
-            border: '1px solid #1f2937',
+            backgroundColor: 'var(--bg-input, #111827)', /* Sử dụng biến màu input */
+            border: '1px solid var(--border-color, #1f2937)',
             borderRadius: '0.375rem',
-            color: '#f8fafc',
+            color: 'var(--text-main, #f8fafc)',
             fontSize: '0.85rem',
             outline: 'none'
           }}
         />
       </div>
 
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '1.25rem',
+          position: 'relative'
+        }}
+      >
+        {/* --- NÚT BẤM CHUYỂN ĐỔI CHẾ ĐỘ SÁNG / TỐI --- */}
+        <button
+          type="button"
+          onClick={() => setIsDarkMode((prev) => !prev)}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#94a3b8',
+            cursor: 'pointer',
+            padding: '0.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'color 0.2s ease'
+          }}
+          title={isDarkMode ? 'Chuyển sang Chế độ Sáng' : 'Chuyển sang Chế độ Tối'}
+        >
+          {isDarkMode ? (
+            <Sun size={20} style={{ color: '#f59e0b' }} /> /* Mặt trời màu vàng khi ở chế độ tối */
+          ) : (
+            <Moon size={20} style={{ color: '#475569' }} /> /* Mặt trăng màu tối khi ở chế độ sáng */
+          )}
+        </button>
+
+        <div
+          ref={dropdownRef}
+          style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center'
+          }}
+        >
       <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', position: 'relative' }}>
         <div ref={dropdownRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <button
@@ -408,6 +469,10 @@ function Header() {
               alignItems: 'center'
             }}
           >
+            <Bell
+              size={20}
+              style={{ color: isOpenDropdown ? 'var(--text-main, #f8fafc)' : '#94a3b8' }}
+            />
             <Bell size={20} style={{ color: isOpenDropdown ? '#f8fafc' : '#94a3b8' }} />
 
             {unreadCount > 0 && (
@@ -430,7 +495,7 @@ function Header() {
                   height: '8px',
                   backgroundColor: '#ef4444',
                   borderRadius: '50%',
-                  border: '2px solid #0b0f19'
+                  border: '2px solid var(--bg-column-left, #0b0f19)'
                 }}
               />
             )}
@@ -470,7 +535,7 @@ function Header() {
                 top: '40px',
                 right: '0',
                 width: '320px',
-                backgroundColor: '#1e293b',
+                backgroundColor: 'var(--bg-input, #1e293b)',
                 border: '1px solid #3b82f6',
                 boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
                 borderRadius: '0.5rem',
@@ -501,6 +566,14 @@ function Header() {
                 </span>
               </div>
 
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '0.78rem',
+                  color: 'var(--text-main, #f1f5f9)',
+                  lineHeight: '1.4'
+                }}
+              >
               <p style={{ margin: 0, fontSize: '0.78rem', color: '#f1f5f9', lineHeight: '1.4' }}>
                 {activeToast.text}
               </p>
@@ -545,8 +618,8 @@ function Header() {
                 top: '40px',
                 right: '0',
                 width: '360px',
-                backgroundColor: '#0f172a',
-                border: '1px solid #1e293b',
+                backgroundColor: 'var(--bg-column-left, #0f172a)',
+                border: '1px solid var(--border-color, #1e293b)',
                 borderRadius: '0.5rem',
                 boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
                 zIndex: 9998,
@@ -556,13 +629,20 @@ function Header() {
               <div
                 style={{
                   padding: '0.5rem 1rem',
-                  borderBottom: '1px solid #1e293b',
+                  borderBottom: '1px solid var(--border-color, #1e293b)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   gap: '0.75rem'
                 }}
               >
+                <span
+                  style={{
+                    fontSize: '0.85rem',
+                    fontWeight: '700',
+                    color: 'var(--text-main, #ffffff)'
+                  }}
+                >
                 <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#ffffff' }}>
                   Notifications
                 </span>
@@ -571,8 +651,8 @@ function Header() {
                   <span
                     style={{
                       fontSize: '0.7rem',
-                      backgroundColor: '#1e293b',
-                      color: '#94a3b8',
+                      backgroundColor: 'var(--bg-input, #1e293b)',
+                      color: 'var(--text-muted, #94a3b8)',
                       padding: '0.1rem 0.4rem',
                       borderRadius: '0.25rem'
                     }}
@@ -621,7 +701,7 @@ function Header() {
                   <div
                     style={{
                       padding: '1rem',
-                      color: '#64748b',
+                      color: 'var(--text-muted, #64748b)',
                       fontSize: '0.78rem',
                       textAlign: 'center'
                     }}
@@ -639,11 +719,19 @@ function Header() {
                         cursor: 'pointer'
                       }}
                     >
+                      <p
+                        style={{
+                          margin: '0 0 0.35rem 0',
+                          fontSize: '0.78rem',
+                          color: 'var(--text-main, #cbd5e1)',
+                          lineHeight: '1.4'
+                        }}
+                      >
                       <p style={{ margin: '0 0 0.35rem 0', fontSize: '0.78rem', color: '#cbd5e1', lineHeight: '1.4' }}>
                         {notification.text}
                       </p>
 
-                      <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted, #64748b)' }}>
                         {getTimeText(notification.createdAt)}
                       </span>
                     </div>
@@ -667,6 +755,10 @@ function Header() {
               alignItems: 'center'
             }}
           >
+            <Settings
+              size={20}
+              style={{ color: isOpenSettings ? 'var(--text-main, #f8fafc)' : '#94a3b8' }}
+            />
             <Settings size={20} style={{ color: isOpenSettings ? '#f8fafc' : '#94a3b8' }} />
           </button>
 
@@ -689,8 +781,8 @@ function Header() {
                 top: '40px',
                 right: '0',
                 width: '150px',
-                backgroundColor: '#0f172a',
-                border: '1px solid #1e293b',
+                backgroundColor: 'var(--bg-column-left, #0f172a)',
+                border: '1px solid var(--border-color, #1e293b)',
                 borderRadius: '0.375rem',
                 boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)',
                 zIndex: 9999,
@@ -703,7 +795,7 @@ function Header() {
                   padding: '0.6rem 1rem',
                   backgroundColor: 'transparent',
                   border: 'none',
-                  color: '#cbd5e1',
+                  color: 'var(--text-main, #cbd5e1)',
                   fontSize: '0.8rem',
                   textAlign: 'left',
                   cursor: 'pointer'
@@ -716,6 +808,13 @@ function Header() {
                 System Settings
               </button>
 
+              <div
+                style={{
+                  height: '1px',
+                  backgroundColor: 'var(--border-color, #1e293b)',
+                  margin: '0.25rem 0'
+                }}
+              />
               <div style={{ height: '1px', backgroundColor: '#1e293b', margin: '0.25rem 0' }} />
 
               <button
@@ -764,7 +863,7 @@ function Header() {
                 margin: 0,
                 fontSize: '0.88rem',
                 fontWeight: '600',
-                color: '#ffffff',
+                color: 'var(--text-main, #ffffff)',
                 letterSpacing: '0.3px'
               }}
             >
@@ -774,7 +873,7 @@ function Header() {
             <span
               style={{
                 fontSize: '0.7rem',
-                color: '#64748b',
+                color: 'var(--text-muted, #64748b)',
                 fontWeight: '500',
                 display: 'block',
                 marginTop: '1px'
@@ -864,12 +963,13 @@ function Header() {
         >
           <div
             style={{
-              backgroundColor: '#0f172a',
-              border: '1px solid #1e293b',
+              backgroundColor: 'var(--bg-column-left, #0f172a)',
+              border: '1px solid var(--border-color, #1e293b)',
               borderRadius: '0.75rem',
               width: '450px',
               padding: '1.5rem',
               boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+              color: 'var(--text-main, #f8fafc)'
               color: '#f8fafc',
               animation: 'slideDown 0.2s ease-out'
             }}
@@ -880,7 +980,7 @@ function Header() {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 marginBottom: '1.25rem',
-                borderBottom: '1px solid #1e293b',
+                borderBottom: '1px solid var(--border-color, #1e293b)',
                 paddingBottom: '0.75rem'
               }}
             >
@@ -893,12 +993,27 @@ function Header() {
 
               <button
                 onClick={() => setIsOpenSettingsModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted, #64748b)',
+                  cursor: 'pointer'
+                }}
                 style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
               >
                 <X size={18} />
               </button>
             </div>
 
+            <form
+              onSubmit={handleSaveConfig}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem'
+              }}
+            >
+              {/* Nội dung Form giữ nguyên cấu trúc cũ */}
             <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{
@@ -912,7 +1027,7 @@ function Header() {
                   style={{
                     display: 'block',
                     fontSize: '0.8rem',
-                    color: '#94a3b8',
+                    color: 'var(--text-muted, #94a3b8)',
                     marginBottom: '0.35rem',
                     fontWeight: '500'
                   }}
@@ -955,10 +1070,10 @@ function Header() {
                     style={{
                       width: '100%',
                       padding: '0.5rem 0.5rem 0.5rem 2rem',
-                      backgroundColor: '#111827',
-                      border: '1px solid #1f2937',
+                      backgroundColor: 'var(--bg-input, #111827)',
+                      border: '1px solid var(--border-color, #1f2937)',
                       borderRadius: '0.375rem',
-                      color: '#f8fafc',
+                      color: 'var(--text-main, #f8fafc)',
                       fontSize: '0.85rem',
                       outline: 'none'
                     }}
@@ -978,7 +1093,7 @@ function Header() {
                   style={{
                     display: 'block',
                     fontSize: '0.8rem',
-                    color: '#94a3b8',
+                    color: 'var(--text-muted, #94a3b8)',
                     marginBottom: '0.35rem',
                     fontWeight: '500'
                   }}
@@ -1021,10 +1136,10 @@ function Header() {
                     style={{
                       width: '100%',
                       padding: '0.5rem 0.5rem 0.5rem 2rem',
-                      backgroundColor: '#111827',
-                      border: '1px solid #1f2937',
+                      backgroundColor: 'var(--bg-input, #111827)',
+                      border: '1px solid var(--border-color, #1f2937)',
                       borderRadius: '0.375rem',
-                      color: '#f8fafc',
+                      color: 'var(--text-main, #f8fafc)',
                       fontSize: '0.85rem',
                       outline: 'none'
                     }}
@@ -1046,7 +1161,7 @@ function Header() {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '0.5rem 0',
-                  borderTop: '1px solid #1e293b',
+                  borderTop: '1px solid var(--border-color, #1e293b)',
                   paddingTop: '0.75rem'
                 }}
               >
@@ -1058,7 +1173,7 @@ function Header() {
                       System Maintenance Portal
                     </span>
 
-                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted, #64748b)' }}>
                       Lock check-in/out modules for DB update
                     </span>
                   </div>
@@ -1105,10 +1220,10 @@ function Header() {
                   onClick={() => setIsOpenSettingsModal(false)}
                   style={{
                     padding: '0.5rem 1rem',
-                    backgroundColor: '#1e293b',
+                    backgroundColor: 'var(--bg-input, #1e293b)',
                     border: 'none',
                     borderRadius: '0.375rem',
-                    color: '#94a3b8',
+                    color: 'var(--text-muted, #94a3b8)',
                     fontSize: '0.8rem',
                     cursor: 'pointer'
                   }}
