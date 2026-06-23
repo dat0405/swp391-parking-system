@@ -1,29 +1,92 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-/* 1. Reset toàn bộ thuộc tính mặc định của trình duyệt */
+/* ==========================================================================
+   ĐỊNH NGHĨA BIẾN MÀU CHO 2 CHẾ ĐỘ (DARK / LIGHT)
+   ========================================================================== */
+:root {
+  /* CHẾ ĐỘ TỐI MẶC ĐỊNH */
+  --bg-main: #05070c;          /* Màu nền tổng thể body */
+  --bg-sidebar: #05070c;       /* Nền thanh sidebar bên trái */
+  --bg-header: #0b0f19;        /* Nền thanh header */
+  --bg-card: #0c1322;          /* Nền các ô hiển thị dữ liệu */
+  --bg-input: #111827;         /* Nền ô search input */
+  --border-color: rgba(255, 255, 255, 0.05);
+  --border-card: #1e293b;
+  --text-main: #ffffff;        /* Màu chữ chính */
+  --text-muted: #64748b;       /* Màu chữ phụ */
+}
+
+body.light-mode {
+  /* CHẾ ĐỘ SÁNG KHI KÍCH HOẠT */
+  --bg-main: #f8fafc;          /* Nền lớn chuyển sang xám sáng */
+  --bg-sidebar: #ffffff;       /* Sidebar chuyển sang trắng tinh */
+  --bg-header: #ffffff;        /* Header chuyển sang trắng tinh */
+  --bg-card: #ffffff;          /* Các ô card chuyển sang trắng tinh */
+  --bg-input: #f1f5f9;         /* Ô search chuyển sang xám nhạt */
+  --border-color: #e2e8f0;     /* Đường kẻ viền xám nhẹ */
+  --border-card: #cbd5e1;
+  --text-main: #0f172a;        /* Chữ đổi sang màu xanh đen đậm cực rõ */
+  --text-muted: #627d98;
+}
+
+/* Hiệu ứng chuyển màu mượt mà, không bị giật mắt khi bấm nút */
+*, *::before, *::after {
+  box-sizing: border-box;
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease !important;
+}
+
+/* ==========================================================================
+   1. Reset thuộc tính mặc định (Đã thay mã màu cứng bằng Biến var)
+   ========================================================================== */
 html, body, #root {
   margin: 0 !important;
   padding: 0 !important;
   width: 100% !important;
   min-height: 100vh !important;
-  background-color: #05070c !important; 
-  color: #ffffff !important;
+  background-color: var(--bg-main) !important; /* Đổi ở đây */
+  color: var(--text-main) !important;           /* Đổi ở đây */
   font-family: 'Inter', sans-serif;
   overflow-x: hidden;
 }
 
-/* Đóng ngoặc chuẩn cho thẻ selector * */
-* {
-  box-sizing: border-box;
+/* ==========================================================================
+   2. BỔ SUNG ĐỒNG BỘ CÁC CLASS LAYOUT CHO THEME CHẠY CHUẨN
+   ========================================================================== */
+
+/* Ép thanh Sidebar đổi màu nền theo cấu hình hệ thống */
+.sidebar {
+  background-color: var(--bg-sidebar) !important;
+  border-right: 1px solid var(--border-color) !important;
 }
 
-/* 2. Đặt @keyframes nằm độc lập ở NGOÀI dấu ngoặc nhọn, không lồng vào đâu hết */
+/* Đổi màu chữ của các thẻ link/menu trong Sidebar khi sang chế độ sáng */
+body.light-mode .sidebar a, 
+body.light-mode .sidebar button,
+body.light-mode .sidebar span,
+body.light-mode .sidebar div {
+  color: var(--text-main) !important;
+}
+
+/* Ép vùng nội dung chính (phía sau các ô card) ăn theo màu nền lớn */
+.main-content {
+  background-color: var(--bg-main) !important;
+}
+
+/* Khung chứa biểu đồ hoặc các phần tử chart tổng thể */
+.chart-container, .occupancy-trends-box {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-card) !important;
+}
+
+/* ==========================================================================
+   3. Hiệu ứng Animation dịch chuyển hình ảnh
+   ========================================================================== */
 @keyframes movepic {
   0% {
     transform: translateY(0); 
   }
   50% {
-    transform: translateY(-12px); /* keyframe */
+    transform: translateY(-12px); 
   }
   100% {
     transform: translateY(0); 

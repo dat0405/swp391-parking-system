@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import './App.css';
 
+import DashboardIntro from './landing-page/DashboardIntro';
 import LoginPage from './LoginPage';
 import RegisterPage from './RegisterPage';
 import ForgotPasswordPage from './ForgotPasswordPage';
@@ -20,11 +21,7 @@ import { userApi } from './api/userApi';
 
 const getSavedUser = () => {
   const savedUser = localStorage.getItem('user');
-
-  if (!savedUser) {
-    return null;
-  }
-
+  if (!savedUser) return null;
   try {
     return JSON.parse(savedUser);
   } catch (error) {
@@ -38,41 +35,24 @@ const clearOldTokenStorage = () => {
   localStorage.removeItem('refreshToken');
 };
 
-const PrivateRoute = ({ children }) => {
+// ================= TỐI ƯU CẤU TRÚC ROUTE BẰNG OUTLET =================
+
+// Cụm bảo vệ: Chỉ cho phép khi CHƯA đăng nhập
+const AuthLayout = () => {
   const user = getSavedUser();
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return children;
-};
-
-const AuthRoute = ({ children }) => {
-  const user = getSavedUser();
-
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    return user.role === 'ADMIN' || user.role === 'STAFF' 
+      ? <Navigate to="/dashboard" replace /> 
+      : <Navigate to="/user-ui" replace />;
   }
-
-  return children;
+  return <Outlet />; // Render các trang con (Login, Register...)
 };
 
-const ComingSoonPage = ({ title }) => (
-  <div
-    style={{
-      minHeight: '100vh',
-      backgroundColor: '#020617',
-      color: '#f8fafc',
-      padding: '2rem'
-    }}
-  >
-    <h1 style={{ margin: 0, fontSize: '2rem' }}>{title}</h1>
-    <p style={{ color: '#94a3b8', marginTop: '0.5rem' }}>
-      This module is ready for implementation.
-    </p>
-  </div>
-);
+// Cụm bảo vệ: Bắt buộc PHẢI đăng nhập
+const PrivateLayout = () => {
+  const user = getSavedUser();
+  return user ? <Outlet /> : <Navigate to="/login" replace />;
+};
 
 function App() {
   useEffect(() => {
@@ -80,148 +60,53 @@ function App() {
 
     const sendHeartbeat = async () => {
       const user = getSavedUser();
-
-      if (!user) {
-        return;
-      }
+      if (!user) return;
 
       try {
         await userApi.heartbeat();
       } catch (error) {
-        const status = error.response?.status;
-
-        if (status === 401) {
+        if (error.response?.status === 401) {
           localStorage.removeItem('user');
           sessionStorage.clear();
+          window.location.href = '/login';
           return;
         }
-
         console.error('Heartbeat failed:', error);
       }
     };
 
     sendHeartbeat();
-
-    const intervalId = setInterval(() => {
-      sendHeartbeat();
-    }, 30000);
-
+    const intervalId = setInterval(sendHeartbeat, 30000);
     return () => clearInterval(intervalId);
   }, []);
 
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      {/* Landing Page */}
+      <Route path="/" element={<DashboardIntro />} />
 
-      <Route
-        path="/login"
-        element={
-          <AuthRoute>
-            <LoginPage />
-          </AuthRoute>
-        }
-      />
+      {/* Nhóm các tuyến đường chỉ dành cho khách (Chưa đăng nhập) */}
+      <Route element={<AuthLayout />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+      </Route>
 
-      <Route
-        path="/register"
-        element={
-          <AuthRoute>
-            <RegisterPage />
-          </AuthRoute>
-        }
-      />
+      {/* Nhóm các tuyến đường bắt buộc phải đăng nhập (Private) */}
+      <Route element={<PrivateLayout />}>
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/parking-floors" element={<ParkingManagement />} />
+        <Route path="/check-in-out" element={<CheckInOutPage />} />
+        <Route path="/user-ui" element={<Booking />} />
+        <Route path="/reservations" element={<ReservationAdmin />} />
+        <Route path="/user-management" element={<UserManagementPage />} />
+        <Route path="/pricing-policies" element={<PricingPoliciesPage />} />
+        <Route path="/reports" element={<Reports />} />
+      </Route>
 
-      <Route
-        path="/forgot-password"
-        element={
-          <AuthRoute>
-            <ForgotPasswordPage />
-          </AuthRoute>
-        }
-      />
-
-      <Route
-        path="/reset-password"
-        element={
-          <AuthRoute>
-            <ResetPasswordPage />
-          </AuthRoute>
-        }
-      />
-
-      <Route
-        path="/dashboard"
-        element={
-          <PrivateRoute>
-            <DashboardPage />
-          </PrivateRoute>
-        }
-      />
-
-      <Route
-        path="/parking-floors"
-        element={
-          <PrivateRoute>
-            <ParkingManagement />
-          </PrivateRoute>
-        }
-      />
-
-      <Route
-        path="/check-in-out"
-        element={
-          <PrivateRoute>
-            <CheckInOutPage />
-          </PrivateRoute>
-        }
-      />
-
-      <Route
-        path="/user-ui"
-        element={
-          <PrivateRoute>
-            <Booking />
-          </PrivateRoute>
-        }
-      />
-
-      <Route
-        path="/reservations"
-        element={
-          <PrivateRoute>
-            <ReservationAdmin />
-          </PrivateRoute>
-        }
-      />
-
-      <Route
-        path="/user-management"
-        element={
-          <PrivateRoute>
-            <UserManagementPage />
-          </PrivateRoute>
-        }
-      />
-
-      <Route
-        path="/pricing-policies"
-        element={
-          <PrivateRoute>
-            <PricingPoliciesPage />
-          </PrivateRoute>
-        }
-      />
-
-      <Route
-        path="/reports"
-        element={
-          <PrivateRoute>
-            <Reports />
-          </PrivateRoute>
-        }
-      />
-
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      {/* Sai URL -> Về trang chủ */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
