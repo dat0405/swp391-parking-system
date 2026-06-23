@@ -20,4 +20,31 @@ public class VehicleTypeController {
     public List<VehicleType> getAllVehicleTypes() {
         return vehicleTypeRepository.findAll();
     }
+
+    @GetMapping("/{id}")
+    public VehicleType getVehicleTypeById(@PathVariable Integer id) {
+        return vehicleTypeRepository.findById(id).orElse(null);
+    }
+
+    @PostMapping
+    public VehicleType createVehicleType(@RequestBody VehicleType vehicleType) {
+        return vehicleTypeRepository.save(vehicleType);
+    }
+
+    @PutMapping("/{id}")
+    public VehicleType updateVehicleType(@PathVariable Integer id, @RequestBody VehicleType updatedType) {
+        VehicleType existingType = vehicleTypeRepository.findById(id).orElse(null);
+        if (existingType != null) {
+            existingType.setTypeName(updatedType.getTypeName());
+            existingType.setDescription(updatedType.getDescription());
+            return vehicleTypeRepository.save(existingType);
+        }
+        return null;
+    }
+
+    @DeleteMapping("/{id}")
+    public String deleteVehicleType(@PathVariable Integer id) {
+        vehicleTypeRepository.deleteById(id);
+        return "Deleted Successfully";
+    }
 }
