@@ -1,10 +1,15 @@
 /* =========================================================================
+   STYLE CHO MÀN HÌNH DASHBOARD (webUIapp) - ĐÃ FIX VỠ FORM & MẤT CHÂN
    STYLE CHO MÀN HÌNH DASHBOARD
    ========================================================================= */
 
 .dashboard-layout {
   display: flex;
   width: 100vw;
+  /* 🎯 SỬA 1: Thay min-height thành height và max-height để khóa chặt khung hình theo viewport */
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden; /* Tuyệt đối không cho xuất hiện thanh cuộn tổng của trình duyệt */
   height: 100vh;
   max-height: 100vh;
   overflow: hidden;
@@ -21,6 +26,9 @@
   display: flex;
   flex-direction: column;
   padding: 1.5rem 1rem;
+  /* 🎯 BỔ SUNG: Đảm bảo sidebar luôn full chiều cao và tính toán padding chuẩn */
+  height: 100%;
+  box-sizing: border-box; 
   height: 100%;
   box-sizing: border-box;
 }
@@ -91,6 +99,14 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  /* 🎯 SỬA 2: Đóng băng chiều cao của main bằng chiều cao màn hình */
+  height: 100vh;
+  max-height: 100vh;
+  box-sizing: border-box;
+  /* Tùy chọn cuộn: 
+     - Với Dashboard: nội dung nhiều tự cuộn dọc mượt mà.
+     - Với UserManagement: các phần tử cố định, bảng tự cuộn nội bộ. */
+  overflow-y: auto; 
   height: 100vh;
   max-height: 100vh;
   box-sizing: border-box;
@@ -105,6 +121,7 @@
   align-items: center;
   border-bottom: 1px solid #1e293b;
   padding-bottom: 1rem;
+  flex-shrink: 0; /* 🎯 BỔ SUNG: Không cho Header bị méo khi thu nhỏ màn hình */
   flex-shrink: 0;
 }
 
@@ -186,6 +203,8 @@
 
 /* TITLE */
 .dashboard-title {
+  flex-shrink: 0; /* 🎯 BỔ SUNG: Giữ nguyên tiêu đề không bị bóp nghẹt */
+}
   flex-shrink: 0;
 }
 
@@ -206,6 +225,7 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1rem;
+  flex-shrink: 0; /* 🎯 BỔ SUNG: Giữ nguyên kích thước các ô KPI */
   flex-shrink: 0;
 }
 
@@ -334,6 +354,8 @@
   background: none;
   border: none;
   color: #64748b;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem; /* Sửa lỗi cú pháp nhẹ từ gram -> rem */
   padding: 0.35rem 0.85rem;
   font-size: 0.75rem;
   font-weight: 600;
