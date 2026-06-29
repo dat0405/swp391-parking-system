@@ -26,10 +26,10 @@ export const userApi = {
   },
 
   heartbeat() {
-  return axiosClient.put("/users/me/heartbeat");
-},
+    return axiosClient.put("/users/me/heartbeat");
+  },
 
-offline() {
-  return axiosClient.put("/users/me/offline");
-},
+  offline() {
+    return axiosClient.put("/users/me/offline");
+  },
 };

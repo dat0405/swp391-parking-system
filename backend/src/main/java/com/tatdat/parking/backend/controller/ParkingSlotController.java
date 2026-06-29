@@ -18,6 +18,23 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/parking-slots")
 @RequiredArgsConstructor
+@CrossOrigin(
+        origins = {
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:3000"
+        },
+        allowedHeaders = "*",
+        methods = {
+                RequestMethod.GET,
+                RequestMethod.POST,
+                RequestMethod.PUT,
+                RequestMethod.PATCH,
+                RequestMethod.DELETE,
+                RequestMethod.OPTIONS
+        },
+        allowCredentials = "true"
+)
 public class ParkingSlotController {
 
     private final ParkingSlotService parkingSlotService;
@@ -53,7 +70,17 @@ public class ParkingSlotController {
         return ResponseEntity.ok("Parking slot deleted successfully");
     }
 
-    @PutMapping("/{id}/status")
+    /*
+     * Frontend hiện tại đang gọi PATCH /api/parking-slots/{id}/status.
+     * Bản này cho phép cả PUT và PATCH để tránh lỗi mismatch method.
+     */
+    @RequestMapping(
+            value = "/{id}/status",
+            method = {
+                    RequestMethod.PUT,
+                    RequestMethod.PATCH
+            }
+    )
     public ResponseEntity<ParkingSlot> updateSlotStatus(
             @PathVariable Integer id,
             @RequestBody UpdateSlotStatusRequest request

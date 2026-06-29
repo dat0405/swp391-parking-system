@@ -80,10 +80,6 @@ public class PricingPolicyController {
         PricingPolicy pricingPolicy = pricingPolicyRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Pricing policy not found"));
 
-        if (pricingPolicy != null) {
-            pricingPolicy.setBasePrice(updatedPricingPolicy.getBasePrice());
-            pricingPolicy.setPricePerHour(updatedPricingPolicy.getPricePerHour());
-            pricingPolicy.setOvertimeFee(updatedPricingPolicy.getOvertimeFee());
         VehicleType vehicleType = vehicleTypeRepository.findById(request.getVehicleTypeId())
                 .orElseThrow(() -> new RuntimeException("Vehicle type not found"));
 
@@ -271,29 +267,5 @@ public class PricingPolicyController {
                 .createdAt(pricingPolicy.getCreatedAt())
                 .updatedAt(pricingPolicy.getUpdatedAt())
                 .build();
-    }
-
-    @GetMapping("/vehicle-type/{vehicleTypeId}")
-    public List<PricingPolicy> getPricingPolicyByVehicleType(
-            @PathVariable Integer vehicleTypeId
-    ) {
-        return pricingPolicyRepository.findByVehicleType_Id(vehicleTypeId);
-    }
-
-    @PutMapping("/vehicle-type/{vehicleTypeId}")
-    public List<PricingPolicy> updatePricingByVehicleType(
-            @PathVariable Integer vehicleTypeId,
-            @RequestBody PricingPolicy updatedPricingPolicy
-    ) {
-        List<PricingPolicy> pricingPolicies =
-                pricingPolicyRepository.findByVehicleType_Id(vehicleTypeId);
-
-        for (PricingPolicy pricingPolicy : pricingPolicies) {
-            pricingPolicy.setBasePrice(updatedPricingPolicy.getBasePrice());
-            pricingPolicy.setPricePerHour(updatedPricingPolicy.getPricePerHour());
-            pricingPolicy.setOvertimeFee(updatedPricingPolicy.getOvertimeFee());
-        }
-
-        return pricingPolicyRepository.saveAll(pricingPolicies);
     }
 }

@@ -1,7 +1,12 @@
 package com.tatdat.parking.backend.controller;
 
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
 import com.tatdat.parking.backend.dto.AuthResponse;
 import com.tatdat.parking.backend.dto.ForgotPasswordRequest;
+import com.tatdat.parking.backend.dto.GoogleLoginRequest;
 import com.tatdat.parking.backend.dto.LoginRequest;
 import com.tatdat.parking.backend.dto.LogoutRequest;
 import com.tatdat.parking.backend.dto.RefreshTokenRequest;
@@ -19,6 +24,7 @@ import com.tatdat.parking.backend.service.PasswordResetService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.Authentication;
@@ -27,6 +33,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Collections;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -42,6 +49,9 @@ public class AuthController {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final PasswordResetService passwordResetService;
+
+    @Value("${google.client.id}")
+    private String googleClientId;
 
     @PostMapping("/register")
     public String register(@Valid @RequestBody RegisterRequest request) {
@@ -136,6 +146,67 @@ public class AuthController {
         addAuthCookies(response, accessToken, refreshToken.getToken());
 
         return buildAuthResponse(user, accessToken, refreshToken.getToken());
+    }
+
+    @PostMapping("/google")
+    public AuthResponse googleLogin(
+            @Valid @RequestBody GoogleLoginRequest request,
+            HttpServletResponse response
+    ) {
+        try {
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
+                    new NetHttpTransport(),
+                    GsonFactory.getDefaultInstance()
+            )
+                    .setAudience(Collections.singletonList(googleClientId))
+                    .build();
+
+            GoogleIdToken idToken = verifier.verify(request.getCredential());
+
+            if (idToken == null) {
+                throw new RuntimeException("Invalid Google credential");
+            }
+
+            GoogleIdToken.Payload payload = idToken.getPayload();
+
+            Boolean emailVerified = payload.getEmailVerified();
+            String email = payload.getEmail();
+
+            if (email == null || email.isBlank()) {
+                throw new RuntimeException("Google account does not contain an email");
+            }
+
+            if (emailVerified == null || !emailVerified) {
+                throw new RuntimeException("Google email is not verified");
+            }
+
+            String normalizedEmail = email.trim().toLowerCase();
+
+            User user = userRepository.findByEmail(normalizedEmail)
+                    .orElseThrow(() -> new RuntimeException(
+                            "This Google account is not registered in the parking system"
+                    ));
+
+            validateUserCanAuthenticate(user);
+
+            LocalDateTime now = LocalDateTime.now();
+
+            user.setLastLoginAt(now);
+            user.setLastActiveAt(now);
+            user.setUpdatedAt(now);
+            userRepository.save(user);
+
+            String accessToken = jwtService.generateAccessToken(user);
+            RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
+
+            addAuthCookies(response, accessToken, refreshToken.getToken());
+
+            return buildAuthResponse(user, accessToken, refreshToken.getToken());
+        } catch (RuntimeException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new RuntimeException("Google login failed");
+        }
     }
 
     @PostMapping("/refresh-token")
