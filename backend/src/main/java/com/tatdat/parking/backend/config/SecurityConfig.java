@@ -102,12 +102,34 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/parking-slots/**")
                         .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
+                        /*
+                         * Cho phép Staff / Manager / Admin đổi trạng thái slot:
+                         * AVAILABLE, OCCUPIED, RESERVED, MAINTENANCE.
+                         */
+                        .requestMatchers(HttpMethod.PUT, "/api/parking-slots/*/status")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        .requestMatchers(HttpMethod.PATCH, "/api/parking-slots/*/status")
+                        .hasAnyRole("PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        /*
+                         * Add slot chỉ cho Manager/Admin.
+                         */
                         .requestMatchers(HttpMethod.POST, "/api/parking-slots/**")
                         .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
 
+                        /*
+                         * Update slot thường chỉ cho Manager/Admin.
+                         */
                         .requestMatchers(HttpMethod.PUT, "/api/parking-slots/**")
                         .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
 
+                        .requestMatchers(HttpMethod.PATCH, "/api/parking-slots/**")
+                        .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        /*
+                         * Delete slot chỉ cho Manager/Admin.
+                         */
                         .requestMatchers(HttpMethod.DELETE, "/api/parking-slots/**")
                         .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
 
@@ -125,6 +147,14 @@ public class SecurityConfig {
 
                         .requestMatchers(HttpMethod.DELETE, "/api/pricing-policies/**")
                         .hasAnyRole("PARKING_MANAGER", "SYSTEM_ADMIN")
+
+                        /*
+                         * Reservation history must be kept for reports, exports,
+                         * audit tracking, and operational transparency.
+                         * Nobody can permanently delete booking records.
+                         */
+                        .requestMatchers(HttpMethod.DELETE, "/api/bookings/**")
+                        .denyAll()
 
                         .requestMatchers("/api/bookings/**")
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
@@ -149,9 +179,23 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(List.of("http://localhost:5173"));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedOrigins(List.of(
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:3000"
+        ));
+
+        configuration.setAllowedMethods(List.of(
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "OPTIONS"
+        ));
+
         configuration.setAllowedHeaders(List.of("*"));
+        configuration.setExposedHeaders(List.of("Authorization"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

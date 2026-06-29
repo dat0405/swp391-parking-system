@@ -1,221 +1,613 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Sidebar from "../dashboard/Sidebar";
 import Header from "../dashboard/Header";
-import { 
-  Calendar, Car, CheckCircle2, XCircle, 
-  Search, Download, Edit2, Trash2, Eye, 
-  ChevronLeft, ChevronRight, AlertTriangle 
+import {
+  Calendar,
+  Car,
+  CheckCircle2,
+  XCircle,
+  Search,
+  Download,
+  Eye,
+  ChevronLeft,
+  ChevronRight,
+  AlertTriangle,
+  RefreshCcw,
 } from "lucide-react";
 
-const ReservationAdmin = () => {
-  // 1. DATA ARRAY
-  const [reservations, setReservations] = useState([
-    {
-      id: "#RES-9402",
-      customer: { name: "John Dorsey", email: "j.dorsey@example.com" },
-      plate: "ABC-1234",
-      slot: "Floor 2, A-42",
-      schedule: { date: "Oct 24", time: "08:00 AM", end: "Ends 05:00 PM" },
-      status: "Active"
-    },
-    {
-      id: "#RES-9398",
-      customer: { name: "Maria Lopez", email: "m.lopez@cloud.net" },
-      plate: "XYZ-7890",
-      slot: "Floor 1, B-12",
-      schedule: { date: "Oct 24", time: "10:30 AM", end: "Ends 02:30 PM" },
-      status: "Pending"
-    },
-    {
-      id: "#RES-9382",
-      customer: { name: "Sam Taylor", email: "sam.t@company.com" },
-      plate: "GHT-5544",
-      slot: "Floor 3, C-05",
-      schedule: { date: "Oct 23", time: "09:00 AM", end: "Ended 06:00 PM" },
-      status: "Completed"
-    }
-  ]);
+import { bookingApi } from "../api/bookingApi";
 
+const ReservationAdmin = () => {
+  const [reservations, setReservations] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5; 
+  const [isLoading, setIsLoading] = useState(false);
 
-  // State quản lý việc hiển thị Modal xác nhận hủy phòng đẹp hơn thay vì window.confirm
   const [reservationToCancel, setReservationToCancel] = useState(null);
+  const [selectedReservationDetail, setSelectedReservationDetail] = useState(null);
 
-  // ==========================================
-  // TODO: API INTEGRATION - FETCH RESERVATIONS
-  // ==========================================
+  const itemsPerPage = 5;
+
+  const normalizeStatus = (status) => {
+    return String(status || "").trim().toUpperCase();
+  };
+
+  const mapBookingToReservation = (booking) => {
+    const status = normalizeStatus(booking.status);
+
+    return {
+      id: booking.id,
+      displayId: `#RES-${String(booking.id).padStart(4, "0")}`,
+      customer: {
+        name: booking.customerName || "Unknown user",
+        email: booking.customerEmail || `User ID: ${booking.userId || "-"}`,
+      },
+      plate: booking.licensePlate || "-",
+      vehicleTypeName: booking.vehicleTypeName || "-",
+      slot: booking.slotCode || `Slot ID: ${booking.slotId || "-"}`,
+      floorName: booking.floorName || "",
+      startTime: booking.startTime,
+      endTime: booking.endTime,
+      status,
+      raw: booking,
+    };
+  };
+
+  const loadReservations = async () => {
+    try {
+      setIsLoading(true);
+
+      const response = await bookingApi.getAllBookings();
+      const data = Array.isArray(response.data) ? response.data : [];
+
+      setReservations(data.map(mapBookingToReservation));
+    } catch (error) {
+      console.error("Load reservations failed:", error);
+      alert(
+        error.response?.data?.message ||
+          error.response?.data ||
+          "Không tải được danh sách reservations."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    /* axios.get('/api/reservations').then(res => {
-        setReservations(res.data);
-      });
-    */
+    loadReservations();
   }, []);
 
-  // 2. FILTER DATA LOGIC
-  const filteredData = reservations.filter(item => {
-    const matchesSearch = 
-      item.customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.id.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === "All" || item.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
 
-  // 3. PAGINATION LOGIC
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage); 
+  const filteredData = useMemo(() => {
+    const keyword = searchTerm.trim().toLowerCase();
+
+    return reservations.filter((item) => {
+      const searchableText = [
+        item.displayId,
+        item.customer.name,
+        item.customer.email,
+        item.plate,
+        item.slot,
+        item.floorName,
+        item.vehicleTypeName,
+        item.status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = !keyword || searchableText.includes(keyword);
+      const matchesStatus = statusFilter === "All" || item.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [reservations, searchTerm, statusFilter]);
+
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
 
-  // 4. FUNCTION EXPORT TO CSV
+  const totalReservations = reservations.length;
+  const activeReservations = reservations.filter(
+    (item) => item.status === "PENDING" || item.status === "CONFIRMED"
+  ).length;
+  const completedReservations = reservations.filter(
+    (item) => item.status === "COMPLETED"
+  ).length;
+  const cancelledReservations = reservations.filter(
+    (item) => item.status === "CANCELLED"
+  ).length;
+
+  const formatDate = (value) => {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "-";
+    }
+
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "2-digit",
+    });
+  };
+
+  const formatTime = (value) => {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "-";
+    }
+
+    return date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "-";
+    }
+
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const getInitials = (name) => {
+    return String(name || "U")
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((item) => item[0])
+      .join("")
+      .toUpperCase();
+  };
+
+  const getStatusLabel = (status) => {
+    if (status === "PENDING") return "Pending";
+    if (status === "CONFIRMED") return "Confirmed";
+    if (status === "COMPLETED") return "Completed";
+    if (status === "CANCELLED") return "Cancelled";
+    return status || "Unknown";
+  };
+
+  const getStatusStyle = (status) => {
+    if (status === "PENDING") {
+      return {
+        background: "rgba(147, 51, 234, 0.1)",
+        color: "#a855f7",
+      };
+    }
+
+    if (status === "CONFIRMED") {
+      return {
+        background: "rgba(16, 185, 129, 0.1)",
+        color: "#10b981",
+      };
+    }
+
+    if (status === "COMPLETED") {
+      return {
+        background: "rgba(100, 116, 139, 0.1)",
+        color: "#94a3b8",
+      };
+    }
+
+    if (status === "CANCELLED") {
+      return {
+        background: "rgba(239, 68, 68, 0.1)",
+        color: "#ef4444",
+      };
+    }
+
+    return {
+      background: "rgba(100, 116, 139, 0.1)",
+      color: "#94a3b8",
+    };
+  };
+
   const handleExportCSV = () => {
-    const headers = ["Reservation ID", "Customer Name", "Customer Email", "Vehicle Plate", "Slot Location", "Date", "Start Time", "End Time", "Status"];
-    const rows = filteredData.map(item => [
-      item.id, item.customer.name, item.customer.email, item.plate, item.slot, item.schedule.date, item.schedule.time, item.schedule.end, item.status
+    const headers = [
+      "Reservation ID",
+      "Customer Name",
+      "Customer Email",
+      "Vehicle Plate",
+      "Vehicle Type",
+      "Slot",
+      "Floor",
+      "Start Time",
+      "End Time",
+      "Status",
+    ];
+
+    const rows = filteredData.map((item) => [
+      item.displayId,
+      item.customer.name,
+      item.customer.email,
+      item.plate,
+      item.vehicleTypeName,
+      item.slot,
+      item.floorName,
+      item.startTime || "",
+      item.endTime || "",
+      getStatusLabel(item.status),
     ]);
+
     const csvContent = [
       headers.join(","),
-      ...rows.map(row => row.map(val => `"${val.replace(/"/g, '""')}"`).join(","))
+      ...rows.map((row) =>
+        row
+          .map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`)
+          .join(",")
+      ),
     ].join("\n");
 
-    const blob = new Blob([`\ufeff${csvContent}`], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([`\ufeff${csvContent}`], {
+      type: "text/csv;charset=utf-8;",
+    });
+
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+
     link.setAttribute("href", url);
-    link.setAttribute("download", `Reservations_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute(
+      "download",
+      `Reservations_Report_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
-  // 5. CONFIRMED EXECUTING CANCELATION FROM CUSTOM MODAL
+  const handleConfirmReservation = async (reservation) => {
+    try {
+      await bookingApi.confirmBooking(reservation.id);
+      await loadReservations();
+    } catch (error) {
+      alert(
+        error.response?.data?.message ||
+          error.response?.data ||
+          "Confirm reservation thất bại."
+      );
+    }
+  };
+
   const confirmCancelReservation = async () => {
     if (!reservationToCancel) return;
-    
-    // ==========================================
-    // TODO: API INTEGRATION - CANCEL REQUEST (PUT/POST)
-    // ==========================================
-    /* try {
-        await axios.put(`/api/reservations/cancel/${reservationToCancel.id}`);
-      } catch(err) { console.error(err); }
-    */
 
-    setReservations(prev => 
-      prev.map(item => item.id === reservationToCancel.id ? { ...item, status: "Cancelled" } : item)
-    );
-    
-    // Tắt modal sau khi xử lý xong
-    setReservationToCancel(null);
+    try {
+      await bookingApi.cancelBooking(reservationToCancel.id);
+      setReservationToCancel(null);
+      await loadReservations();
+    } catch (error) {
+      alert(
+        error.response?.data?.message ||
+          error.response?.data ||
+          "Cancel reservation thất bại."
+      );
+    }
   };
 
+
   return (
-    <div className="dashboard-layout" style={{ display: "flex", background: "#060b13", minHeight: "100vh" }}>
+    <div
+      className="dashboard-layout"
+      style={{ display: "flex", background: "#060b13", minHeight: "100vh" }}
+    >
       <Sidebar />
-      <main className="main-content" style={{ flex: 1, padding: "2rem", overflowY: "auto" }}>
+
+      <main
+        className="main-content"
+        style={{ flex: 1, padding: "2rem", overflowY: "auto" }}
+      >
         <Header />
 
-        {/* Description Area */}
         <div style={{ marginBottom: "2rem" }}>
-          <p style={{ color: "#64748b", margin: "0" }}>Monitor and control all vehicle bookings across the facility.</p>
+          <p style={{ color: "#64748b", margin: "0" }}>
+            View and manage parking reservations across the facility.
+          </p>
         </div>
 
-        {/* Stats Cards Row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1.25rem", marginBottom: "2rem" }}>
-          <div style={{ background: "#0c1322", padding: "1.25rem", borderRadius: "0.75rem", border: "1px solid #1e293b", position: "relative" }}>
-            <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "bold" }}>TOTAL RESERVATIONS</span>
-            <p style={{ fontSize: "1.75rem", fontWeight: "bold", margin: "0.5rem 0", color: "#fff" }}>1,284</p>
-            <span style={{ fontSize: "0.75rem", color: "#10b981" }}>↗ 12% from last month</span>
-            <div style={{ position: "absolute", top: "1.25rem", right: "1.25rem", background: "#1e293b", padding: "0.5rem", borderRadius: "0.5rem", color: "#64748b" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: "1.25rem",
+            marginBottom: "2rem",
+          }}
+        >
+          <div
+            style={{
+              background: "#0c1322",
+              padding: "1.25rem",
+              borderRadius: "0.75rem",
+              border: "1px solid #1e293b",
+              position: "relative",
+            }}
+          >
+            <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "bold" }}>
+              TOTAL RESERVATIONS
+            </span>
+            <p
+              style={{
+                fontSize: "1.75rem",
+                fontWeight: "bold",
+                margin: "0.5rem 0",
+                color: "#fff",
+              }}
+            >
+              {totalReservations.toLocaleString()}
+            </p>
+            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+              All reservations in the system
+            </span>
+            <div
+              style={{
+                position: "absolute",
+                top: "1.25rem",
+                right: "1.25rem",
+                background: "#1e293b",
+                padding: "0.5rem",
+                borderRadius: "0.5rem",
+                color: "#64748b",
+              }}
+            >
               <Calendar size={20} />
             </div>
           </div>
 
-          <div style={{ background: "#0c1322", padding: "1.25rem", borderRadius: "0.75rem", border: "1px solid #1e293b", position: "relative" }}>
-            <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "bold" }}>ACTIVE NOW</span>
-            <p style={{ fontSize: "1.75rem", fontWeight: "bold", margin: "0.5rem 0", color: "#fff" }}>432</p>
-            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>92% occupancy in Zone A</span>
-            <div style={{ position: "absolute", top: "1.25rem", right: "1.25rem", background: "rgba(16, 185, 129, 0.1)", padding: "0.5rem", borderRadius: "0.5rem", color: "#10b981" }}>
+          <div
+            style={{
+              background: "#0c1322",
+              padding: "1.25rem",
+              borderRadius: "0.75rem",
+              border: "1px solid #1e293b",
+              position: "relative",
+            }}
+          >
+            <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "bold" }}>
+              ACTIVE NOW
+            </span>
+            <p
+              style={{
+                fontSize: "1.75rem",
+                fontWeight: "bold",
+                margin: "0.5rem 0",
+                color: "#fff",
+              }}
+            >
+              {activeReservations.toLocaleString()}
+            </p>
+            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+              Reservations currently in progress
+            </span>
+            <div
+              style={{
+                position: "absolute",
+                top: "1.25rem",
+                right: "1.25rem",
+                background: "rgba(16, 185, 129, 0.1)",
+                padding: "0.5rem",
+                borderRadius: "0.5rem",
+                color: "#10b981",
+              }}
+            >
               <Car size={20} />
             </div>
           </div>
 
-          <div style={{ background: "#0c1322", padding: "1.25rem", borderRadius: "0.75rem", border: "1px solid #1e293b", position: "relative" }}>
-            <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "bold" }}>COMPLETED</span>
-            <p style={{ fontSize: "1.75rem", fontWeight: "bold", margin: "0.5rem 0", color: "#fff" }}>812</p>
-            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>Avg duration: 4.5 hrs</span>
-            <div style={{ position: "absolute", top: "1.25rem", right: "1.25rem", background: "rgba(59, 130, 246, 0.1)", padding: "0.5rem", borderRadius: "0.5rem", color: "#3b82f6" }}>
+          <div
+            style={{
+              background: "#0c1322",
+              padding: "1.25rem",
+              borderRadius: "0.75rem",
+              border: "1px solid #1e293b",
+              position: "relative",
+            }}
+          >
+            <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "bold" }}>
+              COMPLETED
+            </span>
+            <p
+              style={{
+                fontSize: "1.75rem",
+                fontWeight: "bold",
+                margin: "0.5rem 0",
+                color: "#fff",
+              }}
+            >
+              {completedReservations.toLocaleString()}
+            </p>
+            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+              Reservations that have been completed
+            </span>
+            <div
+              style={{
+                position: "absolute",
+                top: "1.25rem",
+                right: "1.25rem",
+                background: "rgba(59, 130, 246, 0.1)",
+                padding: "0.5rem",
+                borderRadius: "0.5rem",
+                color: "#3b82f6",
+              }}
+            >
               <CheckCircle2 size={20} />
             </div>
           </div>
 
-          <div style={{ background: "#0c1322", padding: "1.25rem", borderRadius: "0.75rem", border: "1px solid #1e293b", position: "relative" }}>
-            <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "bold" }}>CANCELLED</span>
-            <p style={{ fontSize: "1.75rem", fontWeight: "bold", margin: "0.5rem 0", color: "#fff" }}>40</p>
-            <span style={{ fontSize: "0.75rem", color: "#ef4444" }}>↘ Reduced by 5%</span>
-            <div style={{ position: "absolute", top: "1.25rem", right: "1.25rem", background: "rgba(239, 68, 68, 0.1)", padding: "0.5rem", borderRadius: "0.5rem", color: "#ef4444" }}>
+          <div
+            style={{
+              background: "#0c1322",
+              padding: "1.25rem",
+              borderRadius: "0.75rem",
+              border: "1px solid #1e293b",
+              position: "relative",
+            }}
+          >
+            <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "bold" }}>
+              CANCELLED
+            </span>
+            <p
+              style={{
+                fontSize: "1.75rem",
+                fontWeight: "bold",
+                margin: "0.5rem 0",
+                color: "#fff",
+              }}
+            >
+              {cancelledReservations.toLocaleString()}
+            </p>
+            <span style={{ fontSize: "0.75rem", color: "#ef4444" }}>
+              Reservations that were cancelled
+            </span>
+            <div
+              style={{
+                position: "absolute",
+                top: "1.25rem",
+                right: "1.25rem",
+                background: "rgba(239, 68, 68, 0.1)",
+                padding: "0.5rem",
+                borderRadius: "0.5rem",
+                color: "#ef4444",
+              }}
+            >
               <XCircle size={20} />
             </div>
           </div>
         </div>
 
-        {/* Filter Bar */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "1.5rem",
+          }}
+        >
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flex: 1 }}>
             <div style={{ position: "relative", width: "300px" }}>
-              <Search size={16} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
+              <Search
+                size={16}
+                style={{
+                  position: "absolute",
+                  left: "0.75rem",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "#64748b",
+                }}
+              />
               <input
                 type="text"
-                placeholder="Filter by Name or Plate..."
+                placeholder="Filter by name, email, plate, slot..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(event) => setSearchTerm(event.target.value)}
                 style={{
-                  width: "100%", padding: "0.6rem 0.6rem 0.6rem 2.25rem", borderRadius: "0.5rem",
-                  border: "1px solid #1e293b", background: "#0c1322", color: "#fff", fontSize: "0.9rem"
+                  width: "100%",
+                  padding: "0.6rem 0.6rem 0.6rem 2.25rem",
+                  borderRadius: "0.5rem",
+                  border: "1px solid #1e293b",
+                  background: "#0c1322",
+                  color: "#fff",
+                  fontSize: "0.9rem",
                 }}
               />
             </div>
 
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(event) => setStatusFilter(event.target.value)}
               style={{
-                padding: "0.6rem 1rem", borderRadius: "0.5rem", border: "1px solid #1e293b",
-                background: "#0c1322", color: "#fff", cursor: "pointer", fontSize: "0.9rem"
+                padding: "0.6rem 1rem",
+                borderRadius: "0.5rem",
+                border: "1px solid #1e293b",
+                background: "#0c1322",
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: "0.9rem",
               }}
             >
-              <option value="All">All Statuses</option>
-              <option value="Active">Active</option>
-              <option value="Pending">Pending</option>
-              <option value="Completed">Completed</option>
-              <option value="Cancelled">Cancelled</option>
+              <option value="All">All statuses</option>
+              <option value="PENDING">Pending</option>
+              <option value="CONFIRMED">Confirmed</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="CANCELLED">Cancelled</option>
             </select>
-          </div>
 
-          {/* Action Elements - CSV Only */}
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button 
-              title="Export Report to CSV" 
-              onClick={handleExportCSV}
-              style={{ 
-                padding: "0.6rem", borderRadius: "0.5rem", border: "1px solid #1e293b", 
-                background: "#0c1322", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center" 
+            <button
+              title="Reload reservations"
+              onClick={loadReservations}
+              style={{
+                padding: "0.6rem",
+                borderRadius: "0.5rem",
+                border: "1px solid #1e293b",
+                background: "#0c1322",
+                color: "#fff",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
               }}
             >
-              <Download size={18} />
+              <RefreshCcw size={18} />
             </button>
           </div>
+
+          <button
+            title="Export report to CSV"
+            onClick={handleExportCSV}
+            style={{
+              padding: "0.6rem",
+              borderRadius: "0.5rem",
+              border: "1px solid #1e293b",
+              background: "#0c1322",
+              color: "#fff",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            <Download size={18} />
+          </button>
         </div>
 
-        {/* Table Area */}
-        <div style={{ background: "#0c1322", borderRadius: "0.75rem", border: "1px solid #1e293b", overflow: "hidden", marginBottom: "1.5rem" }}>
+        <div
+          style={{
+            background: "#0c1322",
+            borderRadius: "0.75rem",
+            border: "1px solid #1e293b",
+            overflow: "hidden",
+            marginBottom: "1.5rem",
+          }}
+        >
           <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
             <thead>
-              <tr style={{ borderBottom: "1px solid #1e293b", color: "#64748b", fontSize: "0.85rem" }}>
+              <tr
+                style={{
+                  borderBottom: "1px solid #1e293b",
+                  color: "#64748b",
+                  fontSize: "0.85rem",
+                }}
+              >
                 <th style={{ padding: "1rem" }}>ID</th>
                 <th style={{ padding: "1rem" }}>Customer</th>
                 <th style={{ padding: "1rem" }}>Vehicle Plate</th>
@@ -225,96 +617,233 @@ const ReservationAdmin = () => {
                 <th style={{ padding: "1rem", textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {currentItems.map((row) => {
-                let badgeStyle = { background: "rgba(16, 185, 129, 0.1)", color: "#10b981" };
-                if (row.status === "Pending") badgeStyle = { background: "rgba(147, 51, 234, 0.1)", color: "#a855f7" };
-                if (row.status === "Completed") badgeStyle = { background: "rgba(100, 116, 139, 0.1)", color: "#94a3b8" };
-                if (row.status === "Cancelled") badgeStyle = { background: "rgba(239, 68, 68, 0.1)", color: "#ef4444" };
 
-                return (
-                  <tr key={row.id} style={{ borderBottom: "1px solid #1e293b", color: "#fff", fontSize: "0.9rem" }}>
-                    <td style={{ padding: "1rem", color: "#64748b", fontWeight: "600" }}>{row.id}</td>
-                    <td style={{ padding: "1rem" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem", fontWeight: "bold", color: "#3b82f6" }}>
-                          {row.customer.name.split(" ").map(n => n[0]).join("")}
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td
+                    colSpan="7"
+                    style={{
+                      padding: "2rem",
+                      textAlign: "center",
+                      color: "#64748b",
+                    }}
+                  >
+                    Loading reservations...
+                  </td>
+                </tr>
+              ) : currentItems.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan="7"
+                    style={{
+                      padding: "2rem",
+                      textAlign: "center",
+                      color: "#64748b",
+                    }}
+                  >
+                    No reservations found.
+                  </td>
+                </tr>
+              ) : (
+                currentItems.map((row) => {
+                  const badgeStyle = getStatusStyle(row.status);
+                  const isFinalStatus =
+                    row.status === "COMPLETED" || row.status === "CANCELLED";
+
+                  return (
+                    <tr
+                      key={row.id}
+                      style={{
+                        borderBottom: "1px solid #1e293b",
+                        color: "#fff",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      <td style={{ padding: "1rem", color: "#64748b", fontWeight: "600" }}>
+                        {row.displayId}
+                      </td>
+
+                      <td style={{ padding: "1rem" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                          <div
+                            style={{
+                              width: "32px",
+                              height: "32px",
+                              borderRadius: "50%",
+                              background: "#1e293b",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "0.8rem",
+                              fontWeight: "bold",
+                              color: "#3b82f6",
+                            }}
+                          >
+                            {getInitials(row.customer.name)}
+                          </div>
+
+                          <div>
+                            <p style={{ margin: 0, fontWeight: "600" }}>{row.customer.name}</p>
+                            <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748b" }}>
+                              {row.customer.email}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p style={{ margin: 0, fontWeight: "600" }}>{row.customer.name}</p>
-                          <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748b" }}>{row.customer.email}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: "1rem" }}>
-                      <span style={{ background: "#1e293b", padding: "0.3rem 0.6rem", borderRadius: "0.375rem", fontSize: "0.8rem", letterSpacing: "0.5px" }}>
-                        {row.plate}
-                      </span>
-                    </td>
-                    <td style={{ padding: "1rem", color: "#e2e8f0" }}>{row.slot}</td>
-                    <td style={{ padding: "1rem" }}>
-                      <p style={{ margin: 0, fontWeight: "600" }}>{row.schedule.date}, <span style={{ color: "#64748b", fontSize: "0.8rem" }}>{row.schedule.time}</span></p>
-                      <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748b" }}>{row.schedule.end}</p>
-                    </td>
-                    <td style={{ padding: "1rem" }}>
-                      <span style={{ padding: "0.25rem 0.6rem", borderRadius: "0.375rem", fontSize: "0.75rem", fontWeight: "bold", ...badgeStyle }}>
-                        {row.status}
-                      </span>
-                    </td>
-                    <td style={{ padding: "1rem", textAlign: "right" }}>
-                      <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", color: "#64748b" }}>
-                        {row.status === "Completed" || row.status === "Cancelled" ? (
-                          <button title="View Detail" style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", padding: "4px" }}>
+                      </td>
+
+                      <td style={{ padding: "1rem" }}>
+                        <span
+                          style={{
+                            background: "#1e293b",
+                            padding: "0.3rem 0.6rem",
+                            borderRadius: "0.375rem",
+                            fontSize: "0.8rem",
+                            letterSpacing: "0.5px",
+                          }}
+                        >
+                          {row.plate}
+                        </span>
+                      </td>
+
+                      <td style={{ padding: "1rem", color: "#e2e8f0" }}>
+                        <div>{row.slot}</div>
+                        {row.floorName && (
+                          <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                            {row.floorName}
+                          </div>
+                        )}
+                      </td>
+
+                      <td style={{ padding: "1rem" }}>
+                        <p style={{ margin: 0, fontWeight: "600" }}>
+                          {formatDate(row.startTime)},{" "}
+                          <span style={{ color: "#64748b", fontSize: "0.8rem" }}>
+                            {formatTime(row.startTime)}
+                          </span>
+                        </p>
+                        <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748b" }}>
+                          Ends {formatTime(row.endTime)}
+                        </p>
+                      </td>
+
+                      <td style={{ padding: "1rem" }}>
+                        <span
+                          style={{
+                            padding: "0.25rem 0.6rem",
+                            borderRadius: "0.375rem",
+                            fontSize: "0.75rem",
+                            fontWeight: "bold",
+                            ...badgeStyle,
+                          }}
+                        >
+                          {getStatusLabel(row.status)}
+                        </span>
+                      </td>
+
+                      <td style={{ padding: "1rem", textAlign: "right" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "0.5rem",
+                            justifyContent: "flex-end",
+                            color: "#64748b",
+                          }}
+                        >
+                          <button
+                            title="View reservation details"
+                            onClick={() => setSelectedReservationDetail(row)}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              color: "#64748b",
+                              cursor: "pointer",
+                              padding: "4px",
+                            }}
+                          >
                             <Eye size={16} />
                           </button>
-                        ) : (
-                          <>
-                            <button title="Edit Schedule" style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", padding: "4px" }}>
-                              <Edit2 size={16} />
-                            </button>
-                            <button 
-                              title="Cancel Reservation" 
-                              onClick={() => setReservationToCancel(row)} // Bật modal UI xịn thay vì window prompt
-                              style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", padding: "4px" }}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+
+                          {!isFinalStatus && (
+                            <>
+                              {row.status === "PENDING" && (
+                                <button
+                                  title="Confirm reservation"
+                                  onClick={() => handleConfirmReservation(row)}
+                                  style={{
+                                    background: "transparent",
+                                    border: "none",
+                                    color: "#10b981",
+                                    cursor: "pointer",
+                                    padding: "4px",
+                                  }}
+                                >
+                                  <CheckCircle2 size={16} />
+                                </button>
+                              )}
+
+                              <button
+                                title="Cancel reservation"
+                                onClick={() => setReservationToCancel(row)}
+                                style={{
+                                  background: "transparent",
+                                  border: "none",
+                                  color: "#f59e0b",
+                                  cursor: "pointer",
+                                  padding: "4px",
+                                }}
+                              >
+                                <XCircle size={16} />
+                              </button>
+
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
 
-        {/* Navigation Pagination Section (> 5 data) */}
         {filteredData.length > itemsPerPage && (
           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
               <button
                 disabled={currentPage === 1}
-                onClick={() => setCurrentPage(p => p - 1)}
-                style={{ 
-                  background: "#0c1322", border: "1px solid #1e293b", color: "#fff", 
-                  padding: "0.5rem 0.75rem", borderRadius: "0.375rem", 
-                  cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: "0.85rem" 
+                onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+                style={{
+                  background: "#0c1322",
+                  border: "1px solid #1e293b",
+                  color: "#fff",
+                  padding: "0.5rem 0.75rem",
+                  borderRadius: "0.375rem",
+                  cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                  fontSize: "0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.25rem",
                 }}
               >
+                <ChevronLeft size={16} />
                 Previous
               </button>
-              
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+
+              {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
                 <button
                   key={page}
                   onClick={() => setCurrentPage(page)}
                   style={{
                     background: currentPage === page ? "#3b82f6" : "#0c1322",
                     border: "1px solid #1e293b",
-                    color: "#fff", padding: "0.5rem 0.75rem", borderRadius: "0.375rem",
-                    cursor: "pointer", fontSize: "0.85rem", fontWeight: "600"
+                    color: "#fff",
+                    padding: "0.5rem 0.75rem",
+                    borderRadius: "0.375rem",
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                    fontWeight: "600",
                   }}
                 >
                   {page}
@@ -323,53 +852,369 @@ const ReservationAdmin = () => {
 
               <button
                 disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(p => p + 1)}
-                style={{ 
-                  background: "#0c1322", border: "1px solid #1e293b", color: "#fff", 
-                  padding: "0.5rem 0.75rem", borderRadius: "0.375rem", 
-                  cursor: currentPage === totalPages ? "not-allowed" : "pointer", fontSize: "0.85rem" 
+                onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))}
+                style={{
+                  background: "#0c1322",
+                  border: "1px solid #1e293b",
+                  color: "#fff",
+                  padding: "0.5rem 0.75rem",
+                  borderRadius: "0.375rem",
+                  cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                  fontSize: "0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.25rem",
                 }}
               >
                 Next
+                <ChevronRight size={16} />
               </button>
             </div>
           </div>
         )}
 
-        {/* ============================================================= */}
-        {/* CUSTOM CONFIRMATION MODAL - ĐẸP VÀ ĐỒNG BỘ THEO DESIGN CHUẨN */}
-        {/* ============================================================= */}
+
+        {selectedReservationDetail && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(3, 7, 18, 0.85)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 2000,
+              backdropFilter: "blur(4px)",
+              padding: "1rem",
+            }}
+          >
+            <div
+              style={{
+                background: "#0c1322",
+                border: "1px solid #1e293b",
+                borderRadius: "0.85rem",
+                width: "min(520px, 100%)",
+                color: "#ffffff",
+                boxShadow: "0 24px 60px rgba(0, 0, 0, 0.5)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: "1rem",
+                  padding: "1.25rem 1.5rem",
+                  borderBottom: "1px solid #1e293b",
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.25rem" }}>
+                    Reservation Details
+                  </h3>
+                  <p style={{ margin: "0.35rem 0 0", color: "#64748b", fontSize: "0.85rem" }}>
+                    {selectedReservationDetail.displayId}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedReservationDetail(null)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#94a3b8",
+                    cursor: "pointer",
+                    padding: "0.25rem",
+                  }}
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+
+              <div style={{ padding: "1.5rem" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "1rem",
+                    marginBottom: "1.25rem",
+                  }}
+                >
+                  <div>
+                    <p style={{ margin: 0, color: "#64748b", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase" }}>
+                      Current Status
+                    </p>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        marginTop: "0.4rem",
+                        padding: "0.3rem 0.65rem",
+                        borderRadius: "0.45rem",
+                        fontSize: "0.78rem",
+                        fontWeight: 700,
+                        ...getStatusStyle(selectedReservationDetail.status),
+                      }}
+                    >
+                      {getStatusLabel(selectedReservationDetail.status)}
+                    </span>
+                  </div>
+
+                  {(selectedReservationDetail.status === "CANCELLED" ||
+                    selectedReservationDetail.status === "COMPLETED") && (
+                    <div
+                      style={{
+                        maxWidth: "260px",
+                        padding: "0.75rem",
+                        borderRadius: "0.65rem",
+                        background: "rgba(100, 116, 139, 0.12)",
+                        border: "1px solid rgba(100, 116, 139, 0.25)",
+                        color: "#cbd5e1",
+                        fontSize: "0.78rem",
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      This reservation is closed and can no longer be modified.
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "0.85rem",
+                    marginBottom: "1.25rem",
+                  }}
+                >
+                  {[
+                    ["Customer", selectedReservationDetail.customer.name],
+                    ["Email", selectedReservationDetail.customer.email],
+                    ["Vehicle Plate", selectedReservationDetail.plate],
+                    ["Vehicle Type", selectedReservationDetail.vehicleTypeName],
+                    ["Slot", selectedReservationDetail.slot],
+                    ["Floor", selectedReservationDetail.floorName || "-"],
+                    ["Start Time", formatDateTime(selectedReservationDetail.startTime)],
+                    ["End Time", formatDateTime(selectedReservationDetail.endTime)],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      style={{
+                        background: "#060b13",
+                        border: "1px solid #1e293b",
+                        borderRadius: "0.65rem",
+                        padding: "0.8rem",
+                        minWidth: 0,
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: "0 0 0.35rem",
+                          color: "#64748b",
+                          fontSize: "0.7rem",
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {label}
+                      </p>
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#ffffff",
+                          fontSize: "0.88rem",
+                          fontWeight: 600,
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {value || "-"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedReservationDetail(null)}
+                    style={{
+                      height: "42px",
+                      padding: "0 1rem",
+                      borderRadius: "0.65rem",
+                      border: "1px solid #1e293b",
+                      background: "#131c2e",
+                      color: "#cbd5e1",
+                      cursor: "pointer",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Close
+                  </button>
+
+                  {selectedReservationDetail.status === "PENDING" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const reservation = selectedReservationDetail;
+                        setSelectedReservationDetail(null);
+                        handleConfirmReservation(reservation);
+                      }}
+                      style={{
+                        height: "42px",
+                        padding: "0 1rem",
+                        borderRadius: "0.65rem",
+                        border: "none",
+                        background: "#10b981",
+                        color: "#ffffff",
+                        cursor: "pointer",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Confirm
+                    </button>
+                  )}
+
+                  {(selectedReservationDetail.status === "PENDING" ||
+                    selectedReservationDetail.status === "CONFIRMED") && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReservationToCancel(selectedReservationDetail);
+                        setSelectedReservationDetail(null);
+                      }}
+                      style={{
+                        height: "42px",
+                        padding: "0 1rem",
+                        borderRadius: "0.65rem",
+                        border: "none",
+                        background: "#f59e0b",
+                        color: "#ffffff",
+                        cursor: "pointer",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {reservationToCancel && (
-          <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(3, 7, 18, 0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, backdropFilter: "blur(4px)" }}>
-            <div style={{ background: "#0c1322", border: "1px solid #1e293b", padding: "2rem", borderRadius: "0.75rem", width: "420px", textAlign: "center", boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5)" }}>
-              
-              {/* Warning Header Icon */}
-              <div style={{ background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", width: "56px", height: "56px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.25rem auto" }}>
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(3, 7, 18, 0.85)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 2000,
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <div
+              style={{
+                background: "#0c1322",
+                border: "1px solid #1e293b",
+                padding: "2rem",
+                borderRadius: "0.75rem",
+                width: "420px",
+                textAlign: "center",
+                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5)",
+              }}
+            >
+              <div
+                style={{
+                  background: "rgba(245, 158, 11, 0.1)",
+                  color: "#f59e0b",
+                  width: "56px",
+                  height: "56px",
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  margin: "0 auto 1.25rem auto",
+                }}
+              >
                 <AlertTriangle size={28} />
               </div>
-              
-              {/* Modal Context */}
-              <h3 style={{ color: "#fff", margin: "0 0 0.5rem 0", fontSize: "1.25rem", fontWeight: "600" }}>Cancel Reservation</h3>
-              <p style={{ color: "#64748b", fontSize: "0.9rem", margin: "0 0 2rem 0", lineHeight: "1.5" }}>
-                Are you sure you want to cancel reservation <span style={{ color: "#fff", fontWeight: "bold" }}>{reservationToCancel.id}</span> for <span style={{ color: "#fff", fontWeight: "bold" }}>{reservationToCancel.customer.name}</span>? This action cannot be undone.
+
+              <h3
+                style={{
+                  color: "#fff",
+                  margin: "0 0 0.5rem 0",
+                  fontSize: "1.25rem",
+                  fontWeight: "600",
+                }}
+              >
+                Cancel Reservation
+              </h3>
+
+              <p
+                style={{
+                  color: "#64748b",
+                  fontSize: "0.9rem",
+                  margin: "0 0 2rem 0",
+                  lineHeight: "1.5",
+                }}
+              >
+                Are you sure you want to cancel reservation{" "}
+                <span style={{ color: "#fff", fontWeight: "bold" }}>
+                  {reservationToCancel.displayId}
+                </span>{" "}
+                for{" "}
+                <span style={{ color: "#fff", fontWeight: "bold" }}>
+                  {reservationToCancel.customer.name}
+                </span>
+                ?
               </p>
 
-              {/* Handle Execution Buttons */}
               <div style={{ display: "flex", gap: "0.75rem" }}>
-                <button 
-                  onClick={() => setReservationToCancel(null)} // Cancel Close
-                  style={{ flex: 1, padding: "0.65rem", background: "transparent", color: "#94a3b8", border: "1px solid #1e293b", borderRadius: "0.5rem", cursor: "pointer", fontWeight: "600", fontSize: "0.9rem" }}
+                <button
+                  onClick={() => setReservationToCancel(null)}
+                  style={{
+                    flex: 1,
+                    padding: "0.65rem",
+                    background: "transparent",
+                    color: "#94a3b8",
+                    border: "1px solid #1e293b",
+                    borderRadius: "0.5rem",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    fontSize: "0.9rem",
+                  }}
                 >
                   No, Keep It
                 </button>
-                <button 
-                  onClick={confirmCancelReservation} // Confirm Delete/Cancel
-                  style={{ flex: 1, padding: "0.65rem", background: "#ef4444", color: "#fff", border: "none", borderRadius: "0.5rem", cursor: "pointer", fontWeight: "600", fontSize: "0.9rem" }}
+
+                <button
+                  onClick={confirmCancelReservation}
+                  style={{
+                    flex: 1,
+                    padding: "0.65rem",
+                    background: "#f59e0b",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "0.5rem",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    fontSize: "0.9rem",
+                  }}
                 >
                   Yes, Cancel
                 </button>
               </div>
-
             </div>
           </div>
         )}

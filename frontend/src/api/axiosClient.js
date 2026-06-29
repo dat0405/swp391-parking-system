@@ -1,47 +1,24 @@
 import axios from "axios";
 
-const axiosClient = axios.create({
-  baseURL: "http://localhost:8080/api",
 const API_BASE_URL = "http://localhost:8080/api";
 
 const axiosClient = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-axiosClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-
-  return config;
-});
-axiosClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("token");
-
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
 let isRefreshing = false;
 let failedQueue = [];
 
-const processQueue = (error, newToken = null) => {
+const processQueue = (error) => {
   failedQueue.forEach((request) => {
     if (error) {
       request.reject(error);
     } else {
-      request.resolve(newToken);
+      request.resolve();
     }
   });
 
@@ -81,66 +58,24 @@ axiosClient.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
-      const refreshToken = localStorage.getItem("refreshToken");
-
-      if (!refreshToken) {
-        clearAuthAndRedirect();
-        return Promise.reject(error);
-      }
-
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
-          .then((newToken) => {
-            originalRequest.headers.Authorization = `Bearer ${newToken}`;
-            return axiosClient(originalRequest);
-          })
+          .then(() => axiosClient(originalRequest))
           .catch((queueError) => Promise.reject(queueError));
       }
 
       isRefreshing = true;
 
       try {
-        const refreshResponse = await axios.post(
-          `${API_BASE_URL}/auth/refresh-token`,
-          {
-            refreshToken,
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        await axiosClient.post("/auth/refresh-token");
 
-        const newAccessToken = refreshResponse.data.accessToken;
-        const newRefreshToken = refreshResponse.data.refreshToken;
-
-        localStorage.setItem("token", newAccessToken);
-
-        if (newRefreshToken) {
-          localStorage.setItem("refreshToken", newRefreshToken);
-        }
-
-        localStorage.setItem(
-          "user",
-          JSON.stringify({
-            userId: refreshResponse.data.userId,
-            fullName: refreshResponse.data.fullName,
-            email: refreshResponse.data.email,
-            role: refreshResponse.data.role,
-          })
-        );
-
-        axiosClient.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-
-        processQueue(null, newAccessToken);
+        processQueue(null);
 
         return axiosClient(originalRequest);
       } catch (refreshError) {
-        processQueue(refreshError, null);
+        processQueue(refreshError);
         clearAuthAndRedirect();
 
         return Promise.reject(refreshError);
