@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GoogleLogin } from '@react-oauth/google';
+import { useGoogleLogin } from '@react-oauth/google';
 import { User, Lock, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axiosClient from './api/axiosClient';
@@ -122,42 +122,51 @@ function LoginPage() {
     }
   };
 
-  const handleGoogleLoginSuccess = async (credentialResponse) => {
-    const credential = credentialResponse?.credential;
+  const googleLogin = useGoogleLogin({
+    flow: 'implicit',
+    scope: 'openid email profile',
+    onSuccess: async (tokenResponse) => {
+      const googleAccessToken = tokenResponse?.access_token;
 
-    if (!credential) {
-      showToast('Google login failed. Please try again.', 'error');
-      return;
-    }
+      if (!googleAccessToken) {
+        showToast('Google login failed. Please try again.', 'error');
+        return;
+      }
 
-    try {
-      setIsGoogleLoading(true);
+      try {
+        setIsGoogleLoading(true);
 
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
 
-      const googleResponse = await axiosClient.post('/auth/google', {
-        credential
-      });
+        const googleResponse = await axiosClient.post('/auth/google-token', {
+          accessToken: googleAccessToken
+        });
 
-      saveAuthDataIfExists(googleResponse.data);
-      await loadCurrentUserAndRedirect();
-    } catch (error) {
-      console.error('Lỗi Google login:', error);
+        saveAuthDataIfExists(googleResponse.data);
+        await loadCurrentUserAndRedirect();
+      } catch (error) {
+        console.error('Lỗi Google login:', error);
 
-      showToast(
-        error.response?.data?.message ||
-          error.response?.data ||
-          'Google login failed. Your Google account may not be registered in the system.',
-        'error'
-      );
+        showToast(
+          error.response?.data?.message ||
+            error.response?.data ||
+            'Google login failed. Your Google account may not be registered in the system.',
+          'error'
+        );
 
+        setIsGoogleLoading(false);
+      }
+    },
+    onError: () => {
+      showToast('Google login was cancelled or failed.', 'error');
       setIsGoogleLoading(false);
     }
-  };
+  });
 
-  const handleGoogleLoginError = () => {
-    showToast('Google login was cancelled or failed.', 'error');
+  const handleGoogleButtonClick = () => {
+    if (isLoading || isGoogleLoading) return;
+    googleLogin();
   };
 
   const isPageLoading = isLoading || isGoogleLoading;
@@ -342,45 +351,85 @@ function LoginPage() {
             }}
           >
             <div style={{ flex: 1, height: '1px', background: '#1e293b' }} />
-            <span style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 600 }}>
+
+            <span
+              style={{
+                color: '#64748b',
+                fontSize: '0.75rem',
+                fontWeight: 600
+              }}
+            >
               OR
             </span>
+
             <div style={{ flex: 1, height: '1px', background: '#1e293b' }} />
           </div>
 
-          <div
+          <button
+            type="button"
+            onClick={handleGoogleButtonClick}
+            disabled={isPageLoading}
             style={{
-              opacity: isPageLoading ? 0.65 : 1,
-              pointerEvents: isPageLoading ? 'none' : 'auto',
-              marginBottom: '1.5rem',
+              width: '100%',
+              height: '44px',
+              backgroundColor: isPageLoading ? '#f1f3f4' : '#ffffff',
+              color: '#3c4043',
+              border: '1px solid #dadce0',
+              borderRadius: '4px',
+              fontWeight: '500',
+              fontSize: '14px',
+              fontFamily: 'Roboto, Arial, sans-serif',
+              cursor: isPageLoading ? 'not-allowed' : 'pointer',
               display: 'flex',
-              justifyContent: 'center'
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+              marginBottom: '1.5rem',
+              boxShadow: 'none',
+              opacity: isPageLoading ? 0.75 : 1
+            }}
+            onMouseEnter={(event) => {
+              if (!isPageLoading) {
+                event.currentTarget.style.backgroundColor = '#f8fafd';
+                event.currentTarget.style.borderColor = '#d2e3fc';
+              }
+            }}
+            onMouseLeave={(event) => {
+              event.currentTarget.style.backgroundColor = isPageLoading
+                ? '#f1f3f4'
+                : '#ffffff';
+              event.currentTarget.style.borderColor = '#dadce0';
             }}
           >
-            <GoogleLogin
-              onSuccess={handleGoogleLoginSuccess}
-              onError={handleGoogleLoginError}
-              text="continue_with"
-              shape="rectangular"
-              theme="filled_black"
-              size="large"
-              width="400"
-            />
-          </div>
-
-          {isGoogleLoading && (
-            <p
-              style={{
-                textAlign: 'center',
-                color: '#94a3b8',
-                fontSize: '0.8rem',
-                marginTop: '-0.8rem',
-                marginBottom: '1rem'
-              }}
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
             >
-              Verifying Google account...
-            </p>
-          )}
+              <path
+                fill="#4285F4"
+                d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.12-.84 2.07-1.79 2.71v2.25h2.9c1.7-1.56 2.69-3.86 2.69-6.6z"
+              />
+              <path
+                fill="#34A853"
+                d="M9 18c2.43 0 4.47-.8 5.96-2.19l-2.9-2.25c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.33C2.44 15.96 5.48 18 9 18z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M3.95 10.7c-.18-.54-.28-1.11-.28-1.7s.1-1.16.28-1.7V4.97H.96C.35 6.18 0 7.55 0 9s.35 2.82.96 4.03l2.99-2.33z"
+              />
+              <path
+                fill="#EA4335"
+                d="M9 3.58c1.32 0 2.5.45 3.43 1.34l2.57-2.57C13.46.9 11.43 0 9 0 5.48 0 2.44 2.04.96 4.97L3.95 7.3C4.66 5.17 6.65 3.58 9 3.58z"
+              />
+            </svg>
+
+            <span>
+              {isGoogleLoading ? 'Signing in...' : 'Continue with Google'}
+            </span>
+          </button>
 
           <div
             style={{

@@ -1,17 +1,14 @@
 package com.tatdat.parking.backend.controller;
 
-import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
-import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
-import com.google.api.client.http.javanet.NetHttpTransport;
-import com.google.api.client.json.gson.GsonFactory;
 import com.tatdat.parking.backend.dto.AuthResponse;
 import com.tatdat.parking.backend.dto.ForgotPasswordRequest;
-import com.tatdat.parking.backend.dto.GoogleLoginRequest;
+import com.tatdat.parking.backend.dto.GoogleAccessTokenRequest;
 import com.tatdat.parking.backend.dto.LoginRequest;
 import com.tatdat.parking.backend.dto.LogoutRequest;
 import com.tatdat.parking.backend.dto.RefreshTokenRequest;
 import com.tatdat.parking.backend.dto.RegisterRequest;
 import com.tatdat.parking.backend.dto.ResetForgotPasswordRequest;
+import com.tatdat.parking.backend.dto.UserStatusEvent;
 import com.tatdat.parking.backend.entity.RefreshToken;
 import com.tatdat.parking.backend.entity.Role;
 import com.tatdat.parking.backend.entity.User;
@@ -21,19 +18,22 @@ import com.tatdat.parking.backend.repository.UserRepository;
 import com.tatdat.parking.backend.security.JwtService;
 import com.tatdat.parking.backend.security.RefreshTokenService;
 import com.tatdat.parking.backend.service.PasswordResetService;
+import com.tatdat.parking.backend.service.UserStatusEventService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Collections;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -49,9 +49,7 @@ public class AuthController {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final PasswordResetService passwordResetService;
-
-    @Value("${google.client.id}")
-    private String googleClientId;
+    private final UserStatusEventService userStatusEventService;
 
     @PostMapping("/register")
     public String register(@Valid @RequestBody RegisterRequest request) {
@@ -140,6 +138,8 @@ public class AuthController {
         user.setUpdatedAt(now);
         userRepository.save(user);
 
+        publishUserStatus(user, true);
+
         String accessToken = jwtService.generateAccessToken(user);
         RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
 
@@ -148,44 +148,48 @@ public class AuthController {
         return buildAuthResponse(user, accessToken, refreshToken.getToken());
     }
 
-    @PostMapping("/google")
-    public AuthResponse googleLogin(
-            @Valid @RequestBody GoogleLoginRequest request,
+    @PostMapping("/google-token")
+    public AuthResponse googleLoginWithAccessToken(
+            @Valid @RequestBody GoogleAccessTokenRequest request,
             HttpServletResponse response
     ) {
         try {
-            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
-                    new NetHttpTransport(),
-                    GsonFactory.getDefaultInstance()
-            )
-                    .setAudience(Collections.singletonList(googleClientId))
-                    .build();
+            String userInfoUrl = "https://www.googleapis.com/oauth2/v3/userinfo";
 
-            GoogleIdToken idToken = verifier.verify(request.getCredential());
+            RestTemplate restTemplate = new RestTemplate();
 
-            if (idToken == null) {
-                throw new RuntimeException("Invalid Google credential");
+            ResponseEntity<Map> googleResponse = restTemplate.exchange(
+                    userInfoUrl,
+                    org.springframework.http.HttpMethod.GET,
+                    new HttpEntity<>(createGoogleAuthHeaders(request.getAccessToken())),
+                    Map.class
+            );
+
+            Map<String, Object> googleUser = googleResponse.getBody();
+
+            if (googleUser == null) {
+                throw new RuntimeException("Cannot get Google account information");
             }
 
-            GoogleIdToken.Payload payload = idToken.getPayload();
-
-            Boolean emailVerified = payload.getEmailVerified();
-            String email = payload.getEmail();
+            String email = (String) googleUser.get("email");
+            String name = (String) googleUser.get("name");
+            Object emailVerifiedValue = googleUser.get("email_verified");
 
             if (email == null || email.isBlank()) {
                 throw new RuntimeException("Google account does not contain an email");
             }
 
-            if (emailVerified == null || !emailVerified) {
+            boolean emailVerified = Boolean.TRUE.equals(emailVerifiedValue)
+                    || "true".equalsIgnoreCase(String.valueOf(emailVerifiedValue));
+
+            if (!emailVerified) {
                 throw new RuntimeException("Google email is not verified");
             }
 
             String normalizedEmail = email.trim().toLowerCase();
 
             User user = userRepository.findByEmail(normalizedEmail)
-                    .orElseThrow(() -> new RuntimeException(
-                            "This Google account is not registered in the parking system"
-                    ));
+                    .orElseGet(() -> createGoogleDriverUser(normalizedEmail, name));
 
             validateUserCanAuthenticate(user);
 
@@ -195,6 +199,8 @@ public class AuthController {
             user.setLastActiveAt(now);
             user.setUpdatedAt(now);
             userRepository.save(user);
+
+            publishUserStatus(user, true);
 
             String accessToken = jwtService.generateAccessToken(user);
             RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
@@ -242,6 +248,8 @@ public class AuthController {
         user.setUpdatedAt(now);
         userRepository.save(user);
 
+        publishUserStatus(user, true);
+
         String newAccessToken = jwtService.generateAccessToken(user);
         RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(user);
 
@@ -266,7 +274,28 @@ public class AuthController {
         }
 
         if (refreshTokenValue != null && !refreshTokenValue.isBlank()) {
-            refreshTokenService.revokeRefreshToken(refreshTokenValue);
+            try {
+                RefreshToken refreshToken = refreshTokenService.verifyRefreshToken(refreshTokenValue);
+                User user = refreshToken.getUser();
+
+                LocalDateTime now = LocalDateTime.now();
+
+                /*
+                 * Khi logout:
+                 * - lastActiveAt = null để backend hiểu user đã offline.
+                 * - updatedAt = now để frontend có mốc thời gian hiển thị:
+                 *   Offline · just now / Offline · 2 min ago.
+                 */
+                user.setLastActiveAt(null);
+                user.setUpdatedAt(now);
+                userRepository.save(user);
+
+                publishUserStatus(user, false);
+
+                refreshTokenService.revokeRefreshToken(refreshTokenValue);
+            } catch (Exception error) {
+                refreshTokenService.revokeRefreshToken(refreshTokenValue);
+            }
         }
 
         clearAuthCookies(response);
@@ -305,6 +334,39 @@ public class AuthController {
         );
 
         return "Password has been reset successfully";
+    }
+
+    private User createGoogleDriverUser(String email, String googleName) {
+        Role driverRole = roleRepository.findByRoleName("DRIVER")
+                .orElseThrow(() -> new RuntimeException("Driver role not found"));
+
+        LocalDateTime now = LocalDateTime.now();
+
+        String fullName = googleName;
+
+        if (fullName == null || fullName.isBlank()) {
+            fullName = email.split("@")[0];
+        }
+
+        User user = new User();
+        user.setFullName(fullName.trim());
+        user.setEmail(email);
+        user.setPassword(passwordEncoder.encode("GOOGLE_AUTH_" + System.currentTimeMillis()));
+        user.setPhone(null);
+        user.setRole(driverRole);
+        user.setStatus("ACTIVE");
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+        user.setLastLoginAt(null);
+        user.setLastActiveAt(null);
+
+        return userRepository.save(user);
+    }
+
+    private HttpHeaders createGoogleAuthHeaders(String accessToken) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(accessToken);
+        return headers;
     }
 
     private void addAuthCookies(
@@ -380,5 +442,18 @@ public class AuthController {
                 .email(user.getEmail())
                 .role(user.getRole().getRoleName())
                 .build();
+    }
+
+    private void publishUserStatus(User user, boolean online) {
+        userStatusEventService.publishUserStatus(
+                UserStatusEvent.builder()
+                        .userId(user.getId())
+                        .status(user.getStatus())
+                        .online(online)
+                        .lastLoginAt(user.getLastLoginAt())
+                        .lastActiveAt(user.getLastActiveAt())
+                        .updatedAt(user.getUpdatedAt())
+                        .build()
+        );
     }
 }

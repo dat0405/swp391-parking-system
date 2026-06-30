@@ -1,14 +1,17 @@
 package com.tatdat.parking.backend.controller;
 
+import com.tatdat.parking.backend.dto.CreateUserRequest;
 import com.tatdat.parking.backend.dto.ResetPasswordRequest;
 import com.tatdat.parking.backend.dto.UpdateUserRequest;
 import com.tatdat.parking.backend.dto.UpdateUserRoleRequest;
 import com.tatdat.parking.backend.dto.UpdateUserStatusRequest;
 import com.tatdat.parking.backend.dto.UserResponse;
+import com.tatdat.parking.backend.dto.UserStatusEvent;
 import com.tatdat.parking.backend.entity.Role;
 import com.tatdat.parking.backend.entity.User;
 import com.tatdat.parking.backend.repository.RoleRepository;
 import com.tatdat.parking.backend.repository.UserRepository;
+import com.tatdat.parking.backend.service.UserStatusEventService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
@@ -16,7 +19,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import com.tatdat.parking.backend.dto.CreateUserRequest;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -30,6 +33,7 @@ public class UserController {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final UserStatusEventService userStatusEventService;
 
     @GetMapping
     public List<UserResponse> getAllUsers() {
@@ -39,24 +43,48 @@ public class UserController {
                 .toList();
     }
 
+    @GetMapping("/status-stream")
+    public SseEmitter streamUserStatus() {
+        return userStatusEventService.subscribe();
+    }
+
     @PutMapping("/me/heartbeat")
     public UserResponse heartbeat() {
         User currentUser = getCurrentUser();
 
-        currentUser.setLastActiveAt(LocalDateTime.now());
-        User savedUser = userRepository.save(currentUser);
+        LocalDateTime now = LocalDateTime.now();
 
-        return mapToUserResponse(savedUser);
+        currentUser.setLastActiveAt(now);
+        currentUser.setUpdatedAt(now);
+
+        User savedUser = userRepository.save(currentUser);
+        UserResponse response = mapToUserResponse(savedUser);
+
+        publishUserStatus(savedUser, true);
+
+        return response;
     }
 
     @PutMapping("/me/offline")
     public UserResponse offline() {
         User currentUser = getCurrentUser();
 
-        currentUser.setLastActiveAt(null);
-        User savedUser = userRepository.save(currentUser);
+        LocalDateTime now = LocalDateTime.now();
 
-        return mapToUserResponse(savedUser);
+        /*
+         * lastActiveAt phải để null để backend hiểu user đã offline.
+         * updatedAt lưu thời điểm user vừa offline để frontend hiện:
+         * Offline · just now / Offline · 2 min ago
+         */
+        currentUser.setLastActiveAt(null);
+        currentUser.setUpdatedAt(now);
+
+        User savedUser = userRepository.save(currentUser);
+        UserResponse response = mapToUserResponse(savedUser);
+
+        publishUserStatus(savedUser, false);
+
+        return response;
     }
 
     @GetMapping("/{id}")
@@ -88,6 +116,8 @@ public class UserController {
         Role role = roleRepository.findById(request.getRoleId())
                 .orElseThrow(() -> new RuntimeException("Role not found"));
 
+        LocalDateTime now = LocalDateTime.now();
+
         User user = new User();
         user.setFullName(request.getFullName().trim());
         user.setEmail(email);
@@ -95,14 +125,17 @@ public class UserController {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(role);
         user.setStatus("ACTIVE");
-        user.setCreatedAt(LocalDateTime.now());
-        user.setUpdatedAt(null);
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
         user.setLastLoginAt(null);
         user.setLastActiveAt(null);
 
         User savedUser = userRepository.save(user);
+        UserResponse response = mapToUserResponse(savedUser);
 
-        return mapToUserResponse(savedUser);
+        publishUserStatus(savedUser, false);
+
+        return response;
     }
 
     @PutMapping("/{id}")
@@ -146,8 +179,11 @@ public class UserController {
         user.setUpdatedAt(LocalDateTime.now());
 
         User savedUser = userRepository.save(user);
+        UserResponse response = mapToUserResponse(savedUser);
 
-        return mapToUserResponse(savedUser);
+        publishUserStatus(savedUser, isOnline(savedUser.getLastActiveAt()));
+
+        return response;
     }
 
     @PutMapping("/{id}/role")
@@ -169,8 +205,11 @@ public class UserController {
         user.setUpdatedAt(LocalDateTime.now());
 
         User savedUser = userRepository.save(user);
+        UserResponse response = mapToUserResponse(savedUser);
 
-        return mapToUserResponse(savedUser);
+        publishUserStatus(savedUser, isOnline(savedUser.getLastActiveAt()));
+
+        return response;
     }
 
     @PutMapping("/{id}/status")
@@ -199,9 +238,20 @@ public class UserController {
         user.setStatus(status);
         user.setUpdatedAt(LocalDateTime.now());
 
-        User savedUser = userRepository.save(user);
+        /*
+         * Nếu khóa tài khoản thì tài khoản không còn online.
+         * Với Locked, frontend chỉ cần hiện Locked, không cần Offline · x min ago.
+         */
+        if ("BANNED".equals(status) || "INACTIVE".equals(status)) {
+            user.setLastActiveAt(null);
+        }
 
-        return mapToUserResponse(savedUser);
+        User savedUser = userRepository.save(user);
+        UserResponse response = mapToUserResponse(savedUser);
+
+        publishUserStatus(savedUser, isOnline(savedUser.getLastActiveAt()));
+
+        return response;
     }
 
     @PutMapping("/{id}/reset-password")
@@ -220,8 +270,11 @@ public class UserController {
         user.setUpdatedAt(LocalDateTime.now());
 
         User savedUser = userRepository.save(user);
+        UserResponse response = mapToUserResponse(savedUser);
 
-        return mapToUserResponse(savedUser);
+        publishUserStatus(savedUser, isOnline(savedUser.getLastActiveAt()));
+
+        return response;
     }
 
     private User getCurrentUser() {
@@ -277,8 +330,21 @@ public class UserController {
             return false;
         }
 
-        long minutes = Duration.between(lastActiveAt, LocalDateTime.now()).toMinutes();
+        long seconds = Duration.between(lastActiveAt, LocalDateTime.now()).getSeconds();
 
-        return minutes <= 5;
+        return seconds >= 0 && seconds <= 90;
+    }
+
+    private void publishUserStatus(User user, boolean online) {
+        userStatusEventService.publishUserStatus(
+                UserStatusEvent.builder()
+                        .userId(user.getId())
+                        .status(user.getStatus())
+                        .online(online)
+                        .lastLoginAt(user.getLastLoginAt())
+                        .lastActiveAt(user.getLastActiveAt())
+                        .updatedAt(user.getUpdatedAt())
+                        .build()
+        );
     }
 }

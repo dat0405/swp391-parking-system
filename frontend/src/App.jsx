@@ -19,6 +19,10 @@ import Booking from './user-ui/Booking';
 
 import { userApi } from './api/userApi';
 
+const LOGOUT_FLAG_KEY = 'isLoggingOut';
+const LOGOUT_STARTED_AT_KEY = 'logoutStartedAt';
+const LOGOUT_GUARD_MS = 15000;
+
 const getSavedUser = () => {
   const savedUser = localStorage.getItem('user');
 
@@ -30,6 +34,33 @@ const getSavedUser = () => {
     localStorage.removeItem('user');
     return null;
   }
+};
+
+const isLogoutGuardActive = () => {
+  const isLoggingOut = localStorage.getItem(LOGOUT_FLAG_KEY) === 'true';
+  const logoutStartedAt = Number(localStorage.getItem(LOGOUT_STARTED_AT_KEY) || 0);
+
+  if (!isLoggingOut) return false;
+
+  const isStillFresh = logoutStartedAt > 0 && Date.now() - logoutStartedAt < LOGOUT_GUARD_MS;
+
+  if (isStillFresh) {
+    return true;
+  }
+
+  /*
+   * Nếu cờ logout bị sót lại quá lâu thì tự xóa,
+   * tránh việc user login lại nhưng heartbeat vẫn bị chặn.
+   */
+  localStorage.removeItem(LOGOUT_FLAG_KEY);
+  localStorage.removeItem(LOGOUT_STARTED_AT_KEY);
+
+  return false;
+};
+
+const clearLogoutGuard = () => {
+  localStorage.removeItem(LOGOUT_FLAG_KEY);
+  localStorage.removeItem(LOGOUT_STARTED_AT_KEY);
 };
 
 const getRedirectPathByRole = (role) => {
@@ -45,6 +76,7 @@ const AuthLayout = () => {
   const user = getSavedUser();
 
   if (user) {
+    clearLogoutGuard();
     return <Navigate to={getRedirectPathByRole(user.role)} replace />;
   }
 
@@ -64,6 +96,10 @@ function App() {
 
       if (!user) return;
 
+      if (isLogoutGuardActive()) {
+        return;
+      }
+
       try {
         await userApi.heartbeat();
       } catch (error) {
@@ -71,7 +107,9 @@ function App() {
           localStorage.removeItem('user');
           localStorage.removeItem('token');
           localStorage.removeItem('refreshToken');
+          clearLogoutGuard();
           sessionStorage.clear();
+
           window.location.href = '/login';
           return;
         }

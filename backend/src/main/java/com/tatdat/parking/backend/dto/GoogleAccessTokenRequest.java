@@ -6,8 +6,8 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class GoogleLoginRequest {
+public class GoogleAccessTokenRequest {
 
-    @NotBlank(message = "Google credential is required")
-    private String credential;
+    @NotBlank(message = "Google access token is required")
+    private String accessToken;
 }
