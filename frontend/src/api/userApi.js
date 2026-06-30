@@ -32,4 +32,9 @@ export const userApi = {
   offline() {
     return axiosClient.put("/users/me/offline");
   },
+
+  getUserStatusStreamUrl() {
+    const baseURL = axiosClient.defaults.baseURL || "";
+    return `${baseURL}/users/status-stream`;
+  },
 };

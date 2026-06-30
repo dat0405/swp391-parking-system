@@ -11,6 +11,8 @@ import { userApi } from '../api/userApi';
 import axiosClient from '../api/axiosClient';
 
 const NOTIFICATION_STORAGE_KEY = 'parking_notifications';
+const LOGOUT_FLAG_KEY = 'isLoggingOut';
+const LOGOUT_STARTED_AT_KEY = 'logoutStartedAt';
 
 function Header() {
   const [currentUser, setCurrentUser] = useState({
@@ -31,6 +33,7 @@ function Header() {
   const dropdownRef = useRef(null);
   const settingsRef = useRef(null);
   const currentUserRef = useRef(currentUser);
+  const isLoggingOutRef = useRef(false);
 
   const displayNotifications = notifications.slice(0, 8);
   const unreadCount = notifications.filter((notification) => !notification.isRead).length;
@@ -87,6 +90,13 @@ function Header() {
   };
 
   const loadUserInformation = async () => {
+    if (
+      isLoggingOutRef.current ||
+      localStorage.getItem(LOGOUT_FLAG_KEY) === 'true'
+    ) {
+      return;
+    }
+
     try {
       const response = await axiosClient.get('/auth/me');
       const data = response.data || {};
@@ -216,6 +226,10 @@ function Header() {
 
   useEffect(() => {
     const handleStorageChange = () => {
+      if (localStorage.getItem(LOGOUT_FLAG_KEY) === 'true') {
+        return;
+      }
+
       loadUserInformation();
     };
 
@@ -281,23 +295,42 @@ function Header() {
   };
 
   const handleLogOut = async () => {
-    try {
-      await userApi.offline();
-    } catch (error) {
-      console.error('Set offline failed:', error);
+    if (isLoggingOutRef.current) {
+      return;
     }
 
+    isLoggingOutRef.current = true;
+    localStorage.setItem(LOGOUT_FLAG_KEY, 'true');
+    localStorage.setItem(LOGOUT_STARTED_AT_KEY, String(Date.now()));
+
+    setIsOpenSettings(false);
+
     try {
-      await axiosClient.post('/auth/logout');
-    } catch (error) {
-      console.error('Logout failed:', error);
+      try {
+        await userApi.offline();
+      } catch (error) {
+        console.error('Set offline failed:', error);
+      }
+
+      try {
+        await axiosClient.post('/auth/logout', {
+          refreshToken: localStorage.getItem('refreshToken')
+        });
+      } catch (error) {
+        console.error('Logout failed:', error);
+      }
     } finally {
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
       sessionStorage.clear();
 
-      window.location.href = '/login';
+      /*
+       * Không xóa isLoggingOut và logoutStartedAt ở đây.
+       * App.jsx sẽ tự xóa sau một khoảng ngắn hoặc khi user login lại.
+       * Làm vậy để heartbeat không chạy lại trong lúc redirect.
+       */
+      window.location.replace('/login');
     }
   };
 
@@ -645,6 +678,7 @@ function Header() {
               <button
                 type="button"
                 onClick={handleLogOut}
+                disabled={isLoggingOutRef.current}
                 style={{
                   width: '100%',
                   padding: '0.6rem 1rem',
@@ -653,11 +687,12 @@ function Header() {
                   color: '#ef4444',
                   fontSize: '0.8rem',
                   textAlign: 'left',
-                  cursor: 'pointer',
-                  fontWeight: '600'
+                  cursor: isLoggingOutRef.current ? 'not-allowed' : 'pointer',
+                  fontWeight: '600',
+                  opacity: isLoggingOutRef.current ? 0.6 : 1
                 }}
               >
-                Log out
+                {isLoggingOutRef.current ? 'Logging out...' : 'Log out'}
               </button>
             </div>
           )}

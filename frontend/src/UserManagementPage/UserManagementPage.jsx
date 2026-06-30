@@ -28,6 +28,8 @@ function UserManagementPage() {
 
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
+  const [timeTick, setTimeTick] = useState(Date.now());
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("All Roles");
@@ -75,6 +77,13 @@ function UserManagementPage() {
     return "Offline";
   };
 
+  const getDisplayStatus = (accountStatus, online) => {
+    if (accountStatus === "BANNED") return "Locked";
+    if (online) return "Active";
+
+    return "Offline";
+  };
+
   const getAvatarText = (fullName) => {
     if (!fullName) return "U";
 
@@ -105,10 +114,60 @@ function UserManagementPage() {
     });
   };
 
+  const formatTimeAgo = (value) => {
+    if (!value) return "";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+
+    const diffInSeconds = Math.floor((timeTick - date.getTime()) / 1000);
+
+    if (diffInSeconds < 0) return "";
+    if (diffInSeconds < 60) return "just now";
+
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+
+    if (diffInMinutes < 60) {
+      return `${diffInMinutes} min ago`;
+    }
+
+    const diffInHours = Math.floor(diffInMinutes / 60);
+
+    if (diffInHours < 24) {
+      return `${diffInHours}h ago`;
+    }
+
+    const diffInDays = Math.floor(diffInHours / 24);
+
+    if (diffInDays < 7) {
+      return `${diffInDays}d ago`;
+    }
+
+    return date.toLocaleDateString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
+  const getStatusDisplayText = (user) => {
+    if (user.status === "Locked") return "Locked";
+    if (user.status === "Active") return "Active";
+
+    const offlineTime = user.updatedAt || user.lastActiveAt;
+    const offlineAgo = formatTimeAgo(offlineTime);
+
+    if (!offlineAgo) return "Offline";
+
+    return `Offline · ${offlineAgo}`;
+  };
+
   const mapApiUserToTableUser = (user) => {
     return {
       id: user.id,
-      displayId: `USR-${String(user.id).padStart(4, "0")}`,
       name: user.fullName,
       email: user.email,
       phone: user.phone,
@@ -119,6 +178,8 @@ function UserManagementPage() {
       status: formatStatusLabel(user),
       online: user.online,
       lastLogin: formatLastLogin(user.lastLoginAt),
+      lastActiveAt: user.lastActiveAt,
+      updatedAt: user.updatedAt,
       avatar: getAvatarText(user.fullName),
     };
   };
@@ -138,9 +199,45 @@ function UserManagementPage() {
     };
   };
 
-  const fetchData = async () => {
+  const applyUserStatusEvent = (event) => {
+    setUsers((prevUsers) => {
+      const updatedUsers = prevUsers.map((user) => {
+        if (user.id !== event.userId) {
+          return user;
+        }
+
+        const nextAccountStatus = event.status || user.accountStatus;
+        const nextOnline = Boolean(event.online);
+
+        return {
+          ...user,
+          accountStatus: nextAccountStatus,
+          online: nextOnline,
+          status: getDisplayStatus(nextAccountStatus, nextOnline),
+          lastLogin: event.lastLoginAt
+            ? formatLastLogin(event.lastLoginAt)
+            : user.lastLogin,
+          lastActiveAt:
+            event.lastActiveAt !== undefined
+              ? event.lastActiveAt
+              : user.lastActiveAt,
+          updatedAt:
+            event.updatedAt !== undefined ? event.updatedAt : user.updatedAt,
+        };
+      });
+
+      setStats(calculateStats(updatedUsers));
+      setTimeTick(Date.now());
+
+      return updatedUsers;
+    });
+  };
+
+  const fetchData = async (showInitialLoading = false) => {
     try {
-      setLoading(true);
+      if (showInitialLoading) {
+        setLoading(true);
+      }
 
       const res = await userApi.getUsers();
       const apiUsers = Array.isArray(res.data) ? res.data : [];
@@ -151,26 +248,74 @@ function UserManagementPage() {
     } catch (error) {
       console.error("Lỗi kết nối API users:", error);
 
-      setUsers([]);
-      setStats({
-        totalAccounts: 0,
-        activeNow: 0,
-        staffMembers: 0,
-        lockedAccounts: 0,
+      setUsers((prevUsers) => {
+        if (prevUsers.length > 0) {
+          return prevUsers;
+        }
+
+        setStats({
+          totalAccounts: 0,
+          activeNow: 0,
+          staffMembers: 0,
+          lockedAccounts: 0,
+        });
+
+        return [];
       });
     } finally {
-      setLoading(false);
+      if (showInitialLoading) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchData(true);
 
     const intervalId = setInterval(() => {
-      fetchData();
+      fetchData(false);
     }, 30000);
 
     return () => clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setTimeTick(Date.now());
+    }, 60000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    const streamUrl = userApi.getUserStatusStreamUrl();
+
+    const eventSource = new EventSource(streamUrl, {
+      withCredentials: true,
+    });
+
+    eventSource.addEventListener("CONNECTED", () => {
+      setIsRealtimeConnected(true);
+    });
+
+    eventSource.addEventListener("USER_STATUS_CHANGED", (message) => {
+      try {
+        const event = JSON.parse(message.data);
+        applyUserStatusEvent(event);
+      } catch (error) {
+        console.error("Cannot parse user status event:", error);
+      }
+    });
+
+    eventSource.onerror = (error) => {
+      console.error("User status stream error:", error);
+      setIsRealtimeConnected(false);
+    };
+
+    return () => {
+      eventSource.close();
+      setIsRealtimeConnected(false);
+    };
   }, []);
 
   const openEditRoleModal = (user) => {
@@ -194,7 +339,7 @@ function UserManagementPage() {
       setIsEditRoleOpen(false);
       setEditingUser(null);
 
-      await fetchData();
+      await fetchData(false);
     } catch (error) {
       console.error("Lỗi khi cập nhật quyền hạn:", error);
       alert(error.response?.data?.message || "Không thể cập nhật role");
@@ -220,7 +365,7 @@ function UserManagementPage() {
       setIsLockModalOpen(false);
       setUserToLock(null);
 
-      await fetchData();
+      await fetchData(false);
     } catch (error) {
       console.error("Lỗi khi cập nhật trạng thái tài khoản:", error);
       alert(
@@ -254,7 +399,7 @@ function UserManagementPage() {
       setNewRole("PARKING STAFF");
       setIsModalOpen(false);
 
-      await fetchData();
+      await fetchData(false);
     } catch (error) {
       console.error("Lỗi thêm tài khoản mới:", error);
       alert(error.response?.data?.message || "Không thể thêm tài khoản mới");
@@ -267,8 +412,7 @@ function UserManagementPage() {
     const matchesSearch =
       String(user.name || "").toLowerCase().includes(keyword) ||
       String(user.email || "").toLowerCase().includes(keyword) ||
-      String(user.displayId || "").toLowerCase().includes(keyword) ||
-      String(user.id || "").toLowerCase().includes(keyword);
+      String(user.phone || "").toLowerCase().includes(keyword);
 
     const matchesRole =
       selectedRole === "All Roles" || user.roles.includes(selectedRole);
@@ -280,7 +424,8 @@ function UserManagementPage() {
   });
 
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage) || 1;
-  const indexOfLastItem = currentPage * itemsPerPage;
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const indexOfLastItem = safeCurrentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredUsers.slice(indexOfFirstItem, indexOfLastItem);
   const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -530,7 +675,7 @@ function UserManagementPage() {
 
             <input
               type="text"
-              placeholder="Filter by name, email, or ID..."
+              placeholder="Filter by name, email, or phone..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -607,8 +752,39 @@ function UserManagementPage() {
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
+            position: "relative",
           }}
         >
+          {!loading && (
+            <div
+              style={{
+                position: "absolute",
+                top: "0.6rem",
+                right: "1rem",
+                zIndex: 2,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                color: "#64748b",
+                fontSize: "0.72rem",
+                backgroundColor: "rgba(15, 23, 42, 0.85)",
+                border: "1px solid #1e293b",
+                borderRadius: "999px",
+                padding: "0.25rem 0.6rem",
+              }}
+            >
+              <span
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  backgroundColor: isRealtimeConnected ? "#10b981" : "#64748b",
+                }}
+              />
+              {isRealtimeConnected ? "Realtime" : "Offline sync"}
+            </div>
+          )}
+
           {loading ? (
             <div
               style={{
@@ -646,7 +822,6 @@ function UserManagementPage() {
                       color: "#64748b",
                     }}
                   >
-                    <th style={{ padding: "0.85rem 1rem" }}>User ID</th>
                     <th style={{ padding: "0.85rem 1rem" }}>Full name</th>
                     <th style={{ padding: "0.85rem 1rem" }}>Email</th>
                     <th style={{ padding: "0.85rem 1rem" }}>Role</th>
@@ -664,191 +839,197 @@ function UserManagementPage() {
                 </thead>
 
                 <tbody>
-                  {currentItems.map((user) => (
-                    <tr
-                      key={user.id}
-                      style={{
-                        borderBottom: "1px solid rgba(255,255,255,0.02)",
-                        color: "#cbd5e1",
-                      }}
-                    >
+                  {currentItems.length === 0 ? (
+                    <tr>
                       <td
+                        colSpan={6}
                         style={{
-                          padding: "0.85rem 1rem",
+                          padding: "2rem",
+                          textAlign: "center",
                           color: "#64748b",
                         }}
                       >
-                        {user.displayId}
-                      </td>
-
-                      <td style={{ padding: "0.85rem 1rem" }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.75rem",
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: "28px",
-                              height: "28px",
-                              borderRadius: "50%",
-                              backgroundColor: "#1e293b",
-                              border: "1px solid #3b82f6",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: "0.75rem",
-                              fontWeight: "700",
-                              color: "#3b82f6",
-                            }}
-                          >
-                            {user.avatar}
-                          </div>
-
-                          <span
-                            style={{
-                              fontWeight: "600",
-                              color: "#fff",
-                            }}
-                          >
-                            {user.name}
-                          </span>
-                        </div>
-                      </td>
-
-                      <td
-                        style={{
-                          padding: "0.85rem 1rem",
-                          color: "#94a3b8",
-                        }}
-                      >
-                        {user.email}
-                      </td>
-
-                      <td style={{ padding: "0.85rem 1rem" }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "0.25rem",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          {user.roles.map((role, index) => (
-                            <span
-                              key={index}
-                              style={{
-                                backgroundColor: "#1e293b",
-                                color: "#93c5fd",
-                                fontSize: "0.65rem",
-                                fontWeight: "700",
-                                padding: "0.15rem 0.4rem",
-                                borderRadius: "0.25rem",
-                              }}
-                            >
-                              {role}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-
-                      <td style={{ padding: "0.85rem 1rem" }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.4rem",
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: "6px",
-                              height: "6px",
-                              borderRadius: "50%",
-                              backgroundColor:
-                                user.status === "Active"
-                                  ? "#10b981"
-                                  : user.status === "Locked"
-                                  ? "#ef4444"
-                                  : "#64748b",
-                            }}
-                          />
-
-                          <span
-                            style={{
-                              color:
-                                user.status === "Active"
-                                  ? "#10b981"
-                                  : user.status === "Locked"
-                                  ? "#ef4444"
-                                  : "#64748b",
-                              fontWeight: "500",
-                            }}
-                          >
-                            {user.status}
-                          </span>
-                        </div>
-                      </td>
-
-                      <td
-                        style={{
-                          padding: "0.85rem 1rem",
-                          color: "#64748b",
-                        }}
-                      >
-                        {user.lastLogin}
-                      </td>
-
-                      <td
-                        style={{
-                          padding: "0.85rem 1rem",
-                          textAlign: "right",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "flex-end",
-                            gap: "0.75rem",
-                          }}
-                        >
-                          <button
-                            onClick={() => openEditRoleModal(user)}
-                            style={{
-                              background: "none",
-                              border: "none",
-                              color: "#94a3b8",
-                              cursor: "pointer",
-                            }}
-                            title="Edit Role"
-                          >
-                            <Pencil size={14} />
-                          </button>
-
-                          <button
-                            onClick={() => triggerLockConfirmation(user)}
-                            style={{
-                              background: "none",
-                              border: "none",
-                              color:
-                                user.status === "Locked"
-                                  ? "#ef4444"
-                                  : "#94a3b8",
-                              cursor: "pointer",
-                            }}
-                            title={
-                              user.status === "Locked"
-                                ? "Unlock Account"
-                                : "Lock Account"
-                            }
-                          >
-                            <Lock size={14} />
-                          </button>
-                        </div>
+                        No users found.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    currentItems.map((user) => (
+                      <tr
+                        key={user.id}
+                        style={{
+                          borderBottom: "1px solid rgba(255,255,255,0.02)",
+                          color: "#cbd5e1",
+                        }}
+                      >
+                        <td style={{ padding: "0.85rem 1rem" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.75rem",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: "28px",
+                                height: "28px",
+                                borderRadius: "50%",
+                                backgroundColor: "#1e293b",
+                                border: "1px solid #3b82f6",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "0.75rem",
+                                fontWeight: "700",
+                                color: "#3b82f6",
+                              }}
+                            >
+                              {user.avatar}
+                            </div>
+
+                            <span
+                              style={{
+                                fontWeight: "600",
+                                color: "#fff",
+                              }}
+                            >
+                              {user.name}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "0.85rem 1rem",
+                            color: "#94a3b8",
+                          }}
+                        >
+                          {user.email}
+                        </td>
+
+                        <td style={{ padding: "0.85rem 1rem" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "0.25rem",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            {user.roles.map((role, index) => (
+                              <span
+                                key={index}
+                                style={{
+                                  backgroundColor: "#1e293b",
+                                  color: "#93c5fd",
+                                  fontSize: "0.65rem",
+                                  fontWeight: "700",
+                                  padding: "0.15rem 0.4rem",
+                                  borderRadius: "0.25rem",
+                                }}
+                              >
+                                {role}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+
+                        <td style={{ padding: "0.85rem 1rem" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.4rem",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: "6px",
+                                height: "6px",
+                                borderRadius: "50%",
+                                backgroundColor:
+                                  user.status === "Active"
+                                    ? "#10b981"
+                                    : user.status === "Locked"
+                                    ? "#ef4444"
+                                    : "#64748b",
+                              }}
+                            />
+
+                            <span
+                              style={{
+                                color:
+                                  user.status === "Active"
+                                    ? "#10b981"
+                                    : user.status === "Locked"
+                                    ? "#ef4444"
+                                    : "#64748b",
+                                fontWeight: "500",
+                              }}
+                            >
+                              {getStatusDisplayText(user)}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "0.85rem 1rem",
+                            color: "#64748b",
+                          }}
+                        >
+                          {user.lastLogin}
+                        </td>
+
+                        <td
+                          style={{
+                            padding: "0.85rem 1rem",
+                            textAlign: "right",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "flex-end",
+                              gap: "0.75rem",
+                            }}
+                          >
+                            <button
+                              onClick={() => openEditRoleModal(user)}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: "#94a3b8",
+                                cursor: "pointer",
+                              }}
+                              title="Edit Role"
+                            >
+                              <Pencil size={14} />
+                            </button>
+
+                            <button
+                              onClick={() => triggerLockConfirmation(user)}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color:
+                                  user.status === "Locked"
+                                    ? "#ef4444"
+                                    : "#94a3b8",
+                                cursor: "pointer",
+                              }}
+                              title={
+                                user.status === "Locked"
+                                  ? "Unlock Account"
+                                  : "Lock Account"
+                              }
+                            >
+                              <Lock size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -883,15 +1064,15 @@ function UserManagementPage() {
             >
               <button
                 onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
+                disabled={safeCurrentPage === 1}
                 style={{
                   backgroundColor: "#1e293b",
                   border: "1px solid #1e293b",
-                  color: currentPage === 1 ? "#475569" : "#94a3b8",
+                  color: safeCurrentPage === 1 ? "#475569" : "#94a3b8",
                   width: "32px",
                   height: "32px",
                   borderRadius: "0.375rem",
-                  cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                  cursor: safeCurrentPage === 1 ? "not-allowed" : "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -906,9 +1087,9 @@ function UserManagementPage() {
                   onClick={() => setCurrentPage(number)}
                   style={{
                     backgroundColor:
-                      currentPage === number ? "#3b82f6" : "#1e293b",
+                      safeCurrentPage === number ? "#3b82f6" : "#1e293b",
                     border: "1px solid #1e293b",
-                    color: currentPage === number ? "#fff" : "#94a3b8",
+                    color: safeCurrentPage === number ? "#fff" : "#94a3b8",
                     width: "32px",
                     height: "32px",
                     borderRadius: "0.375rem",
@@ -927,15 +1108,16 @@ function UserManagementPage() {
                 onClick={() =>
                   setCurrentPage((prev) => Math.min(totalPages, prev + 1))
                 }
-                disabled={currentPage === totalPages}
+                disabled={safeCurrentPage === totalPages}
                 style={{
                   backgroundColor: "#1e293b",
                   border: "1px solid #1e293b",
-                  color: currentPage === totalPages ? "#475569" : "#94a3b8",
+                  color: safeCurrentPage === totalPages ? "#475569" : "#94a3b8",
                   width: "32px",
                   height: "32px",
                   borderRadius: "0.375rem",
-                  cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                  cursor:
+                    safeCurrentPage === totalPages ? "not-allowed" : "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -1523,6 +1705,7 @@ function UserManagementPage() {
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
+                  gap: "1rem",
                 }}
               >
                 <div>
@@ -1561,9 +1744,10 @@ function UserManagementPage() {
                     fontWeight: "700",
                     padding: "0.2rem 0.5rem",
                     borderRadius: "0.25rem",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  {userToLock.displayId}
+                  {userToLock.status === "Locked" ? "LOCKED" : "ACTIVE"}
                 </span>
               </div>
 
