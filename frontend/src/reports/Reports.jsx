@@ -8,7 +8,6 @@ import {
   Percent,
   Calendar,
   Download,
-  FileText,
   Filter,
   MoreVertical,
   ChevronLeft,
@@ -57,9 +56,7 @@ const formatPercent = (value) => {
 };
 
 const formatDateTime = (value) => {
-  if (!value) {
-    return "N/A";
-  }
+  if (!value) return "N/A";
 
   const date = new Date(value);
 
@@ -74,6 +71,16 @@ const formatDateTime = (value) => {
     month: "2-digit",
     year: "numeric"
   });
+};
+
+const getMetricValueFontSize = (value) => {
+  const text = String(value || "");
+
+  if (text.length >= 18) return "1.35rem";
+  if (text.length >= 15) return "1.5rem";
+  if (text.length >= 12) return "1.7rem";
+
+  return "2rem";
 };
 
 const getStatusMeta = (status) => {
@@ -156,13 +163,40 @@ const normalizeChartData = (rows = []) => {
   }));
 };
 
+const styles = {
+  card: {
+    background: "var(--bg-card)",
+    border: "1px solid var(--border-color)",
+    color: "var(--text-main)",
+    boxShadow: "var(--shadow-card)"
+  },
+  mutedText: {
+    color: "var(--text-muted)"
+  },
+  mainText: {
+    color: "var(--text-main)"
+  },
+  softBorder: {
+    borderColor: "var(--border-color)"
+  },
+  inputLike: {
+    background: "var(--bg-input)",
+    border: "1px solid var(--border-color)",
+    color: "var(--text-main)"
+  }
+};
+
 const Reports = () => {
   const [timeRange, setTimeRange] = useState("Week");
   const [report, setReport] = useState(emptyReport);
   const [loading, setLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const apiRange = rangeToApiValue[timeRange] || "WEEK";
+
+  const isInitialLoading = loading && !hasLoadedOnce;
+  const isRefreshing = loading && hasLoadedOnce;
 
   useEffect(() => {
     let isMounted = true;
@@ -174,9 +208,7 @@ const Reports = () => {
 
         const response = await reportDashboardApi.getReportDashboard(apiRange);
 
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
 
         setReport({
           ...emptyReport,
@@ -193,15 +225,17 @@ const Reports = () => {
           operationalLog: response.data?.operationalLog || []
         });
       } catch (error) {
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
 
         console.error("Failed to load report dashboard:", error);
         setErrorMessage("Failed to load report data from server.");
-        setReport(emptyReport);
+
+        if (!hasLoadedOnce) {
+          setReport(emptyReport);
+        }
       } finally {
         if (isMounted) {
+          setHasLoadedOnce(true);
           setLoading(false);
         }
       }
@@ -277,10 +311,6 @@ const Reports = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleExportPDF = () => {
-    window.print();
-  };
-
   const metricCards = [
     {
       label: "TOTAL REVENUE",
@@ -309,15 +339,19 @@ const Reports = () => {
   ];
 
   return (
-    <div
-      className="dashboard-layout"
-      style={{ display: "flex", background: "#060b13", minHeight: "100vh" }}
-    >
+    <div className="dashboard-layout">
       <Sidebar />
 
       <main
         className="main-content"
-        style={{ flex: 1, padding: "2rem", overflowY: "auto" }}
+        style={{
+          flex: 1,
+          padding: "2rem",
+          overflowY: "auto",
+          minWidth: 0,
+          background: "var(--bg-dashboard)",
+          color: "var(--text-main)"
+        }}
       >
         <Header />
 
@@ -327,13 +361,14 @@ const Reports = () => {
             justifyContent: "space-between",
             alignItems: "flex-start",
             gap: "1rem",
-            marginBottom: "1.75rem"
+            marginBottom: "1.75rem",
+            flexWrap: "wrap"
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h1
               style={{
-                color: "#fff",
+                color: "var(--text-main)",
                 fontSize: "1.9rem",
                 margin: "0",
                 letterSpacing: "-0.04em"
@@ -341,67 +376,41 @@ const Reports = () => {
             >
               System performance reports
             </h1>
-
-            <p style={{ color: "#64748b", margin: "0.5rem 0 0 0" }}>
-              Real-time operational metrics for revenue, sessions, bookings,
-              and parking capacity.
-            </p>
           </div>
 
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             <button
               onClick={handleExportCSV}
-              disabled={loading}
+              disabled={isInitialLoading}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: "0.5rem",
                 padding: "0.65rem 1rem",
-                background: "#0c1322",
+                background: "#111827",
                 border: "1px solid #1e293b",
                 borderRadius: "0.5rem",
-                color: "#fff",
-                cursor: loading ? "not-allowed" : "pointer",
+                color: "#ffffff",
+                cursor: isInitialLoading ? "not-allowed" : "pointer",
                 fontSize: "0.85rem",
                 fontWeight: "700",
-                opacity: loading ? 0.6 : 1
+                opacity: isInitialLoading ? 0.6 : 1
               }}
             >
               <Download size={16} />
               Export CSV
-            </button>
-
-            <button
-              onClick={handleExportPDF}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                padding: "0.65rem 1rem",
-                background: "#3b82f6",
-                border: "none",
-                borderRadius: "0.5rem",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: "0.85rem",
-                fontWeight: "700"
-              }}
-            >
-              <FileText size={16} />
-              Export PDF
             </button>
           </div>
         </div>
 
         <div
           style={{
+            ...styles.card,
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            background: "#0c1322",
             padding: "0.75rem 1rem",
             borderRadius: "0.75rem",
-            border: "1px solid #1e293b",
             marginBottom: "2rem",
             gap: "1rem",
             flexWrap: "wrap"
@@ -417,7 +426,7 @@ const Reports = () => {
           >
             <span
               style={{
-                color: "#64748b",
+                color: "var(--text-muted)",
                 fontSize: "0.75rem",
                 fontWeight: "bold",
                 marginRight: "0.5rem"
@@ -426,43 +435,57 @@ const Reports = () => {
               TIME RANGE
             </span>
 
-            {["Today", "Week", "Month"].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setTimeRange(tab)}
-                style={{
-                  padding: "0.45rem 1.15rem",
-                  borderRadius: "0.45rem",
-                  border: "none",
-                  background: timeRange === tab ? "#1e293b" : "transparent",
-                  color: timeRange === tab ? "#fff" : "#64748b",
-                  cursor: "pointer",
-                  fontSize: "0.85rem",
-                  fontWeight: "700"
-                }}
-              >
-                {tab}
-              </button>
-            ))}
+            {["Today", "Week", "Month"].map((tab) => {
+              const isSelected = timeRange === tab;
+
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setTimeRange(tab)}
+                  disabled={isRefreshing && isSelected}
+                  style={{
+                    padding: "0.45rem 1.15rem",
+                    borderRadius: "0.45rem",
+                    border: isSelected
+                      ? "1px solid var(--primary-blue)"
+                      : "1px solid transparent",
+                    background: isSelected
+                      ? "var(--primary-blue)"
+                      : "transparent",
+                    color: isSelected ? "#ffffff" : "var(--text-muted)",
+                    cursor: isRefreshing && isSelected ? "default" : "pointer",
+                    fontSize: "0.85rem",
+                    fontWeight: "700",
+                    opacity: isRefreshing && !isSelected ? 0.85 : 1
+                  }}
+                >
+                  {tab}
+                </button>
+              );
+            })}
           </div>
 
           <span
             style={{
-              color: loading ? "#f59e0b" : "#64748b",
+              color: "var(--text-main)",
               fontSize: "0.78rem",
-              fontWeight: "700"
+              fontWeight: "800",
+              display: "inline-flex",
+              alignItems: "center",
+              minWidth: "120px",
+              justifyContent: "flex-end"
             }}
           >
-            {loading ? "Loading report data..." : `Range: ${apiRange}`}
+            {isInitialLoading ? "Loading..." : `Range: ${apiRange}`}
           </span>
         </div>
 
         {errorMessage && (
           <div
             style={{
-              background: "rgba(239, 68, 68, 0.12)",
-              border: "1px solid rgba(239, 68, 68, 0.35)",
-              color: "#fecaca",
+              background: "var(--danger-red-soft)",
+              border: "1px solid var(--danger-red)",
+              color: "var(--danger-red)",
               padding: "0.85rem 1rem",
               borderRadius: "0.75rem",
               marginBottom: "1.5rem",
@@ -477,70 +500,94 @@ const Reports = () => {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
             gap: "1.25rem",
             marginBottom: "2rem"
           }}
         >
           {metricCards.map((card) => {
             const Icon = card.icon;
+            const displayValue = isInitialLoading ? "..." : card.value;
 
             return (
               <div
                 key={card.label}
+                className="report-summary-card"
                 style={{
-                  background: "#0c1322",
+                  ...styles.card,
                   padding: "1.25rem",
                   borderRadius: "0.75rem",
-                  border: "1px solid #1e293b",
-                  position: "relative",
-                  minHeight: "108px"
+                  minHeight: "126px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: "1rem",
+                  boxSizing: "border-box",
+                  overflow: "hidden"
                 }}
               >
-                <span
+                <div
                   style={{
-                    fontSize: "0.75rem",
-                    color: "#64748b",
-                    fontWeight: "bold"
+                    flex: 1,
+                    minWidth: 0,
+                    display: "flex",
+                    flexDirection: "column"
                   }}
                 >
-                  {card.label}
-                </span>
+                  <span
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "var(--text-muted)",
+                      fontWeight: "800",
+                      letterSpacing: "0.02em",
+                      lineHeight: 1.2
+                    }}
+                  >
+                    {card.label}
+                  </span>
 
-                <p
-                  style={{
-                    fontSize: "2rem",
-                    fontWeight: "bold",
-                    margin: "0.5rem 0 0 0",
-                    color: "#fff"
-                  }}
-                >
-                  {loading ? "..." : card.value}
-                </p>
+                  <p
+                    style={{
+                      fontSize: getMetricValueFontSize(displayValue),
+                      fontWeight: "800",
+                      margin: "0.65rem 0 0 0",
+                      color: "var(--text-main)",
+                      lineHeight: 1.08,
+                      maxWidth: "100%",
+                      overflowWrap: "anywhere",
+                      wordBreak: "break-word"
+                    }}
+                  >
+                    {displayValue}
+                  </p>
 
-                <span
-                  style={{
-                    display: "block",
-                    color: "#64748b",
-                    fontSize: "0.75rem",
-                    marginTop: "0.25rem"
-                  }}
-                >
-                  {card.hint}
-                </span>
+                  <span
+                    style={{
+                      display: "block",
+                      color: "var(--text-muted)",
+                      fontSize: "0.75rem",
+                      marginTop: "0.45rem",
+                      lineHeight: 1.35
+                    }}
+                  >
+                    {card.hint}
+                  </span>
+                </div>
 
                 <div
                   style={{
-                    position: "absolute",
-                    top: "1.25rem",
-                    right: "1.25rem",
-                    background: "#1e293b",
-                    padding: "0.5rem",
-                    borderRadius: "0.5rem",
-                    color: "#64748b"
+                    width: "48px",
+                    height: "48px",
+                    flexShrink: 0,
+                    background: "var(--bg-card-soft)",
+                    borderRadius: "0.75rem",
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
                   }}
                 >
-                  <Icon size={20} />
+                  <Icon size={22} />
                 </div>
               </div>
             );
@@ -550,20 +597,21 @@ const Reports = () => {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 1fr",
+            gridTemplateColumns: "minmax(0, 2fr) minmax(300px, 1fr)",
             gap: "1.5rem",
             marginBottom: "1.5rem"
           }}
         >
           <div
+            className="report-chart-card"
             style={{
-              background: "#0c1322",
+              ...styles.card,
               borderRadius: "0.75rem",
-              border: "1px solid #1e293b",
               padding: "1.5rem",
               display: "flex",
               flexDirection: "column",
-              minHeight: "360px"
+              minHeight: "360px",
+              minWidth: 0
             }}
           >
             <div
@@ -571,15 +619,23 @@ const Reports = () => {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                marginBottom: "1.5rem"
+                marginBottom: "1.5rem",
+                gap: "1rem",
+                flexWrap: "wrap"
               }}
             >
               <div>
-                <h3 style={{ color: "#fff", margin: 0, fontSize: "1.15rem" }}>
+                <h3
+                  style={{
+                    color: "var(--text-main)",
+                    margin: 0,
+                    fontSize: "1.15rem"
+                  }}
+                >
                   Revenue performance
                 </h3>
 
-                <span style={{ color: "#64748b", fontSize: "0.78rem" }}>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
                   Revenue grouped by selected time range
                 </span>
               </div>
@@ -594,13 +650,13 @@ const Reports = () => {
               >
                 <span
                   style={{
-                    color: "#3b82f6",
+                    color: "var(--primary-blue)",
                     display: "flex",
                     alignItems: "center",
                     gap: "0.35rem"
                   }}
                 >
-                  <Circle size={7} fill="#3b82f6" />
+                  <Circle size={7} fill="currentColor" />
                   Revenue
                 </span>
               </div>
@@ -624,9 +680,9 @@ const Reports = () => {
                   )}, minmax(0, 1fr))`,
                   alignItems: "end",
                   gap: "1rem",
-                  borderBottom: "1px solid #1e293b",
+                  borderBottom: "1px solid var(--border-color)",
                   background:
-                    "linear-gradient(to top, transparent 24%, #1e293b 25%, transparent 26%, transparent 49%, #1e293b 50%, transparent 51%, transparent 74%, #1e293b 75%, transparent 76%)",
+                    "linear-gradient(to top, transparent 24%, var(--border-soft) 25%, transparent 26%, transparent 49%, var(--border-soft) 50%, transparent 51%, transparent 74%, var(--border-soft) 75%, transparent 76%)",
                   padding: "1rem 0.5rem 0 0.5rem",
                   minHeight: "230px"
                 }}
@@ -635,13 +691,15 @@ const Reports = () => {
                   <div
                     style={{
                       gridColumn: "1 / -1",
-                      color: "#64748b",
+                      color: "var(--text-muted)",
                       textAlign: "center",
                       alignSelf: "center",
                       fontWeight: "700"
                     }}
                   >
-                    No revenue chart data
+                    {isInitialLoading
+                      ? "Loading revenue chart..."
+                      : "No revenue chart data"}
                   </div>
                 ) : (
                   chartData.map((item, index) => {
@@ -667,7 +725,7 @@ const Reports = () => {
                           style={{
                             width: "22px",
                             height: `${currentHeight}%`,
-                            background: "#3b82f6",
+                            background: "var(--primary-blue)",
                             borderRadius: "999px 999px 0 0",
                             boxShadow: "0 0 16px rgba(59, 130, 246, 0.35)"
                           }}
@@ -686,7 +744,7 @@ const Reports = () => {
                     1
                   )}, minmax(0, 1fr))`,
                   gap: "1rem",
-                  color: "#64748b",
+                  color: "var(--text-muted)",
                   fontSize: "0.75rem",
                   fontWeight: "bold",
                   textAlign: "center"
@@ -701,19 +759,113 @@ const Reports = () => {
                 )}
               </div>
             </div>
+
+            <div
+              style={{
+                marginTop: "1.5rem",
+                paddingTop: "1.25rem",
+                borderTop: "1px solid var(--border-color)"
+              }}
+            >
+              <h4
+                style={{
+                  color: "var(--text-main)",
+                  margin: "0 0 1rem 0",
+                  fontSize: "1rem",
+                  fontWeight: "800"
+                }}
+              >
+                Revenue Breakdown
+              </h4>
+
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    color: "var(--text-main)",
+                    fontSize: "0.9rem"
+                  }}
+                >
+                  <thead>
+                    <tr
+                      style={{
+                        color: "var(--text-muted)",
+                        textAlign: "left",
+                        background: "var(--bg-table-header)"
+                      }}
+                    >
+                      <th style={{ padding: "0.5rem 0.75rem 0.5rem 0" }}>
+                        Period
+                      </th>
+                      <th style={{ padding: "0.5rem 0.75rem" }}>Revenue</th>
+                      <th style={{ padding: "0.5rem 0.75rem" }}>Payments</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {chartData.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={3}
+                          style={{
+                            padding: "0.75rem 0",
+                            color: "var(--text-muted)",
+                            fontWeight: "700"
+                          }}
+                        >
+                          No revenue breakdown data
+                        </td>
+                      </tr>
+                    ) : (
+                      chartData.map((item, index) => (
+                        <tr key={`${item.label}-breakdown-${index}`}>
+                          <td
+                            style={{
+                              padding: "0.35rem 0.75rem 0.35rem 0",
+                              fontWeight: "700",
+                              color: "var(--text-main)"
+                            }}
+                          >
+                            {item.label}
+                          </td>
+                          <td
+                            style={{
+                              padding: "0.35rem 0.75rem",
+                              color: "var(--text-main)"
+                            }}
+                          >
+                            {formatCurrency(item.revenue)}
+                          </td>
+                          <td
+                            style={{
+                              padding: "0.35rem 0.75rem",
+                              color: "var(--text-main)"
+                            }}
+                          >
+                            {formatNumber(item.paymentCount)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
 
           <div
+            className="report-side-card"
             style={{
-              background: "#0c1322",
+              ...styles.card,
               borderRadius: "0.75rem",
-              border: "1px solid #1e293b",
-              padding: "1.5rem"
+              padding: "1.5rem",
+              minWidth: 0
             }}
           >
             <h3
               style={{
-                color: "#fff",
+                color: "var(--text-main)",
                 margin: "0 0 1.5rem 0",
                 fontSize: "1.15rem"
               }}
@@ -723,8 +875,16 @@ const Reports = () => {
 
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
               {vehicleDistribution.length === 0 ? (
-                <p style={{ color: "#64748b", margin: 0, fontWeight: "700" }}>
-                  No vehicle distribution data
+                <p
+                  style={{
+                    color: "var(--text-muted)",
+                    margin: 0,
+                    fontWeight: "700"
+                  }}
+                >
+                  {isInitialLoading
+                    ? "Loading vehicle distribution..."
+                    : "No vehicle distribution data"}
                 </p>
               ) : (
                 vehicleDistribution.map((vehicle, index) => {
@@ -736,17 +896,19 @@ const Reports = () => {
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
-                          color: "#fff",
+                          color: "var(--text-main)",
                           fontSize: "0.85rem",
                           fontWeight: "700",
-                          marginBottom: "0.5rem"
+                          marginBottom: "0.5rem",
+                          gap: "1rem"
                         }}
                       >
                         <span
                           style={{
-                            color: "#94a3b8",
+                            color: "var(--text-main)",
                             display: "flex",
-                            gap: "0.5rem"
+                            gap: "0.5rem",
+                            minWidth: 0
                           }}
                         >
                           <Icon size={16} />
@@ -757,7 +919,7 @@ const Reports = () => {
 
                       <div
                         style={{
-                          color: "#64748b",
+                          color: "var(--text-muted)",
                           fontSize: "0.75rem",
                           marginBottom: "0.5rem"
                         }}
@@ -769,7 +931,7 @@ const Reports = () => {
                         style={{
                           width: "100%",
                           height: "9px",
-                          background: "#1e293b",
+                          background: "var(--bg-card-soft)",
                           borderRadius: "999px",
                           overflow: "hidden"
                         }}
@@ -793,13 +955,13 @@ const Reports = () => {
               style={{
                 marginTop: "2rem",
                 paddingTop: "1.25rem",
-                borderTop: "1px solid #1e293b"
+                borderTop: "1px solid var(--border-color)"
               }}
             >
               <h4
                 style={{
                   margin: "0 0 1rem 0",
-                  color: "#fff",
+                  color: "var(--text-main)",
                   fontSize: "0.95rem"
                 }}
               >
@@ -808,8 +970,16 @@ const Reports = () => {
 
               <div style={{ display: "grid", gap: "0.85rem" }}>
                 {reservationStatusBreakdown.length === 0 ? (
-                  <p style={{ color: "#64748b", margin: 0, fontWeight: "700" }}>
-                    No reservation data
+                  <p
+                    style={{
+                      color: "var(--text-muted)",
+                      margin: 0,
+                      fontWeight: "700"
+                    }}
+                  >
+                    {isInitialLoading
+                      ? "Loading reservation data..."
+                      : "No reservation data"}
                   </p>
                 ) : (
                   reservationStatusBreakdown.map((item) => {
@@ -822,7 +992,8 @@ const Reports = () => {
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
-                            marginBottom: "0.35rem"
+                            marginBottom: "0.35rem",
+                            gap: "1rem"
                           }}
                         >
                           <span
@@ -830,7 +1001,7 @@ const Reports = () => {
                               display: "flex",
                               alignItems: "center",
                               gap: "0.45rem",
-                              color: "#94a3b8",
+                              color: "var(--text-main)",
                               fontSize: "0.78rem",
                               fontWeight: "700"
                             }}
@@ -841,7 +1012,7 @@ const Reports = () => {
 
                           <span
                             style={{
-                              color: "#fff",
+                              color: "var(--text-main)",
                               fontSize: "0.78rem",
                               fontWeight: "700"
                             }}
@@ -854,7 +1025,7 @@ const Reports = () => {
                           style={{
                             width: "100%",
                             height: "6px",
-                            background: "#1e293b",
+                            background: "var(--bg-card-soft)",
                             borderRadius: "999px",
                             overflow: "hidden"
                           }}
@@ -874,14 +1045,36 @@ const Reports = () => {
                 )}
               </div>
             </div>
+
+            <SimpleBreakdownTable
+              title="Vehicle Distribution"
+              headers={["Vehicle Type", "Count", "Percent"]}
+              emptyText="No vehicle distribution data"
+              rows={vehicleDistribution.map((vehicle) => [
+                vehicle.label,
+                formatNumber(vehicle.count),
+                formatPercent(vehicle.percent)
+              ])}
+            />
+
+            <SimpleBreakdownTable
+              title="Reservation Status"
+              headers={["Status", "Count", "Percent"]}
+              emptyText="No reservation data"
+              rows={reservationStatusBreakdown.map((item) => [
+                item.label,
+                formatNumber(item.value),
+                formatPercent(item.percent)
+              ])}
+            />
           </div>
         </div>
 
         <div
+          className="report-operational-log"
           style={{
-            background: "#0c1322",
+            ...styles.card,
             borderRadius: "0.75rem",
-            border: "1px solid #1e293b",
             overflow: "hidden"
           }}
         >
@@ -891,16 +1084,24 @@ const Reports = () => {
               justifyContent: "space-between",
               alignItems: "center",
               padding: "1.25rem 1.5rem",
-              borderBottom: "1px solid #1e293b"
+              borderBottom: "1px solid var(--border-color)",
+              gap: "1rem",
+              flexWrap: "wrap"
             }}
           >
             <div>
-              <h3 style={{ color: "#fff", margin: 0, fontSize: "1.1rem" }}>
+              <h3
+                style={{
+                  color: "var(--text-main)",
+                  margin: 0,
+                  fontSize: "1.1rem"
+                }}
+              >
                 Operational log
               </h3>
               <p
                 style={{
-                  color: "#64748b",
+                  color: "var(--text-muted)",
                   margin: "0.35rem 0 0",
                   fontSize: "0.8rem"
                 }}
@@ -909,7 +1110,13 @@ const Reports = () => {
               </p>
             </div>
 
-            <div style={{ display: "flex", gap: "0.5rem", color: "#64748b" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.5rem",
+                color: "var(--text-muted)"
+              }}
+            >
               <button
                 style={{
                   background: "transparent",
@@ -934,126 +1141,133 @@ const Reports = () => {
             </div>
           </div>
 
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              textAlign: "left"
-            }}
-          >
-            <thead>
-              <tr
-                style={{
-                  borderBottom: "1px solid #1e293b",
-                  color: "#64748b",
-                  fontSize: "0.85rem"
-                }}
-              >
-                <th style={{ padding: "1rem 1.5rem" }}>TICKET</th>
-                <th style={{ padding: "1rem" }}>LICENSE PLATE</th>
-                <th style={{ padding: "1rem" }}>SLOT</th>
-                <th style={{ padding: "1rem" }}>STATUS</th>
-                <th style={{ padding: "1rem" }}>CHECK-IN</th>
-                <th style={{ padding: "1rem" }}>CHECK-OUT</th>
-                <th style={{ padding: "1rem 1.5rem", textAlign: "right" }}>
-                  ACTIONS
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {operationalLogs.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    style={{
-                      padding: "2rem",
-                      textAlign: "center",
-                      color: "#64748b",
-                      fontWeight: "700"
-                    }}
-                  >
-                    {loading ? "Loading operational logs..." : "No operational logs"}
-                  </td>
+          <div style={{ width: "100%", overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                minWidth: "900px",
+                borderCollapse: "collapse",
+                textAlign: "left"
+              }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    borderBottom: "1px solid var(--border-color)",
+                    color: "var(--text-muted)",
+                    fontSize: "0.85rem",
+                    background: "var(--bg-table-header)"
+                  }}
+                >
+                  <th style={{ padding: "1rem 1.5rem" }}>TICKET</th>
+                  <th style={{ padding: "1rem" }}>LICENSE PLATE</th>
+                  <th style={{ padding: "1rem" }}>SLOT</th>
+                  <th style={{ padding: "1rem" }}>STATUS</th>
+                  <th style={{ padding: "1rem" }}>CHECK-IN</th>
+                  <th style={{ padding: "1rem" }}>CHECK-OUT</th>
+                  <th style={{ padding: "1rem 1.5rem", textAlign: "right" }}>
+                    ACTIONS
+                  </th>
                 </tr>
-              ) : (
-                operationalLogs.map((log, index) => {
-                  const statusMeta = getStatusMeta(log.status);
+              </thead>
 
-                  return (
-                    <tr
-                      key={`${log.sessionId || index}`}
+              <tbody>
+                {operationalLogs.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
                       style={{
-                        borderBottom: "1px solid #1e293b",
-                        color: "#fff",
-                        fontSize: "0.9rem"
+                        padding: "2rem",
+                        textAlign: "center",
+                        color: "var(--text-muted)",
+                        fontWeight: "700"
                       }}
                     >
-                      <td style={{ padding: "1rem 1.5rem", fontWeight: "700" }}>
-                        {log.ticketId || `#${log.sessionId}`}
-                      </td>
+                      {isInitialLoading
+                        ? "Loading operational logs..."
+                        : "No operational logs"}
+                    </td>
+                  </tr>
+                ) : (
+                  operationalLogs.map((log, index) => {
+                    const statusMeta = getStatusMeta(log.status);
 
-                      <td
+                    return (
+                      <tr
+                        key={`${log.sessionId || index}`}
                         style={{
-                          padding: "1rem",
-                          color: "#10b981",
-                          fontWeight: "700"
+                          borderBottom: "1px solid var(--border-color)",
+                          color: "var(--text-main)",
+                          fontSize: "0.9rem",
+                          background: "var(--bg-table-row)"
                         }}
                       >
-                        {log.licensePlate || "N/A"}
-                      </td>
+                        <td style={{ padding: "1rem 1.5rem", fontWeight: "700" }}>
+                          {log.ticketId || `#${log.sessionId}`}
+                        </td>
 
-                      <td style={{ padding: "1rem", fontWeight: "700" }}>
-                        {log.slotCode || "N/A"}
-                      </td>
-
-                      <td style={{ padding: "1rem" }}>
-                        <span
+                        <td
                           style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "0.4rem",
-                            color: statusMeta.color,
-                            background: `${statusMeta.color}20`,
-                            border: `1px solid ${statusMeta.color}55`,
-                            borderRadius: "999px",
-                            padding: "0.25rem 0.65rem",
-                            fontSize: "0.75rem",
-                            fontWeight: "800"
+                            padding: "1rem",
+                            color: "var(--success-green)",
+                            fontWeight: "700"
                           }}
                         >
-                          {statusMeta.label}
-                        </span>
-                      </td>
+                          {log.licensePlate || "N/A"}
+                        </td>
 
-                      <td style={{ padding: "1rem", color: "#94a3b8" }}>
-                        {formatDateTime(log.checkInTime)}
-                      </td>
+                        <td style={{ padding: "1rem", fontWeight: "700" }}>
+                          {log.slotCode || "N/A"}
+                        </td>
 
-                      <td style={{ padding: "1rem", color: "#94a3b8" }}>
-                        {formatDateTime(log.checkOutTime)}
-                      </td>
+                        <td style={{ padding: "1rem" }}>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.4rem",
+                              color: statusMeta.color,
+                              background: `${statusMeta.color}20`,
+                              border: `1px solid ${statusMeta.color}55`,
+                              borderRadius: "999px",
+                              padding: "0.25rem 0.65rem",
+                              fontSize: "0.75rem",
+                              fontWeight: "800"
+                            }}
+                          >
+                            {statusMeta.label}
+                          </span>
+                        </td>
 
-                      <td style={{ padding: "1rem 1.5rem", textAlign: "right" }}>
-                        <button
-                          style={{
-                            background: "transparent",
-                            border: "none",
-                            color: "#3b82f6",
-                            cursor: "pointer",
-                            fontSize: "0.8rem",
-                            fontWeight: "bold"
-                          }}
-                        >
-                          DETAILS
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                        <td style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                          {formatDateTime(log.checkInTime)}
+                        </td>
+
+                        <td style={{ padding: "1rem", color: "var(--text-muted)" }}>
+                          {formatDateTime(log.checkOutTime)}
+                        </td>
+
+                        <td style={{ padding: "1rem 1.5rem", textAlign: "right" }}>
+                          <button
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              color: "var(--primary-blue)",
+                              cursor: "pointer",
+                              fontSize: "0.8rem",
+                              fontWeight: "bold"
+                            }}
+                          >
+                            DETAILS
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
 
           <div
             style={{
@@ -1061,10 +1275,12 @@ const Reports = () => {
               justifyContent: "space-between",
               alignItems: "center",
               padding: "1rem 1.5rem",
-              borderTop: "1px solid #1e293b"
+              borderTop: "1px solid var(--border-color)",
+              gap: "1rem",
+              flexWrap: "wrap"
             }}
           >
-            <span style={{ color: "#64748b", fontSize: "0.85rem" }}>
+            <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
               Showing {operationalLogs.length} records for{" "}
               {timeRange.toLowerCase()} report
             </span>
@@ -1072,9 +1288,9 @@ const Reports = () => {
             <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
               <button
                 style={{
-                  background: "#0c1322",
-                  border: "1px solid #1e293b",
-                  color: "#64748b",
+                  background: "var(--bg-card-soft)",
+                  border: "1px solid var(--border-color)",
+                  color: "var(--text-muted)",
                   padding: "0.4rem 0.6rem",
                   borderRadius: "0.375rem",
                   cursor: "not-allowed"
@@ -1086,9 +1302,9 @@ const Reports = () => {
 
               <button
                 style={{
-                  background: "#3b82f6",
-                  border: "1px solid #1e293b",
-                  color: "#fff",
+                  background: "var(--primary-blue)",
+                  border: "1px solid var(--primary-blue)",
+                  color: "#ffffff",
                   padding: "0.4rem 0.75rem",
                   borderRadius: "0.375rem",
                   fontSize: "0.85rem",
@@ -1100,9 +1316,9 @@ const Reports = () => {
 
               <button
                 style={{
-                  background: "#0c1322",
-                  border: "1px solid #1e293b",
-                  color: "#64748b",
+                  background: "var(--bg-card-soft)",
+                  border: "1px solid var(--border-color)",
+                  color: "var(--text-muted)",
                   padding: "0.4rem 0.6rem",
                   borderRadius: "0.375rem",
                   cursor: "not-allowed"
@@ -1118,5 +1334,89 @@ const Reports = () => {
     </div>
   );
 };
+
+function SimpleBreakdownTable({ title, headers, rows, emptyText }) {
+  return (
+    <div
+      style={{
+        marginTop: "2rem",
+        paddingTop: "1.25rem",
+        borderTop: "1px solid var(--border-color)"
+      }}
+    >
+      <h4
+        style={{
+          color: "var(--text-main)",
+          margin: "0 0 1rem 0",
+          fontSize: "1rem",
+          fontWeight: "800"
+        }}
+      >
+        {title}
+      </h4>
+
+      <div style={{ overflowX: "auto" }}>
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            color: "var(--text-main)",
+            fontSize: "0.9rem"
+          }}
+        >
+          <thead>
+            <tr
+              style={{
+                color: "var(--text-muted)",
+                textAlign: "left",
+                background: "var(--bg-table-header)"
+              }}
+            >
+              {headers.map((header) => (
+                <th key={header} style={{ padding: "0.5rem" }}>
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={headers.length}
+                  style={{
+                    padding: "0.75rem 0.5rem",
+                    color: "var(--text-muted)",
+                    fontWeight: "700"
+                  }}
+                >
+                  {emptyText}
+                </td>
+              </tr>
+            ) : (
+              rows.map((row, rowIndex) => (
+                <tr key={`${title}-${rowIndex}`}>
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      key={`${title}-${rowIndex}-${cellIndex}`}
+                      style={{
+                        padding: "0.35rem 0.5rem",
+                        color: "var(--text-main)",
+                        fontWeight: cellIndex === 0 ? "700" : "500"
+                      }}
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 export default Reports;

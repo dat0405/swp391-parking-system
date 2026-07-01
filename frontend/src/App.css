@@ -1,46 +1,125 @@
 /* ==========================================================================
-   ĐỊNH NGHĨA BIẾN MÀU CHO 2 CHẾ ĐỘ
+   THEME VARIABLES
    ========================================================================== */
+
 :root {
-  /* Chế độ tối mặc định (Màu xanh đen hiện tại của bạn) */
+  /* Dark mode */
   --bg-auth: #05070c;
   --bg-column-left: #0c1322;
   --bg-showcase: radial-gradient(circle at center, #0f1c30 0%, #05070c 100%);
+
+  --bg-dashboard: #020617;
+  --bg-sidebar: #05070c;
+  --bg-card: #0c1322;
+  --bg-card-soft: #111827;
   --bg-input: #131c2e;
   --bg-input-focus: #172237;
+  --bg-table-header: #0f172a;
+  --bg-table-row: #0c1322;
+
   --border-color: #1e293b;
+  --border-soft: #253247;
+
   --text-main: #ffffff;
-  --text-muted: #64748b;
-  --bg-dashboard: #020617;
-  --bg-card: #0c1322;      /* Nền các ô con bên trong */
-  --bg-sidebar: #05070c;
+  --text-muted: #94a3b8;
+  --text-soft: #64748b;
+  --text-inverse: #020617;
+
+  --primary-blue: #3b82f6;
+  --primary-blue-soft: rgba(59, 130, 246, 0.12);
+
+  --success-green: #10b981;
+  --success-green-soft: rgba(16, 185, 129, 0.12);
+
+  --danger-red: #ef4444;
+  --danger-red-soft: rgba(239, 68, 68, 0.12);
+
+  --warning-yellow: #f59e0b;
+  --warning-yellow-soft: rgba(245, 158, 11, 0.12);
+
+  --sidebar-active-bg: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0.28) 0%,
+    rgba(15, 23, 42, 0.92) 100%
+  );
+  --sidebar-active-text: #ffffff;
+
+  --shadow-card: 0 18px 40px rgba(0, 0, 0, 0.28);
 }
 
 body.light-mode {
-  /* Chế độ sáng (Tự động đổi khi có class .light-mode ở body) */
+  /* Light mode */
   --bg-auth: #f1f5f9;
   --bg-column-left: #ffffff;
-  --bg-showcase: radial-gradient(circle at center, #cbd5e1 0%, #f1f5f9 100%);
+  --bg-showcase: radial-gradient(circle at center, #dbeafe 0%, #f8fafc 100%);
+
+  --bg-dashboard: #f6f8fb;
+  --bg-sidebar: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-soft: #f8fafc;
   --bg-input: #f8fafc;
   --bg-input-focus: #ffffff;
-  --border-color: #cbd5e1;
-  --text-main: #0f172a;    /* Chữ đen đậm rõ ràng */
-  --text-muted: #64748b;
-  --bg-dashboard: #f8fafc; /* Nền xám sáng */
-  --bg-card: #ffffff;      /* Ép các ô chứa thông số + chart chuyển sang TRẮNG TINH */
-  --bg-sidebar: #ffffff;
-}
+  --bg-table-header: #f1f5f9;
+  --bg-table-row: #ffffff;
 
-/* Thêm hiệu ứng chuyển màu mượt mà cho toàn bộ website */
-*, *::before, *::after {
-  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
+  --border-color: #dbe3ee;
+  --border-soft: #e5edf7;
+
+  --text-main: #020617;
+  --text-muted: #64748b;
+  --text-soft: #94a3b8;
+  --text-inverse: #ffffff;
+
+  --primary-blue: #2563eb;
+  --primary-blue-soft: rgba(37, 99, 235, 0.1);
+
+  --success-green: #059669;
+  --success-green-soft: rgba(5, 150, 105, 0.1);
+
+  --danger-red: #dc2626;
+  --danger-red-soft: rgba(220, 38, 38, 0.1);
+
+  --warning-yellow: #d97706;
+  --warning-yellow-soft: rgba(217, 119, 6, 0.1);
+
+  --sidebar-active-bg: linear-gradient(90deg, #dbeafe 0%, #f1f5ff 100%);
+  --sidebar-active-text: #0f172a;
+
+  --shadow-card: 0 12px 28px rgba(15, 23, 42, 0.08);
 }
 
 /* ==========================================================================
-    LAYOUT REFACTOR (Thay màu bằng biến)
+   GLOBAL RESET
    ========================================================================== */
 
-/* Tổng thể Layout chia đôi màn hình */
+*,
+*::before,
+*::after {
+  transition:
+    background-color 0.22s ease,
+    border-color 0.22s ease,
+    color 0.22s ease,
+    box-shadow 0.22s ease !important;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  background-color: var(--bg-dashboard);
+  color: var(--text-main);
+}
+
+body {
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   AUTH LAYOUT
+   ========================================================================== */
+
 .auth-container {
   display: flex !important;
   flex-direction: row !important;
@@ -49,7 +128,6 @@ body.light-mode {
   background-color: var(--bg-auth) !important;
 }
 
-/* Cột trái - Login Form */
 .login-column {
   width: 38% !important;
   background-color: var(--bg-column-left) !important;
@@ -60,7 +138,6 @@ body.light-mode {
   border-right: 1px solid var(--border-color) !important;
 }
 
-/* Cột phải - Showcase */
 .showcase-column {
   width: 62% !important;
   background: var(--bg-showcase) !important;
@@ -73,7 +150,10 @@ body.light-mode {
   padding: 2rem !important;
 }
 
-/* Thiết kế Input Form */
+/* ==========================================================================
+   FORM ELEMENTS
+   ========================================================================== */
+
 .input-group {
   margin-bottom: 1.25rem !important;
 }
@@ -81,7 +161,7 @@ body.light-mode {
 .input-label {
   display: block !important;
   font-size: 0.7rem !important;
-  font-weight: 600 !important;
+  font-weight: 700 !important;
   color: var(--text-muted) !important;
   letter-spacing: 0.05em !important;
   margin-bottom: 0.5rem !important;
@@ -96,18 +176,32 @@ body.light-mode {
 .input-icon-left {
   position: absolute !important;
   left: 1rem !important;
-  color: #475569 !important;
+  color: var(--text-muted) !important;
   z-index: 5;
 }
 
 .input-icon-right {
   position: absolute !important;
   right: 1rem !important;
-  color: #475569 !important;
+  color: var(--text-muted) !important;
   cursor: pointer !important;
   background: none !important;
   border: none !important;
   z-index: 5;
+}
+
+.form-input,
+input,
+select,
+textarea {
+  color-scheme: light;
+}
+
+body:not(.light-mode) .form-input,
+body:not(.light-mode) input,
+body:not(.light-mode) select,
+body:not(.light-mode) textarea {
+  color-scheme: dark;
 }
 
 .form-input {
@@ -120,13 +214,25 @@ body.light-mode {
   font-size: 0.9rem !important;
 }
 
-.form-input:focus {
+.form-input:focus,
+input:focus,
+select:focus,
+textarea:focus {
   outline: none !important;
-  border-color: #3b82f6 !important;
+  border-color: var(--primary-blue) !important;
   background-color: var(--bg-input-focus) !important;
 }
 
-/* Hiệu ứng Phối cảnh 3D cho Màn hình Dashboard */
+.form-input::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* ==========================================================================
+   LOGIN SHOWCASE
+   ========================================================================== */
+
 .dashboard-perspective-wrapper {
   perspective: 1200px !important;
   width: 80% !important;
@@ -142,7 +248,6 @@ body.light-mode {
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
-/* Các Badge nổi (Floating Badges) */
 .floating-badge {
   position: absolute !important;
   background: rgba(15, 23, 42, 0.85) !important;
@@ -167,27 +272,28 @@ body.light-mode {
   left: 10% !important;
 }
 
-/* Responsive xử lý trên thiết bị di động */
-@media (max-width: 1024px) {
-  .auth-container {
-    flex-direction: column !important;
-  }
-  .login-column {
-    width: 100% !important;
-    padding: 3rem 2rem !important;
-  }
-  .showcase-column {
-    width: 100% !important;
-    padding: 4rem 2rem !important;
-  }
-}
-
-/* Áp dụng hiệu ứng vào class anh-dong */
 .anh-dong {
   animation: movepic 4s ease-in-out infinite;
 }
 
-/* Dashboard layout */
+@keyframes movepic {
+  0% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-12px);
+  }
+
+  100% {
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   DASHBOARD GLOBAL LAYOUT
+   ========================================================================== */
+
 .dashboard-layout {
   display: flex !important;
   min-height: 100vh !important;
@@ -196,25 +302,6 @@ body.light-mode {
   overflow: hidden !important;
 }
 
-/* Sidebar giữ cố định bên trái */
-.sidebar {
-  flex-shrink: 0 !important;
-  height: 100vh !important;
-  background-color: var(--bg-sidebar) !important;
-  border-right: 1px solid var(--border-color) !important;
-  overflow-y: auto !important;
-}
-
-/* Sửa chữ mờ bên Sidebar */
-body.light-mode .sidebar a,
-body.light-mode .sidebar button,
-body.light-mode .sidebar span,
-body.light-mode .sidebar h4,
-body.light-mode .sidebar div {
-  color: var(--text-main) !important;
-}
-
-/* Nội dung chính bên phải */
 .main-content {
   flex: 1 !important;
   height: 100vh !important;
@@ -227,37 +314,387 @@ body.light-mode .sidebar div {
 }
 
 /* ==========================================================================
-  🔥 ĐOẠN ĐẶC BIỆT: ÉP TOÀN BỘ CÁC CARDS VÀ CÁC HỘP NỘI DUNG ĐỔI MÀU NỀN + CHỮ
-  ==========================================================================
-*/
-.main-content > div > div, 
-.main-content div[style*="background-color"], 
-.main-content .stat-card,
-.main-content .chart-container,
-.main-content .occupancy-trends-box {
+   SIDEBAR CLEAN THEME FIX
+   ========================================================================== */
+
+.sidebar {
+  width: 260px !important;
+  min-width: 260px !important;
+  height: 100vh !important;
+  background-color: var(--bg-sidebar) !important;
+  border-right: 1px solid var(--border-color) !important;
+  color: var(--text-main) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow-y: auto !important;
+}
+
+.sidebar-brand {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.75rem !important;
+  padding: 1.5rem 1.5rem 2rem !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.brand-icon {
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 0.5rem !important;
+  background-color: var(--primary-blue) !important;
+  color: #ffffff !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-weight: 800 !important;
+  font-size: 1.1rem !important;
+  flex-shrink: 0 !important;
+}
+
+.brand-text h2 {
+  margin: 0 !important;
+  color: var(--text-main) !important;
+  font-size: 1rem !important;
+  font-weight: 800 !important;
+  line-height: 1.2 !important;
+}
+
+.brand-text span {
+  display: block !important;
+  margin-top: 0.25rem !important;
+  color: var(--text-muted) !important;
+  font-size: 0.65rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+}
+
+.sidebar-menu {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.35rem !important;
+  padding: 0 1rem !important;
+  flex: 1 !important;
+  background: transparent !important;
+}
+
+.sidebar-footer {
+  padding: 1rem !important;
+  margin-top: auto !important;
+  background: transparent !important;
+}
+
+/* Reset menu button */
+.sidebar .menu-item {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  width: 100% !important;
+  min-height: 46px !important;
+  border: none !important;
+  outline: none !important;
+  border-radius: 0.65rem !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  color: var(--text-main) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.85rem !important;
+  padding: 0.75rem 1rem !important;
+  font-size: 0.95rem !important;
+  font-weight: 650 !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+}
+
+.sidebar .menu-item svg {
+  color: currentColor !important;
+  stroke: currentColor !important;
+}
+
+.sidebar .menu-item-icon {
+  width: 22px !important;
+  height: 22px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: inherit !important;
+  flex-shrink: 0 !important;
+}
+
+.sidebar .menu-item-label {
+  color: inherit !important;
+  white-space: nowrap !important;
+}
+
+/* Dark sidebar */
+body:not(.light-mode) .sidebar {
+  background-color: #05070c !important;
+  border-right-color: #1e293b !important;
+}
+
+body:not(.light-mode) .sidebar .brand-text h2 {
+  color: #ffffff !important;
+}
+
+body:not(.light-mode) .sidebar .brand-text span {
+  color: #94a3b8 !important;
+}
+
+body:not(.light-mode) .sidebar .menu-item {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: #cbd5e1 !important;
+}
+
+body:not(.light-mode) .sidebar .menu-item:hover {
+  background: rgba(59, 130, 246, 0.14) !important;
+  color: #ffffff !important;
+}
+
+body:not(.light-mode) .sidebar .menu-item.active,
+body:not(.light-mode) .sidebar .menu-item[aria-current="page"] {
+  background: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0.28) 0%,
+    rgba(15, 23, 42, 0.92) 100%
+  ) !important;
+  color: #ffffff !important;
+  border-left: 3px solid #3b82f6 !important;
+}
+
+/* Light sidebar */
+body.light-mode .sidebar {
+  background-color: #ffffff !important;
+  border-right-color: #dbe3ee !important;
+}
+
+body.light-mode .sidebar .brand-text h2 {
+  color: #020617 !important;
+}
+
+body.light-mode .sidebar .brand-text span {
+  color: #64748b !important;
+}
+
+body.light-mode .sidebar .menu-item {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: #0f172a !important;
+}
+
+body.light-mode .sidebar .menu-item:hover {
+  background: #eef5ff !important;
+  color: #2563eb !important;
+}
+
+body.light-mode .sidebar .menu-item.active,
+body.light-mode .sidebar .menu-item[aria-current="page"] {
+  background: linear-gradient(
+    90deg,
+    #dbeafe 0%,
+    #f1f5ff 100%
+  ) !important;
+  color: #0f172a !important;
+  border-left: 3px solid #2563eb !important;
+}
+
+/* Prevent global rules from turning sidebar text white */
+body.light-mode .sidebar .menu-item *,
+body:not(.light-mode) .sidebar .menu-item * {
+  color: inherit !important;
+}
+
+/* ==========================================================================
+   THEME HELPER CLASSES
+   ========================================================================== */
+
+.theme-card,
+.stat-card,
+.chart-card,
+.report-card,
+.report-summary-card,
+.report-chart-card,
+.report-side-card,
+.report-operational-log,
+.occupancy-trends-box {
   background-color: var(--bg-card) !important;
   border: 1px solid var(--border-color) !important;
   color: var(--text-main) !important;
+  box-shadow: var(--shadow-card);
 }
 
-/* Ép toàn bộ các thẻ chữ bên trong Main Content tuân thủ màu chữ chính */
-.main-content h1, 
-.main-content h2, 
-.main-content h3, 
-.main-content h4, 
-.main-content p, 
-.main-content span {
+.text-main {
   color: var(--text-main) !important;
 }
 
-/* Trả lại màu chữ phụ mờ để giao diện có chiều sâu */
-body.light-mode .main-content span[style*="color: rgb(100, 116, 139)"],
-body.light-mode .main-content p[style*="color"],
-body.light-mode .main-content .text-muted {
+.text-muted {
   color: var(--text-muted) !important;
 }
 
-/* Cho bảng pricing không bị cắt dòng */
+.text-soft {
+  color: var(--text-soft) !important;
+}
+
+.bg-page {
+  background-color: var(--bg-dashboard) !important;
+}
+
+.bg-card {
+  background-color: var(--bg-card) !important;
+}
+
+.border-theme {
+  border-color: var(--border-color) !important;
+}
+
+/* ==========================================================================
+   LIGHT MODE FIX FOR INLINE-STYLED PAGES
+   ========================================================================== */
+
+body.light-mode .main-content {
+  background-color: var(--bg-dashboard) !important;
+  color: var(--text-main) !important;
+}
+
+body.light-mode .main-content h1,
+body.light-mode .main-content h2,
+body.light-mode .main-content h3,
+body.light-mode .main-content h4 {
+  color: var(--text-main) !important;
+}
+
+/* Inline white text turns dark in light mode */
+body.light-mode .main-content *:not(button)[style*="color: #fff"],
+body.light-mode .main-content *:not(button)[style*="color:#fff"],
+body.light-mode .main-content *:not(button)[style*="color: #ffffff"],
+body.light-mode .main-content *:not(button)[style*="color:#ffffff"],
+body.light-mode .main-content *:not(button)[style*="color: rgb(255, 255, 255)"] {
+  color: var(--text-main) !important;
+}
+
+/* Muted text */
+body.light-mode .main-content *[style*="color: #94a3b8"],
+body.light-mode .main-content *[style*="color:#94a3b8"],
+body.light-mode .main-content *[style*="color: rgb(148, 163, 184)"] {
+  color: var(--text-muted) !important;
+}
+
+body.light-mode .main-content *[style*="color: #64748b"],
+body.light-mode .main-content *[style*="color:#64748b"],
+body.light-mode .main-content *[style*="color: rgb(100, 116, 139)"] {
+  color: var(--text-muted) !important;
+}
+
+/* Convert dark cards/panels to light cards */
+body.light-mode .main-content div[style*="background: #0c1322"],
+body.light-mode .main-content div[style*="background:#0c1322"],
+body.light-mode .main-content div[style*="background-color: #0c1322"],
+body.light-mode .main-content div[style*="background-color:#0c1322"],
+body.light-mode .main-content div[style*="background: rgb(12, 19, 34)"],
+body.light-mode .main-content div[style*="background-color: rgb(12, 19, 34)"] {
+  background: var(--bg-card) !important;
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-main) !important;
+  box-shadow: var(--shadow-card);
+}
+
+/* Inputs/selects in light mode */
+body.light-mode .main-content input,
+body.light-mode .main-content select,
+body.light-mode .main-content textarea {
+  background-color: var(--bg-input) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-main) !important;
+}
+
+/* Keep dark action buttons readable */
+body.light-mode .main-content button[style*="#0c1322"],
+body.light-mode .main-content button[style*="#111827"],
+body.light-mode .main-content button[style*="#0f172a"],
+body.light-mode .main-content button[style*="rgb(12, 19, 34)"] {
+  background-color: #111827 !important;
+  color: #ffffff !important;
+  border-color: #1e293b !important;
+}
+
+body.light-mode .main-content button[style*="#3b82f6"],
+body.light-mode .main-content button[style*="#2563eb"] {
+  color: #ffffff !important;
+}
+
+/* ==========================================================================
+   DARK MODE FIX FOR INLINE-STYLED PAGES
+   ========================================================================== */
+
+body:not(.light-mode) .main-content {
+  background-color: var(--bg-dashboard) !important;
+  color: var(--text-main) !important;
+}
+
+body:not(.light-mode) .main-content input,
+body:not(.light-mode) .main-content select,
+body:not(.light-mode) .main-content textarea {
+  background-color: var(--bg-input) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-main) !important;
+}
+
+/* ==========================================================================
+   TABLES
+   ========================================================================== */
+
+table {
+  color: var(--text-main);
+}
+
+thead,
+.table-header {
+  background-color: var(--bg-table-header);
+  color: var(--text-muted);
+}
+
+tbody,
+.table-row {
+  background-color: var(--bg-table-row);
+}
+
+th {
+  color: var(--text-muted);
+}
+
+td {
+  color: var(--text-main);
+}
+
+body.light-mode .main-content table {
+  background-color: var(--bg-table-row) !important;
+  color: var(--text-main) !important;
+}
+
+body.light-mode .main-content thead,
+body.light-mode .main-content thead tr {
+  background-color: var(--bg-table-header) !important;
+}
+
+body.light-mode .main-content th {
+  background-color: var(--bg-table-header) !important;
+  color: var(--text-muted) !important;
+  border-color: var(--border-color) !important;
+}
+
+body.light-mode .main-content td {
+  background-color: var(--bg-table-row) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border-soft) !important;
+}
+
+body.light-mode .main-content tr {
+  border-color: var(--border-soft) !important;
+}
+
+/* Pricing table */
 .pricing-table-wrapper {
   width: 100% !important;
   overflow-x: auto !important;
@@ -273,9 +710,45 @@ body.light-mode .main-content .text-muted {
   height: 76px !important;
 }
 
-/* Tạo Keyframe di chuyển ảnh độc lập */
-@keyframes movepic {
-  0% { transform: translateY(0); }
-  50% { transform: translateY(-12px); }
-  100% { transform: translateY(0); }
+/* ==========================================================================
+   PAGE-SPECIFIC LIGHT MODE CLEANUP
+   ========================================================================== */
+
+body.light-mode .report-summary-card,
+body.light-mode .report-chart-card,
+body.light-mode .report-side-card,
+body.light-mode .report-operational-log {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-main) !important;
+}
+
+/* Parking slot cards can stay dark if they are intentionally slot blocks */
+body.light-mode .main-content [class*="slot"],
+body.light-mode .main-content [class*="Slot"] {
+  color: inherit;
+}
+
+/* ==========================================================================
+   RESPONSIVE
+   ========================================================================== */
+
+@media (max-width: 1024px) {
+  .auth-container {
+    flex-direction: column !important;
+  }
+
+  .login-column {
+    width: 100% !important;
+    padding: 3rem 2rem !important;
+  }
+
+  .showcase-column {
+    width: 100% !important;
+    padding: 4rem 2rem !important;
+  }
+
+  .main-content {
+    padding: 1.25rem !important;
+  }
 }

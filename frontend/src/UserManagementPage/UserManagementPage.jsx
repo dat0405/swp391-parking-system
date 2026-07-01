@@ -18,6 +18,27 @@ import Header from "../dashboard/Header";
 import Sidebar from "../dashboard/Sidebar";
 import { userApi } from "../api/userApi";
 
+const theme = {
+  page: "var(--bg-dashboard)",
+  card: "var(--bg-card)",
+  cardSoft: "var(--bg-card-soft)",
+  input: "var(--bg-input)",
+  border: "var(--border-color)",
+  tableHeader: "var(--bg-table-header)",
+  tableRow: "var(--bg-table-row)",
+  text: "var(--text-main)",
+  muted: "var(--text-muted)",
+  blue: "var(--primary-blue)",
+  blueSoft: "var(--primary-blue-soft)",
+  green: "var(--success-green)",
+  greenSoft: "var(--success-green-soft)",
+  red: "var(--danger-red)",
+  redSoft: "var(--danger-red-soft)",
+  yellow: "var(--warning-yellow)",
+  yellowSoft: "var(--warning-yellow-soft)",
+  shadow: "var(--shadow-card)",
+};
+
 function UserManagementPage() {
   const [stats, setStats] = useState({
     totalAccounts: 0,
@@ -430,14 +451,17 @@ function UserManagementPage() {
   const currentItems = filteredUsers.slice(indexOfFirstItem, indexOfLastItem);
   const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
 
+  const emptyRowCount = Math.max(itemsPerPage - currentItems.length, 0);
+
   return (
     <div
       className="dashboard-layout"
       style={{
         display: "flex",
         width: "100vw",
-        height: "100vh",
-        overflow: "hidden",
+        minHeight: "100vh",
+        background: theme.page,
+        color: theme.text,
       }}
     >
       <Sidebar />
@@ -447,12 +471,14 @@ function UserManagementPage() {
         style={{
           flexGrow: 1,
           padding: "1.5rem 2rem",
-          height: "100vh",
+          minHeight: "100vh",
           boxSizing: "border-box",
           display: "flex",
           flexDirection: "column",
           gap: "1.5rem",
-          overflow: "hidden",
+          overflowY: "auto",
+          background: theme.page,
+          color: theme.text,
         }}
       >
         <Header />
@@ -462,16 +488,18 @@ function UserManagementPage() {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            flexShrink: 0,
+            gap: "1rem",
+            flexWrap: "wrap",
           }}
         >
           <div>
             <h1
               style={{
-                fontSize: "1.75rem",
-                fontWeight: "700",
+                fontSize: "1.85rem",
+                fontWeight: "800",
                 margin: 0,
-                color: "#fff",
+                color: theme.text,
+                letterSpacing: "-0.04em",
               }}
             >
               User Management
@@ -479,8 +507,8 @@ function UserManagementPage() {
 
             <p
               style={{
-                color: "#64748b",
-                fontSize: "0.85rem",
+                color: theme.muted,
+                fontSize: "0.9rem",
                 marginTop: "4px",
               }}
             >
@@ -494,13 +522,13 @@ function UserManagementPage() {
               display: "flex",
               alignItems: "center",
               gap: "0.5rem",
-              backgroundColor: "#3b82f6",
-              color: "#fff",
+              backgroundColor: theme.blue,
+              color: "#ffffff",
               border: "none",
-              padding: "0.6rem 1.2rem",
-              borderRadius: "0.5rem",
-              fontWeight: "600",
-              fontSize: "0.85rem",
+              padding: "0.65rem 1.2rem",
+              borderRadius: "0.6rem",
+              fontWeight: "700",
+              fontSize: "0.9rem",
               cursor: "pointer",
             }}
           >
@@ -511,146 +539,42 @@ function UserManagementPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
             gap: "1rem",
-            flexShrink: 0,
           }}
         >
-          <div
-            style={{
-              backgroundColor: "#111827",
-              padding: "1.25rem",
-              borderRadius: "0.75rem",
-              border: "1px solid #1e293b",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                color: "#64748b",
-                fontSize: "0.65rem",
-                fontWeight: "700",
-                letterSpacing: "0.05em",
-              }}
-            >
-              <span>TOTAL ACCOUNTS</span>
-              <Users size={16} style={{ color: "#3b82f6" }} />
-            </div>
+          <StatCard
+            label="TOTAL ACCOUNTS"
+            value={stats.totalAccounts.toLocaleString()}
+            icon={<Users size={17} />}
+            iconColor={theme.blue}
+            valueColor={theme.text}
+          />
 
-            <h2
-              style={{
-                fontSize: "1.75rem",
-                fontWeight: "700",
-                margin: "0.25rem 0 0 0",
-                color: "#fff",
-              }}
-            >
-              {stats.totalAccounts.toLocaleString()}
-            </h2>
-          </div>
+          <StatCard
+            label="ACTIVE NOW"
+            value={stats.activeNow.toLocaleString()}
+            icon={<UserCheck size={17} />}
+            iconColor={theme.green}
+            valueColor={theme.text}
+          />
 
-          <div
-            style={{
-              backgroundColor: "#111827",
-              padding: "1.25rem",
-              borderRadius: "0.75rem",
-              border: "1px solid #1e293b",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                color: "#64748b",
-                fontSize: "0.65rem",
-                fontWeight: "700",
-                letterSpacing: "0.05em",
-              }}
-            >
-              <span>ACTIVE NOW</span>
-              <UserCheck size={16} style={{ color: "#10b981" }} />
-            </div>
+          <StatCard
+            label="STAFF MEMBERS"
+            value={stats.staffMembers.toLocaleString()}
+            icon={<Shield size={17} />}
+            iconColor="#6366f1"
+            valueColor={theme.text}
+          />
 
-            <h2
-              style={{
-                fontSize: "1.75rem",
-                fontWeight: "700",
-                margin: "0.25rem 0 0 0",
-                color: "#fff",
-              }}
-            >
-              {stats.activeNow.toLocaleString()}
-            </h2>
-          </div>
-
-          <div
-            style={{
-              backgroundColor: "#111827",
-              padding: "1.25rem",
-              borderRadius: "0.75rem",
-              border: "1px solid #1e293b",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                color: "#64748b",
-                fontSize: "0.65rem",
-                fontWeight: "700",
-                letterSpacing: "0.05em",
-              }}
-            >
-              <span>STAFF MEMBERS</span>
-              <Shield size={16} style={{ color: "#6366f1" }} />
-            </div>
-
-            <h2
-              style={{
-                fontSize: "1.75rem",
-                fontWeight: "700",
-                margin: "0.25rem 0 0 0",
-                color: "#fff",
-              }}
-            >
-              {stats.staffMembers}
-            </h2>
-          </div>
-
-          <div
-            style={{
-              backgroundColor: "#111827",
-              padding: "1.25rem",
-              borderRadius: "0.75rem",
-              border: "1px solid #1e293b",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                color: "#ef4444",
-                fontSize: "0.65rem",
-                fontWeight: "700",
-                letterSpacing: "0.05em",
-              }}
-            >
-              <span>LOCKED ACCOUNTS</span>
-              <Lock size={16} style={{ color: "#ef4444" }} />
-            </div>
-
-            <h2
-              style={{
-                fontSize: "1.75rem",
-                fontWeight: "700",
-                margin: "0.25rem 0 0 0",
-                color: "#ef4444",
-              }}
-            >
-              {stats.lockedAccounts.toString().padStart(2, "0")}
-            </h2>
-          </div>
+          <StatCard
+            label="LOCKED ACCOUNTS"
+            value={stats.lockedAccounts.toString().padStart(2, "0")}
+            icon={<Lock size={17} />}
+            iconColor={theme.red}
+            valueColor={stats.lockedAccounts > 0 ? theme.red : theme.text}
+            labelColor={stats.lockedAccounts > 0 ? theme.red : theme.muted}
+          />
         </div>
 
         <div
@@ -658,10 +582,10 @@ function UserManagementPage() {
             display: "flex",
             gap: "0.75rem",
             alignItems: "center",
-            flexShrink: 0,
+            flexWrap: "wrap",
           }}
         >
-          <div style={{ position: "relative", flexGrow: 1 }}>
+          <div style={{ position: "relative", flexGrow: 1, minWidth: "260px" }}>
             <Search
               size={16}
               style={{
@@ -669,7 +593,7 @@ function UserManagementPage() {
                 left: "12px",
                 top: "50%",
                 transform: "translateY(-50%)",
-                color: "#475569",
+                color: theme.muted,
               }}
             />
 
@@ -681,16 +605,7 @@ function UserManagementPage() {
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              style={{
-                width: "100%",
-                backgroundColor: "#111827",
-                border: "1px solid #1e293b",
-                borderRadius: "0.5rem",
-                padding: "0.5rem 1rem 0.5rem 2.2rem",
-                color: "#fff",
-                fontSize: "0.85rem",
-                outline: "none",
-              }}
+              style={inputBaseStyle}
             />
           </div>
 
@@ -700,16 +615,7 @@ function UserManagementPage() {
               setSelectedRole(e.target.value);
               setCurrentPage(1);
             }}
-            style={{
-              backgroundColor: "#111827",
-              color: "#fff",
-              border: "1px solid #1e293b",
-              borderRadius: "0.5rem",
-              padding: "0.5rem 1rem",
-              fontSize: "0.85rem",
-              outline: "none",
-              cursor: "pointer",
-            }}
+            style={selectBaseStyle}
           >
             <option>All Roles</option>
             <option>ADMIN</option>
@@ -724,16 +630,7 @@ function UserManagementPage() {
               setSelectedStatus(e.target.value);
               setCurrentPage(1);
             }}
-            style={{
-              backgroundColor: "#111827",
-              color: "#fff",
-              border: "1px solid #1e293b",
-              borderRadius: "0.5rem",
-              padding: "0.5rem 1rem",
-              fontSize: "0.85rem",
-              outline: "none",
-              cursor: "pointer",
-            }}
+            style={selectBaseStyle}
           >
             <option>Any Status</option>
             <option>Active</option>
@@ -744,31 +641,31 @@ function UserManagementPage() {
 
         <div
           style={{
-            backgroundColor: "#111827",
-            borderRadius: "0.75rem",
-            border: "1px solid #1e293b",
+            backgroundColor: theme.card,
+            borderRadius: "0.85rem",
+            border: `1px solid ${theme.border}`,
             overflow: "hidden",
-            flexGrow: 1,
             display: "flex",
             flexDirection: "column",
-            minHeight: 0,
             position: "relative",
+            minHeight: "454px",
+            boxShadow: theme.shadow,
           }}
         >
           {!loading && (
             <div
               style={{
                 position: "absolute",
-                top: "0.6rem",
+                top: "0.75rem",
                 right: "1rem",
-                zIndex: 2,
+                zIndex: 3,
                 display: "flex",
                 alignItems: "center",
                 gap: "0.4rem",
-                color: "#64748b",
+                color: theme.muted,
                 fontSize: "0.72rem",
-                backgroundColor: "rgba(15, 23, 42, 0.85)",
-                border: "1px solid #1e293b",
+                backgroundColor: theme.cardSoft,
+                border: `1px solid ${theme.border}`,
                 borderRadius: "999px",
                 padding: "0.25rem 0.6rem",
               }}
@@ -778,7 +675,7 @@ function UserManagementPage() {
                   width: "6px",
                   height: "6px",
                   borderRadius: "50%",
-                  backgroundColor: isRealtimeConnected ? "#10b981" : "#64748b",
+                  backgroundColor: isRealtimeConnected ? theme.green : theme.muted,
                 }}
               />
               {isRealtimeConnected ? "Realtime" : "Offline sync"}
@@ -792,47 +689,40 @@ function UserManagementPage() {
                 display: "flex",
                 justifyContent: "center",
                 alignItems: "center",
-                color: "#64748b",
+                color: theme.muted,
                 fontSize: "0.9rem",
               }}
             >
               Synchronizing infrastructure data...
             </div>
           ) : (
-            <div style={{ flexGrow: 1, overflowY: "auto" }}>
+            <div style={{ flexGrow: 1, overflowX: "auto" }}>
               <table
                 style={{
                   width: "100%",
+                  minWidth: "960px",
+                  height: "100%",
                   borderCollapse: "collapse",
                   textAlign: "left",
                   fontSize: "0.85rem",
+                  color: theme.text,
                 }}
               >
-                <thead
-                  style={{
-                    position: "sticky",
-                    top: 0,
-                    backgroundColor: "#111827",
-                    zIndex: 1,
-                  }}
-                >
+                <thead>
                   <tr
                     style={{
-                      borderBottom: "1px solid #1e293b",
-                      color: "#64748b",
+                      height: "62px",
+                      borderBottom: `1px solid ${theme.border}`,
+                      color: theme.muted,
+                      backgroundColor: theme.tableHeader,
                     }}
                   >
-                    <th style={{ padding: "0.85rem 1rem" }}>Full name</th>
-                    <th style={{ padding: "0.85rem 1rem" }}>Email</th>
-                    <th style={{ padding: "0.85rem 1rem" }}>Role</th>
-                    <th style={{ padding: "0.85rem 1rem" }}>Status</th>
-                    <th style={{ padding: "0.85rem 1rem" }}>Last login</th>
-                    <th
-                      style={{
-                        padding: "0.85rem 1rem",
-                        textAlign: "right",
-                      }}
-                    >
+                    <th style={{ padding: "0.9rem 1rem" }}>Full name</th>
+                    <th style={{ padding: "0.9rem 1rem" }}>Email</th>
+                    <th style={{ padding: "0.9rem 1rem" }}>Role</th>
+                    <th style={{ padding: "0.9rem 1rem" }}>Status</th>
+                    <th style={{ padding: "0.9rem 1rem" }}>Last login</th>
+                    <th style={{ padding: "0.9rem 1rem", textAlign: "right" }}>
                       Actions
                     </th>
                   </tr>
@@ -840,195 +730,211 @@ function UserManagementPage() {
 
                 <tbody>
                   {currentItems.length === 0 ? (
-                    <tr>
+                    <tr style={{ height: "320px" }}>
                       <td
                         colSpan={6}
                         style={{
                           padding: "2rem",
                           textAlign: "center",
-                          color: "#64748b",
+                          color: theme.muted,
+                          background: theme.tableRow,
                         }}
                       >
                         No users found.
                       </td>
                     </tr>
                   ) : (
-                    currentItems.map((user) => (
-                      <tr
-                        key={user.id}
-                        style={{
-                          borderBottom: "1px solid rgba(255,255,255,0.02)",
-                          color: "#cbd5e1",
-                        }}
-                      >
-                        <td style={{ padding: "0.85rem 1rem" }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "0.75rem",
-                            }}
-                          >
+                    <>
+                      {currentItems.map((user) => (
+                        <tr
+                          key={user.id}
+                          style={{
+                            height: "76px",
+                            borderBottom: `1px solid ${theme.border}`,
+                            color: theme.text,
+                            background: theme.tableRow,
+                          }}
+                        >
+                          <td style={{ padding: "0.85rem 1rem" }}>
                             <div
                               style={{
-                                width: "28px",
-                                height: "28px",
-                                borderRadius: "50%",
-                                backgroundColor: "#1e293b",
-                                border: "1px solid #3b82f6",
                                 display: "flex",
                                 alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: "0.75rem",
-                                fontWeight: "700",
-                                color: "#3b82f6",
+                                gap: "0.75rem",
                               }}
                             >
-                              {user.avatar}
-                            </div>
-
-                            <span
-                              style={{
-                                fontWeight: "600",
-                                color: "#fff",
-                              }}
-                            >
-                              {user.name}
-                            </span>
-                          </div>
-                        </td>
-
-                        <td
-                          style={{
-                            padding: "0.85rem 1rem",
-                            color: "#94a3b8",
-                          }}
-                        >
-                          {user.email}
-                        </td>
-
-                        <td style={{ padding: "0.85rem 1rem" }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "0.25rem",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            {user.roles.map((role, index) => (
-                              <span
-                                key={index}
+                              <div
                                 style={{
-                                  backgroundColor: "#1e293b",
-                                  color: "#93c5fd",
-                                  fontSize: "0.65rem",
-                                  fontWeight: "700",
-                                  padding: "0.15rem 0.4rem",
-                                  borderRadius: "0.25rem",
+                                  width: "32px",
+                                  height: "32px",
+                                  borderRadius: "50%",
+                                  backgroundColor: theme.blueSoft,
+                                  border: `1px solid ${theme.border}`,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "0.75rem",
+                                  fontWeight: "800",
+                                  color: theme.blue,
+                                  flexShrink: 0,
                                 }}
                               >
-                                {role}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
+                                {user.avatar}
+                              </div>
 
-                        <td style={{ padding: "0.85rem 1rem" }}>
-                          <div
+                              <span
+                                style={{
+                                  fontWeight: "700",
+                                  color: theme.text,
+                                }}
+                              >
+                                {user.name}
+                              </span>
+                            </div>
+                          </td>
+
+                          <td
                             style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "0.4rem",
+                              padding: "0.85rem 1rem",
+                              color: theme.muted,
+                            }}
+                          >
+                            {user.email}
+                          </td>
+
+                          <td style={{ padding: "0.85rem 1rem" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "0.25rem",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              {user.roles.map((role, index) => (
+                                <span
+                                  key={index}
+                                  style={{
+                                    backgroundColor: theme.blueSoft,
+                                    color: theme.blue,
+                                    fontSize: "0.65rem",
+                                    fontWeight: "800",
+                                    padding: "0.18rem 0.45rem",
+                                    borderRadius: "0.35rem",
+                                    border: `1px solid ${theme.border}`,
+                                  }}
+                                >
+                                  {role}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+
+                          <td style={{ padding: "0.85rem 1rem" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.4rem",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: "7px",
+                                  height: "7px",
+                                  borderRadius: "50%",
+                                  backgroundColor:
+                                    user.status === "Active"
+                                      ? theme.green
+                                      : user.status === "Locked"
+                                        ? theme.red
+                                        : theme.muted,
+                                }}
+                              />
+
+                              <span
+                                style={{
+                                  color:
+                                    user.status === "Active"
+                                      ? theme.green
+                                      : user.status === "Locked"
+                                        ? theme.red
+                                        : theme.muted,
+                                  fontWeight: "650",
+                                }}
+                              >
+                                {getStatusDisplayText(user)}
+                              </span>
+                            </div>
+                          </td>
+
+                          <td
+                            style={{
+                              padding: "0.85rem 1rem",
+                              color: theme.muted,
+                            }}
+                          >
+                            {user.lastLogin}
+                          </td>
+
+                          <td
+                            style={{
+                              padding: "0.85rem 1rem",
+                              textAlign: "right",
                             }}
                           >
                             <div
                               style={{
-                                width: "6px",
-                                height: "6px",
-                                borderRadius: "50%",
-                                backgroundColor:
-                                  user.status === "Active"
-                                    ? "#10b981"
-                                    : user.status === "Locked"
-                                    ? "#ef4444"
-                                    : "#64748b",
-                              }}
-                            />
-
-                            <span
-                              style={{
-                                color:
-                                  user.status === "Active"
-                                    ? "#10b981"
-                                    : user.status === "Locked"
-                                    ? "#ef4444"
-                                    : "#64748b",
-                                fontWeight: "500",
+                                display: "flex",
+                                justifyContent: "flex-end",
+                                gap: "0.75rem",
                               }}
                             >
-                              {getStatusDisplayText(user)}
-                            </span>
-                          </div>
-                        </td>
+                              <button
+                                onClick={() => openEditRoleModal(user)}
+                                style={iconButtonStyle}
+                                title="Edit Role"
+                              >
+                                <Pencil size={15} />
+                              </button>
 
-                        <td
-                          style={{
-                            padding: "0.85rem 1rem",
-                            color: "#64748b",
-                          }}
-                        >
-                          {user.lastLogin}
-                        </td>
-
-                        <td
-                          style={{
-                            padding: "0.85rem 1rem",
-                            textAlign: "right",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "flex-end",
-                              gap: "0.75rem",
-                            }}
-                          >
-                            <button
-                              onClick={() => openEditRoleModal(user)}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                color: "#94a3b8",
-                                cursor: "pointer",
-                              }}
-                              title="Edit Role"
-                            >
-                              <Pencil size={14} />
-                            </button>
-
-                            <button
-                              onClick={() => triggerLockConfirmation(user)}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                color:
+                              <button
+                                onClick={() => triggerLockConfirmation(user)}
+                                style={{
+                                  ...iconButtonStyle,
+                                  color:
+                                    user.status === "Locked"
+                                      ? theme.red
+                                      : theme.muted,
+                                }}
+                                title={
                                   user.status === "Locked"
-                                    ? "#ef4444"
-                                    : "#94a3b8",
-                                cursor: "pointer",
-                              }}
-                              title={
-                                user.status === "Locked"
-                                  ? "Unlock Account"
-                                  : "Lock Account"
-                              }
-                            >
-                              <Lock size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                                    ? "Unlock Account"
+                                    : "Lock Account"
+                                }
+                              >
+                                <Lock size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {Array.from({ length: emptyRowCount }).map((_, index) => (
+                        <tr
+                          key={`user-empty-space-${index}`}
+                          style={{
+                            height: "76px",
+                            background: theme.tableRow,
+                            borderBottom:
+                              index === emptyRowCount - 1
+                                ? "none"
+                                : `1px solid ${theme.border}`,
+                          }}
+                        >
+                          <td colSpan={6} />
+                        </tr>
+                      ))}
+                    </>
                   )}
                 </tbody>
               </table>
@@ -1041,10 +947,10 @@ function UserManagementPage() {
               justifyContent: "space-between",
               alignItems: "center",
               padding: "1rem",
-              borderTop: "1px solid #1e293b",
-              color: "#64748b",
+              borderTop: `1px solid ${theme.border}`,
+              color: theme.muted,
               fontSize: "0.8rem",
-              backgroundColor: "#111827",
+              backgroundColor: theme.card,
               flexShrink: 0,
             }}
           >
@@ -1062,762 +968,685 @@ function UserManagementPage() {
                 alignItems: "center",
               }}
             >
-              <button
-                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              <PaginationButton
                 disabled={safeCurrentPage === 1}
-                style={{
-                  backgroundColor: "#1e293b",
-                  border: "1px solid #1e293b",
-                  color: safeCurrentPage === 1 ? "#475569" : "#94a3b8",
-                  width: "32px",
-                  height: "32px",
-                  borderRadius: "0.375rem",
-                  cursor: safeCurrentPage === 1 ? "not-allowed" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
               >
                 <ChevronLeft size={14} />
-              </button>
+              </PaginationButton>
 
               {pageNumbers.map((number) => (
-                <button
+                <PaginationButton
                   key={number}
+                  active={safeCurrentPage === number}
                   onClick={() => setCurrentPage(number)}
-                  style={{
-                    backgroundColor:
-                      safeCurrentPage === number ? "#3b82f6" : "#1e293b",
-                    border: "1px solid #1e293b",
-                    color: safeCurrentPage === number ? "#fff" : "#94a3b8",
-                    width: "32px",
-                    height: "32px",
-                    borderRadius: "0.375rem",
-                    fontWeight: "600",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
                 >
                   {number}
-                </button>
+                </PaginationButton>
               ))}
 
-              <button
+              <PaginationButton
+                disabled={safeCurrentPage === totalPages}
                 onClick={() =>
                   setCurrentPage((prev) => Math.min(totalPages, prev + 1))
                 }
-                disabled={safeCurrentPage === totalPages}
-                style={{
-                  backgroundColor: "#1e293b",
-                  border: "1px solid #1e293b",
-                  color: safeCurrentPage === totalPages ? "#475569" : "#94a3b8",
-                  width: "32px",
-                  height: "32px",
-                  borderRadius: "0.375rem",
-                  cursor:
-                    safeCurrentPage === totalPages ? "not-allowed" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
               >
                 <ChevronRight size={14} />
-              </button>
+              </PaginationButton>
             </div>
           </div>
         </div>
       </main>
 
       {isModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(3, 7, 18, 0.8)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 999,
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#111827",
-              border: "1px solid #1e293b",
-              width: "460px",
-              borderRadius: "0.75rem",
-              padding: "1.5rem",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "1.25rem",
-              }}
-            >
-              <h3
-                style={{
-                  margin: 0,
-                  color: "#fff",
-                  fontSize: "1.1rem",
-                  fontWeight: "600",
-                }}
-              >
-                Provision New Account
-              </h3>
-
-              <button
-                onClick={() => setIsModalOpen(false)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#64748b",
-                  cursor: "pointer",
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form
-              onSubmit={handleAddUserSubmit}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "1rem",
-              }}
-            >
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    color: "#94a3b8",
-                    fontSize: "0.75rem",
-                    fontWeight: "600",
-                    marginBottom: "0.5rem",
-                  }}
-                >
-                  FULL NAME
-                </label>
-
-                <input
-                  type="text"
-                  required
-                  placeholder="Nguyen Van A"
-                  value={newFullName}
-                  onChange={(e) => setNewFullName(e.target.value)}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    backgroundColor: "#0b0f19",
-                    border: "1px solid #1e293b",
-                    borderRadius: "0.375rem",
-                    padding: "0.6rem 0.75rem",
-                    color: "#fff",
-                    fontSize: "0.85rem",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    color: "#94a3b8",
-                    fontSize: "0.75rem",
-                    fontWeight: "600",
-                    marginBottom: "0.5rem",
-                  }}
-                >
-                  EMAIL ADDRESS
-                </label>
-
-                <input
-                  type="email"
-                  required
-                  placeholder="staff@gmail.com"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    backgroundColor: "#0b0f19",
-                    border: "1px solid #1e293b",
-                    borderRadius: "0.375rem",
-                    padding: "0.6rem 0.75rem",
-                    color: "#fff",
-                    fontSize: "0.85rem",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    color: "#94a3b8",
-                    fontSize: "0.75rem",
-                    fontWeight: "600",
-                    marginBottom: "0.5rem",
-                  }}
-                >
-                  PHONE
-                </label>
-
-                <input
-                  type="text"
-                  placeholder="0900000000"
-                  value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    backgroundColor: "#0b0f19",
-                    border: "1px solid #1e293b",
-                    borderRadius: "0.375rem",
-                    padding: "0.6rem 0.75rem",
-                    color: "#fff",
-                    fontSize: "0.85rem",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    color: "#94a3b8",
-                    fontSize: "0.75rem",
-                    fontWeight: "600",
-                    marginBottom: "0.5rem",
-                  }}
-                >
-                  PASSWORD
-                </label>
-
-                <input
-                  type="password"
-                  required
-                  placeholder="Password@123"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    backgroundColor: "#0b0f19",
-                    border: "1px solid #1e293b",
-                    borderRadius: "0.375rem",
-                    padding: "0.6rem 0.75rem",
-                    color: "#fff",
-                    fontSize: "0.85rem",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    color: "#94a3b8",
-                    fontSize: "0.75rem",
-                    fontWeight: "600",
-                    marginBottom: "0.5rem",
-                  }}
-                >
-                  ASSIGN ROLE
-                </label>
-
-                <select
-                  value={newRole}
-                  onChange={(e) => setNewRole(e.target.value)}
-                  style={{
-                    width: "100%",
-                    backgroundColor: "#0b0f19",
-                    border: "1px solid #1e293b",
-                    borderRadius: "0.375rem",
-                    padding: "0.6rem 0.75rem",
-                    color: "#fff",
-                    fontSize: "0.85rem",
-                    outline: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  <option value="PARKING MANAGEMENT">PARKING MANAGEMENT</option>
-                  <option value="PARKING STAFF">PARKING STAFF</option>
-                  <option value="USER">USER</option>
-                </select>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: "0.75rem",
-                  marginTop: "0.5rem",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  style={{
-                    backgroundColor: "transparent",
-                    border: "1px solid #1e293b",
-                    color: "#94a3b8",
-                    padding: "0.5rem 1rem",
-                    borderRadius: "0.375rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  style={{
-                    backgroundColor: "#3b82f6",
-                    border: "none",
-                    color: "#fff",
-                    padding: "0.5rem 1rem",
-                    borderRadius: "0.375rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Grant Access
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <AddUserModal
+          newFullName={newFullName}
+          setNewFullName={setNewFullName}
+          newEmail={newEmail}
+          setNewEmail={setNewEmail}
+          newPhone={newPhone}
+          setNewPhone={setNewPhone}
+          newPassword={newPassword}
+          setNewPassword={setNewPassword}
+          newRole={newRole}
+          setNewRole={setNewRole}
+          setIsModalOpen={setIsModalOpen}
+          handleAddUserSubmit={handleAddUserSubmit}
+        />
       )}
 
       {isEditRoleOpen && editingUser && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(3, 7, 18, 0.8)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 999,
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#111827",
-              border: "1px solid #1e293b",
-              width: "420px",
-              borderRadius: "0.75rem",
-              padding: "1.5rem",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "1.25rem",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  color: "#3b82f6",
-                }}
-              >
-                <ShieldAlert size={18} />
-
-                <h3
-                  style={{
-                    margin: 0,
-                    color: "#fff",
-                    fontSize: "1.1rem",
-                    fontWeight: "600",
-                  }}
-                >
-                  Modify User Role
-                </h3>
-              </div>
-
-              <button
-                onClick={() => setIsEditRoleOpen(false)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#64748b",
-                  cursor: "pointer",
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div
-              style={{
-                backgroundColor: "#0b0f19",
-                padding: "0.75rem",
-                borderRadius: "0.375rem",
-                marginBottom: "1.25rem",
-                border: "1px solid rgba(255,255,255,0.02)",
-              }}
-            >
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: "0.8rem",
-                  color: "#64748b",
-                }}
-              >
-                Selected Operator:
-              </p>
-
-              <p
-                style={{
-                  margin: "4px 0 0 0",
-                  fontSize: "0.9rem",
-                  color: "#fff",
-                  fontWeight: "600",
-                }}
-              >
-                {editingUser.name}
-              </p>
-
-              <p
-                style={{
-                  margin: "2px 0 0 0",
-                  fontSize: "0.8rem",
-                  color: "#94a3b8",
-                }}
-              >
-                {editingUser.email}
-              </p>
-            </div>
-
-            <form
-              onSubmit={handleUpdateRoleSubmit}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "1.25rem",
-              }}
-            >
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    color: "#94a3b8",
-                    fontSize: "0.75rem",
-                    fontWeight: "600",
-                    marginBottom: "0.5rem",
-                  }}
-                >
-                  SELECT SYSTEM SECURITY LEVEL
-                </label>
-
-                <select
-                  value={updatedRole}
-                  onChange={(e) => setUpdatedRole(e.target.value)}
-                  style={{
-                    width: "100%",
-                    backgroundColor: "#0b0f19",
-                    border: "1px solid #1e293b",
-                    borderRadius: "0.375rem",
-                    padding: "0.6rem 0.75rem",
-                    color: "#fff",
-                    fontSize: "0.85rem",
-                    outline: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  <option value="ADMIN">ADMIN</option>
-                  <option value="PARKING MANAGEMENT">PARKING MANAGEMENT</option>
-                  <option value="PARKING STAFF">PARKING STAFF</option>
-                  <option value="USER">USER</option>
-                </select>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: "0.75rem",
-                  marginTop: "0.5rem",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setIsEditRoleOpen(false)}
-                  style={{
-                    backgroundColor: "transparent",
-                    border: "1px solid #1e293b",
-                    color: "#94a3b8",
-                    padding: "0.5rem 1rem",
-                    borderRadius: "0.375rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  style={{
-                    backgroundColor: "#3b82f6",
-                    border: "none",
-                    color: "#fff",
-                    padding: "0.5rem 1rem",
-                    borderRadius: "0.375rem",
-                    fontWeight: "600",
-                    cursor: "pointer",
-                  }}
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <EditRoleModal
+          editingUser={editingUser}
+          updatedRole={updatedRole}
+          setUpdatedRole={setUpdatedRole}
+          setIsEditRoleOpen={setIsEditRoleOpen}
+          handleUpdateRoleSubmit={handleUpdateRoleSubmit}
+        />
       )}
 
       {isLockModalOpen && userToLock && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(3, 7, 18, 0.85)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#111827",
-              border: "1px solid #1e293b",
-              width: "440px",
-              borderRadius: "0.75rem",
-              padding: "1.5rem",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                gap: "0.75rem",
-                alignItems: "flex-start",
-                marginBottom: "1rem",
-              }}
-            >
-              <div
-                style={{
-                  backgroundColor:
-                    userToLock.status === "Locked"
-                      ? "rgba(16, 185, 129, 0.1)"
-                      : "rgba(239, 68, 68, 0.1)",
-                  color: userToLock.status === "Locked" ? "#10b981" : "#ef4444",
-                  padding: "0.5rem",
-                  borderRadius: "0.5rem",
-                  flexShrink: 0,
-                }}
-              >
-                <AlertTriangle size={22} />
-              </div>
-
-              <div style={{ flexGrow: 1 }}>
-                <h3
-                  style={{
-                    margin: 0,
-                    color: "#fff",
-                    fontSize: "1.1rem",
-                    fontWeight: "600",
-                  }}
-                >
-                  {userToLock.status === "Locked"
-                    ? "Unlock Account"
-                    : "Lock Account"}
-                </h3>
-
-                <p
-                  style={{
-                    margin: "4px 0 0 0",
-                    color: "#64748b",
-                    fontSize: "0.85rem",
-                    lineHeight: "1.4",
-                  }}
-                >
-                  {userToLock.status === "Locked"
-                    ? "Are you sure you want to unlock this account?"
-                    : "Are you sure you want to lock this account?"}
-                </p>
-              </div>
-
-              <button
-                onClick={() => {
-                  setIsLockModalOpen(false);
-                  setUserToLock(null);
-                }}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#475569",
-                  cursor: "pointer",
-                  marginTop: "2px",
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div
-              style={{
-                backgroundColor: "#0b0f19",
-                padding: "0.85rem",
-                borderRadius: "0.5rem",
-                marginBottom: "1.5rem",
-                border: "1px solid #1e293b",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: "1rem",
-                }}
-              >
-                <div>
-                  <span
-                    style={{
-                      display: "block",
-                      fontSize: "0.85rem",
-                      fontWeight: "600",
-                      color: "#cbd5e1",
-                    }}
-                  >
-                    {userToLock.name}
-                  </span>
-
-                  <span
-                    style={{
-                      display: "block",
-                      fontSize: "0.75rem",
-                      color: "#64748b",
-                      marginTop: "2px",
-                    }}
-                  >
-                    {userToLock.email}
-                  </span>
-                </div>
-
-                <span
-                  style={{
-                    backgroundColor:
-                      userToLock.status === "Locked"
-                        ? "rgba(16, 185, 129, 0.1)"
-                        : "rgba(239, 68, 68, 0.1)",
-                    color:
-                      userToLock.status === "Locked" ? "#10b981" : "#ef4444",
-                    fontSize: "0.65rem",
-                    fontWeight: "700",
-                    padding: "0.2rem 0.5rem",
-                    borderRadius: "0.25rem",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {userToLock.status === "Locked" ? "LOCKED" : "ACTIVE"}
-                </span>
-              </div>
-
-              <div
-                style={{
-                  borderTop: "1px solid rgba(255,255,255,0.04)",
-                  marginTop: "0.75rem",
-                  paddingTop: "0.5rem",
-                  fontSize: "0.75rem",
-                  color: "#94a3b8",
-                }}
-              >
-                {userToLock.status === "Locked"
-                  ? "Warning: This user will be able to log in again after unlocking."
-                  : "Warning: This user will not be able to log in until the account is unlocked."}
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.75rem",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setIsLockModalOpen(false);
-                  setUserToLock(null);
-                }}
-                style={{
-                  backgroundColor: "transparent",
-                  border: "1px solid #1e293b",
-                  color: "#94a3b8",
-                  padding: "0.55rem 1.2rem",
-                  borderRadius: "0.375rem",
-                  fontSize: "0.85rem",
-                  fontWeight: "500",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConfirmLockUser}
-                style={{
-                  backgroundColor:
-                    userToLock.status === "Locked" ? "#10b981" : "#ef4444",
-                  border: "none",
-                  color: "#fff",
-                  padding: "0.55rem 1.2rem",
-                  borderRadius: "0.375rem",
-                  fontSize: "0.85rem",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                }}
-              >
-                {userToLock.status === "Locked"
-                  ? "Confirm Unlock"
-                  : "Confirm Lock"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <LockUserModal
+          userToLock={userToLock}
+          setIsLockModalOpen={setIsLockModalOpen}
+          setUserToLock={setUserToLock}
+          handleConfirmLockUser={handleConfirmLockUser}
+        />
       )}
     </div>
   );
 }
+
+function StatCard({
+  label,
+  value,
+  icon,
+  iconColor,
+  valueColor,
+  labelColor = theme.muted,
+}) {
+  return (
+    <div
+      style={{
+        backgroundColor: theme.card,
+        padding: "1.25rem",
+        borderRadius: "0.85rem",
+        border: `1px solid ${theme.border}`,
+        boxShadow: theme.shadow,
+        minHeight: "100px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          color: labelColor,
+          fontSize: "0.7rem",
+          fontWeight: "800",
+          letterSpacing: "0.05em",
+        }}
+      >
+        <span>{label}</span>
+        <span style={{ color: iconColor }}>{icon}</span>
+      </div>
+
+      <h2
+        style={{
+          fontSize: "1.8rem",
+          fontWeight: "800",
+          margin: "0.35rem 0 0 0",
+          color: valueColor,
+        }}
+      >
+        {value}
+      </h2>
+    </div>
+  );
+}
+
+function AddUserModal({
+  newFullName,
+  setNewFullName,
+  newEmail,
+  setNewEmail,
+  newPhone,
+  setNewPhone,
+  newPassword,
+  setNewPassword,
+  newRole,
+  setNewRole,
+  setIsModalOpen,
+  handleAddUserSubmit,
+}) {
+  return (
+    <ModalShell>
+      <ModalCard width="460px">
+        <ModalHeader title="Provision New Account" onClose={() => setIsModalOpen(false)} />
+
+        <form onSubmit={handleAddUserSubmit} style={{ display: "grid", gap: "1rem" }}>
+          <ModalField label="FULL NAME">
+            <input
+              type="text"
+              required
+              placeholder="Nguyen Van A"
+              value={newFullName}
+              onChange={(e) => setNewFullName(e.target.value)}
+              style={modalInputStyle}
+            />
+          </ModalField>
+
+          <ModalField label="EMAIL ADDRESS">
+            <input
+              type="email"
+              required
+              placeholder="staff@gmail.com"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              style={modalInputStyle}
+            />
+          </ModalField>
+
+          <ModalField label="PHONE">
+            <input
+              type="text"
+              placeholder="0900000000"
+              value={newPhone}
+              onChange={(e) => setNewPhone(e.target.value)}
+              style={modalInputStyle}
+            />
+          </ModalField>
+
+          <ModalField label="PASSWORD">
+            <input
+              type="password"
+              required
+              placeholder="Password@123"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              style={modalInputStyle}
+            />
+          </ModalField>
+
+          <ModalField label="ASSIGN ROLE">
+            <select
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              style={modalInputStyle}
+            >
+              <option value="PARKING MANAGEMENT">PARKING MANAGEMENT</option>
+              <option value="PARKING STAFF">PARKING STAFF</option>
+              <option value="USER">USER</option>
+            </select>
+          </ModalField>
+
+          <ModalActions>
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              style={secondaryButtonStyle}
+            >
+              Cancel
+            </button>
+
+            <button type="submit" style={primaryButtonStyle}>
+              Grant Access
+            </button>
+          </ModalActions>
+        </form>
+      </ModalCard>
+    </ModalShell>
+  );
+}
+
+function EditRoleModal({
+  editingUser,
+  updatedRole,
+  setUpdatedRole,
+  setIsEditRoleOpen,
+  handleUpdateRoleSubmit,
+}) {
+  return (
+    <ModalShell>
+      <ModalCard width="420px">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "1.25rem",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              color: theme.blue,
+            }}
+          >
+            <ShieldAlert size={18} />
+
+            <h3
+              style={{
+                margin: 0,
+                color: theme.text,
+                fontSize: "1.1rem",
+                fontWeight: "700",
+              }}
+            >
+              Modify User Role
+            </h3>
+          </div>
+
+          <button
+            onClick={() => setIsEditRoleOpen(false)}
+            style={iconButtonStyle}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: theme.cardSoft,
+            padding: "0.85rem",
+            borderRadius: "0.65rem",
+            marginBottom: "1.25rem",
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <p style={{ margin: 0, fontSize: "0.8rem", color: theme.muted }}>
+            Selected Operator:
+          </p>
+
+          <p
+            style={{
+              margin: "4px 0 0 0",
+              fontSize: "0.9rem",
+              color: theme.text,
+              fontWeight: "700",
+            }}
+          >
+            {editingUser.name}
+          </p>
+
+          <p
+            style={{
+              margin: "2px 0 0 0",
+              fontSize: "0.8rem",
+              color: theme.muted,
+            }}
+          >
+            {editingUser.email}
+          </p>
+        </div>
+
+        <form
+          onSubmit={handleUpdateRoleSubmit}
+          style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}
+        >
+          <ModalField label="SELECT SYSTEM SECURITY LEVEL">
+            <select
+              value={updatedRole}
+              onChange={(e) => setUpdatedRole(e.target.value)}
+              style={modalInputStyle}
+            >
+              <option value="ADMIN">ADMIN</option>
+              <option value="PARKING MANAGEMENT">PARKING MANAGEMENT</option>
+              <option value="PARKING STAFF">PARKING STAFF</option>
+              <option value="USER">USER</option>
+            </select>
+          </ModalField>
+
+          <ModalActions>
+            <button
+              type="button"
+              onClick={() => setIsEditRoleOpen(false)}
+              style={secondaryButtonStyle}
+            >
+              Cancel
+            </button>
+
+            <button type="submit" style={primaryButtonStyle}>
+              Save Changes
+            </button>
+          </ModalActions>
+        </form>
+      </ModalCard>
+    </ModalShell>
+  );
+}
+
+function LockUserModal({
+  userToLock,
+  setIsLockModalOpen,
+  setUserToLock,
+  handleConfirmLockUser,
+}) {
+  const isLocked = userToLock.status === "Locked";
+
+  const closeModal = () => {
+    setIsLockModalOpen(false);
+    setUserToLock(null);
+  };
+
+  return (
+    <ModalShell>
+      <ModalCard width="440px">
+        <div
+          style={{
+            display: "flex",
+            gap: "0.75rem",
+            alignItems: "flex-start",
+            marginBottom: "1rem",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: isLocked ? theme.greenSoft : theme.redSoft,
+              color: isLocked ? theme.green : theme.red,
+              padding: "0.55rem",
+              borderRadius: "0.65rem",
+              flexShrink: 0,
+            }}
+          >
+            <AlertTriangle size={22} />
+          </div>
+
+          <div style={{ flexGrow: 1 }}>
+            <h3
+              style={{
+                margin: 0,
+                color: theme.text,
+                fontSize: "1.1rem",
+                fontWeight: "700",
+              }}
+            >
+              {isLocked ? "Unlock Account" : "Lock Account"}
+            </h3>
+
+            <p
+              style={{
+                margin: "4px 0 0 0",
+                color: theme.muted,
+                fontSize: "0.85rem",
+                lineHeight: "1.4",
+              }}
+            >
+              {isLocked
+                ? "Are you sure you want to unlock this account?"
+                : "Are you sure you want to lock this account?"}
+            </p>
+          </div>
+
+          <button onClick={closeModal} style={iconButtonStyle}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: theme.cardSoft,
+            padding: "0.9rem",
+            borderRadius: "0.65rem",
+            marginBottom: "1.5rem",
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "1rem",
+            }}
+          >
+            <div>
+              <span
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  fontWeight: "700",
+                  color: theme.text,
+                }}
+              >
+                {userToLock.name}
+              </span>
+
+              <span
+                style={{
+                  display: "block",
+                  fontSize: "0.75rem",
+                  color: theme.muted,
+                  marginTop: "2px",
+                }}
+              >
+                {userToLock.email}
+              </span>
+            </div>
+
+            <span
+              style={{
+                backgroundColor: isLocked ? theme.greenSoft : theme.redSoft,
+                color: isLocked ? theme.green : theme.red,
+                fontSize: "0.65rem",
+                fontWeight: "800",
+                padding: "0.22rem 0.55rem",
+                borderRadius: "0.35rem",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {isLocked ? "LOCKED" : "ACTIVE"}
+            </span>
+          </div>
+
+          <div
+            style={{
+              borderTop: `1px solid ${theme.border}`,
+              marginTop: "0.75rem",
+              paddingTop: "0.6rem",
+              fontSize: "0.75rem",
+              color: theme.muted,
+            }}
+          >
+            {isLocked
+              ? "Warning: This user will be able to log in again after unlocking."
+              : "Warning: This user will not be able to log in until the account is unlocked."}
+          </div>
+        </div>
+
+        <ModalActions>
+          <button type="button" onClick={closeModal} style={secondaryButtonStyle}>
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleConfirmLockUser}
+            style={{
+              ...primaryButtonStyle,
+              backgroundColor: isLocked ? theme.green : theme.red,
+            }}
+          >
+            {isLocked ? "Confirm Unlock" : "Confirm Lock"}
+          </button>
+        </ModalActions>
+      </ModalCard>
+    </ModalShell>
+  );
+}
+
+function ModalShell({ children }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(3, 7, 18, 0.72)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+        backdropFilter: "blur(4px)",
+        padding: "1rem",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ModalCard({ children, width }) {
+  return (
+    <div
+      style={{
+        backgroundColor: theme.card,
+        border: `1px solid ${theme.border}`,
+        width,
+        maxWidth: "100%",
+        borderRadius: "0.85rem",
+        padding: "1.5rem",
+        boxShadow: "0 24px 60px rgba(0, 0, 0, 0.35)",
+        color: theme.text,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ModalHeader({ title, onClose }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "1.25rem",
+      }}
+    >
+      <h3
+        style={{
+          margin: 0,
+          color: theme.text,
+          fontSize: "1.1rem",
+          fontWeight: "700",
+        }}
+      >
+        {title}
+      </h3>
+
+      <button onClick={onClose} style={iconButtonStyle}>
+        <X size={18} />
+      </button>
+    </div>
+  );
+}
+
+function ModalField({ label, children }) {
+  return (
+    <label
+      style={{
+        display: "grid",
+        gap: "0.5rem",
+        color: theme.muted,
+        fontSize: "0.75rem",
+        fontWeight: "700",
+      }}
+    >
+      {label}
+      {children}
+    </label>
+  );
+}
+
+function ModalActions({ children }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        gap: "0.75rem",
+        marginTop: "0.5rem",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function PaginationButton({ children, active = false, disabled = false, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        backgroundColor: active ? theme.blue : theme.input,
+        border: active ? `1px solid ${theme.blue}` : `1px solid ${theme.border}`,
+        color: active ? "#ffffff" : disabled ? theme.muted : theme.text,
+        minWidth: "32px",
+        height: "32px",
+        borderRadius: "0.45rem",
+        fontWeight: "700",
+        cursor: disabled ? "not-allowed" : "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: disabled ? 0.55 : 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+const inputBaseStyle = {
+  width: "100%",
+  backgroundColor: "var(--bg-input)",
+  border: "1px solid var(--border-color)",
+  borderRadius: "0.6rem",
+  padding: "0.65rem 1rem 0.65rem 2.2rem",
+  color: "var(--text-main)",
+  fontSize: "0.9rem",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const selectBaseStyle = {
+  backgroundColor: "var(--bg-input)",
+  color: "var(--text-main)",
+  border: "1px solid var(--border-color)",
+  borderRadius: "0.6rem",
+  padding: "0.65rem 1rem",
+  fontSize: "0.9rem",
+  outline: "none",
+  cursor: "pointer",
+  minWidth: "160px",
+};
+
+const modalInputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  backgroundColor: "var(--bg-input)",
+  border: "1px solid var(--border-color)",
+  borderRadius: "0.55rem",
+  padding: "0.7rem 0.8rem",
+  color: "var(--text-main)",
+  fontSize: "0.9rem",
+  outline: "none",
+};
+
+const iconButtonStyle = {
+  background: "transparent",
+  border: "none",
+  color: "var(--text-muted)",
+  cursor: "pointer",
+  padding: "4px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const primaryButtonStyle = {
+  backgroundColor: "var(--primary-blue)",
+  border: "none",
+  color: "#ffffff",
+  padding: "0.6rem 1rem",
+  borderRadius: "0.55rem",
+  cursor: "pointer",
+  fontWeight: "700",
+  fontSize: "0.9rem",
+};
+
+const secondaryButtonStyle = {
+  backgroundColor: "var(--bg-input)",
+  border: "1px solid var(--border-color)",
+  color: "var(--text-main)",
+  padding: "0.6rem 1rem",
+  borderRadius: "0.55rem",
+  cursor: "pointer",
+  fontWeight: "650",
+  fontSize: "0.9rem",
+};
 
 export default UserManagementPage;

@@ -8,11 +8,12 @@ import com.tatdat.parking.backend.repository.ParkingSlotRepository;
 import com.tatdat.parking.backend.repository.PaymentRepository;
 import com.tatdat.parking.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -91,31 +92,37 @@ public class AdminDashboardController {
         List<DashboardTrendResponse> trends = new ArrayList<>();
 
         trends.add(buildTrendItem(
-                "4 AM - 8 AM",
+                "00-04",
+                today.atTime(0, 0),
+                today.atTime(4, 0)
+        ));
+
+        trends.add(buildTrendItem(
+                "04-08",
                 today.atTime(4, 0),
                 today.atTime(8, 0)
         ));
 
         trends.add(buildTrendItem(
-                "8 AM - 12 PM",
+                "08-12",
                 today.atTime(8, 0),
                 today.atTime(12, 0)
         ));
 
         trends.add(buildTrendItem(
-                "12 PM - 4 PM",
+                "12-16",
                 today.atTime(12, 0),
                 today.atTime(16, 0)
         ));
 
         trends.add(buildTrendItem(
-                "4 PM - 8 PM",
+                "16-20",
                 today.atTime(16, 0),
                 today.atTime(20, 0)
         ));
 
         trends.add(buildTrendItem(
-                "8 PM - 12 AM",
+                "20-24",
                 today.atTime(20, 0),
                 today.plusDays(1).atStartOfDay()
         ));

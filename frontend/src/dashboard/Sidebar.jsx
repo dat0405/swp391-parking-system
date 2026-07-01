@@ -8,7 +8,7 @@ import {
   CircleDollarSign,
   BarChart3,
   Settings,
-  PlusCircle // Icon dành cho New Booking
+  PlusCircle
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -16,109 +16,94 @@ function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Hàm kiểm tra xem Route có đang active hay không để đổi màu chữ/nền trên UI
   const isActive = (path) => location.pathname === path;
+
+  const menuItems = [
+    {
+      label: 'Dashboard',
+      path: '/dashboard',
+      icon: <LayoutDashboard size={18} />
+    },
+    {
+      label: 'Parking Floors',
+      path: '/parking-floors',
+      icon: <Layers size={18} />
+    },
+    {
+      label: 'Check-in/out',
+      path: '/check-in-out',
+      icon: <ArrowLeftRight size={18} />
+    },
+    {
+      label: 'New Booking',
+      path: '/user-ui',
+      icon: <PlusCircle size={18} />
+    },
+    {
+      label: 'Reservations',
+      path: '/reservations',
+      icon: <CalendarDays size={18} />
+    },
+    {
+      label: 'User Management',
+      path: '/user-management',
+      icon: <Users size={18} />
+    },
+    {
+      label: 'Pricing Policies',
+      path: '/pricing-policies',
+      icon: <CircleDollarSign size={18} />
+    },
+    {
+      label: 'Reports',
+      path: '/reports',
+      icon: <BarChart3 size={18} />
+    }
+  ];
+
+  const handleNavigate = (path) => {
+    if (location.pathname !== path) {
+      navigate(path);
+    }
+  };
 
   return (
     <aside className="sidebar">
-      {/* Brand Header */}
       <div className="sidebar-brand">
         <div className="brand-icon">P</div>
+
         <div className="brand-text">
           <h2>ParkSystem Pro</h2>
           <span>MANAGEMENT CONSOLE</span>
         </div>
       </div>
 
-      {/* Navigation Menu */}
-      <nav className="sidebar-menu">
-        {/* Dashboard */}
-        <div
-          className={`menu-item ${isActive('/dashboard') ? 'active' : ''}`}
-          onClick={() => navigate('/dashboard')}
-          style={{ cursor: 'pointer' }}
-        >
-          <LayoutDashboard size={18} />
-          <span>Dashboard</span>
-        </div>
+      <nav className="sidebar-menu" aria-label="Main navigation">
+        {menuItems.map((item) => {
+          const active = isActive(item.path);
 
-        {/* Parking Floors & Slots Map */}
-        <div 
-          className={`menu-item ${isActive('/parking-floors') ? 'active' : ''}`}
-          onClick={() => navigate('/parking-floors')}
-          style={{ cursor: 'pointer' }}
-        >
-          <Layers size={18} />
-          <span>Parking Floors</span>
-        </div>
-
-        {/* Check-in / Out Gate Management */}
-        <div
-          className={`menu-item ${isActive('/check-in-out') ? 'active' : ''}`}
-          onClick={() => navigate('/check-in-out')}
-          style={{ cursor: 'pointer' }}
-        >
-          <ArrowLeftRight size={18} />
-          <span>Check-in/out</span>
-        </div>
-
-        {/* New Booking (Định vị trong folder user-ui nhưng xài chung bộ khung Admin) */}
-        <div 
-          className={`menu-item ${isActive('/user-ui') ? 'active' : ''}`}
-          onClick={() => navigate('/user-ui')}
-          style={{ cursor: 'pointer' }}
-        >
-          <PlusCircle size={18} />
-          <span>New Booking</span>
-        </div>
-
-        {/* Reservations Admin List */}
-        <div 
-          className={`menu-item ${isActive('/reservations') ? 'active' : ''}`}
-          onClick={() => navigate('/reservations')}
-          style={{ cursor: 'pointer' }}
-        >
-          <CalendarDays size={18} />
-          <span>Reservations</span>
-        </div>
-
-        {/* User Management */}
-        <div
-          className={`menu-item ${isActive('/user-management') ? 'active' : ''}`}
-          onClick={() => navigate('/user-management')}
-          style={{ cursor: 'pointer' }}
-        >
-          <Users size={18} />
-          <span>User Management</span>
-        </div>
-
-        {/* Pricing Policies */}
-        <div
-          className={`menu-item ${isActive('/pricing-policies') ? 'active' : ''}`}
-          onClick={() => navigate('/pricing-policies')}
-          style={{ cursor: 'pointer' }}
-        >
-          <CircleDollarSign size={18} />
-          <span>Pricing Policies</span>
-        </div>
-
-        {/* Performance Reports */}
-        <div 
-          className={`menu-item ${isActive('/reports') ? 'active' : ''}`}
-          onClick={() => navigate('/reports')}
-          style={{ cursor: 'pointer' }}
-        >
-          <BarChart3 size={18} />
-          <span>Reports</span>
-        </div>
+          return (
+            <button
+              key={item.path}
+              type="button"
+              className={`menu-item ${active ? 'active' : ''}`}
+              onClick={() => handleNavigate(item.path)}
+              aria-current={active ? 'page' : undefined}
+            >
+              <span className="menu-item-icon">{item.icon}</span>
+              <span className="menu-item-label">{item.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
-      {/* Sidebar Footer Section */}
       <div className="sidebar-footer">
-        <div className="menu-item" style={{ cursor: 'pointer' }}>
-          <Settings size={18} />
-          <span>Admin Settings</span>
-        </div>
+        <button type="button" className="menu-item">
+          <span className="menu-item-icon">
+            <Settings size={18} />
+          </span>
+          <span className="menu-item-label">Admin Settings</span>
+        </button>
       </div>
     </aside>
   );

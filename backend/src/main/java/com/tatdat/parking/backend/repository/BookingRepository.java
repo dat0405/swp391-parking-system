@@ -32,4 +32,16 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
             @Param("startTime") LocalDateTime startTime,
             @Param("endTime") LocalDateTime endTime
     );
+
+    @Query("""
+            SELECT DISTINCT b.slot.id
+            FROM Booking b
+            WHERE b.status IN ('PENDING', 'CONFIRMED')
+              AND b.startTime < :endTime
+              AND b.endTime > :startTime
+            """)
+    List<Integer> findBookedSlotIdsBetween(
+            @Param("startTime") LocalDateTime startTime,
+            @Param("endTime") LocalDateTime endTime
+    );
 }

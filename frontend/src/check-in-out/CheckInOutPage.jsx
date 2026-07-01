@@ -4,6 +4,24 @@ import Header from "../dashboard/Header";
 import { SquarePlay, LogOut, ReceiptText } from "lucide-react";
 import { parkingSessionApi } from "../api/parkingSessionApi";
 
+const theme = {
+  page: "var(--bg-dashboard)",
+  card: "var(--bg-card)",
+  cardSoft: "var(--bg-card-soft)",
+  input: "var(--bg-input)",
+  border: "var(--border-color)",
+  borderSoft: "var(--border-soft)",
+  text: "var(--text-main)",
+  muted: "var(--text-muted)",
+  blue: "var(--primary-blue)",
+  blueSoft: "var(--primary-blue-soft)",
+  green: "var(--success-green)",
+  greenSoft: "var(--success-green-soft)",
+  red: "var(--danger-red)",
+  redSoft: "var(--danger-red-soft)",
+  shadow: "var(--shadow-card)"
+};
+
 function CheckInOutPage() {
   const generateTicketId = () =>
     `TK-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -191,14 +209,14 @@ function CheckInOutPage() {
       second: "2-digit",
       day: "2-digit",
       month: "2-digit",
-      year: "numeric",
+      year: "numeric"
     });
   };
 
   const formatCurrency = (value) => {
     return Number(value || 0).toLocaleString("vi-VN", {
       style: "currency",
-      currency: "VND",
+      currency: "VND"
     });
   };
 
@@ -299,7 +317,7 @@ function CheckInOutPage() {
       const payload = {
         licensePlate: formattedPlate,
         vehicleTypeId: selectedFloor.vehicleTypeId,
-        floorId: selectedFloor.floorId,
+        floorId: selectedFloor.floorId
       };
 
       const res = await parkingSessionApi.checkIn(payload);
@@ -309,8 +327,8 @@ function CheckInOutPage() {
           detail: {
             action: "checked in vehicle",
             target: res.data?.licensePlate || formattedPlate,
-            detail: `at ${selectedFloor.floorName || "selected floor"}`,
-          },
+            detail: `at ${selectedFloor.floorName || "selected floor"}`
+          }
         })
       );
 
@@ -342,7 +360,7 @@ function CheckInOutPage() {
     try {
       const res = await parkingSessionApi.searchCheckout({
         licensePlate: plate || undefined,
-        ticketId: ticket || undefined,
+        ticketId: ticket || undefined
       });
 
       setCheckoutData(res.data);
@@ -361,7 +379,7 @@ function CheckInOutPage() {
     try {
       await parkingSessionApi.checkOut({
         ticketId: checkoutData.ticketId,
-        paymentMethod: "CASH",
+        paymentMethod: "CASH"
       });
 
       window.dispatchEvent(
@@ -369,8 +387,8 @@ function CheckInOutPage() {
           detail: {
             action: "checked out vehicle",
             target: checkoutData.licensePlate,
-            detail: `ticket ${checkoutData.ticketId}`,
-          },
+            detail: `ticket ${checkoutData.ticketId}`
+          }
         })
       );
 
@@ -396,7 +414,12 @@ function CheckInOutPage() {
 
       <main
         className="main-content"
-        style={{ padding: "1.5rem 2rem", boxSizing: "border-box" }}
+        style={{
+          padding: "1.5rem 2rem",
+          boxSizing: "border-box",
+          background: theme.page,
+          color: theme.text
+        }}
       >
         <Header />
 
@@ -406,15 +429,15 @@ function CheckInOutPage() {
         >
           <h1
             style={{
-              color: "#fff",
+              color: theme.text,
               fontSize: "1.75rem",
-              margin: "0 0 0.25rem 0",
+              margin: "0 0 0.25rem 0"
             }}
           >
             Check-in/out Portal
           </h1>
 
-          <p style={{ color: "#64748b", margin: 0, fontSize: "0.9rem" }}>
+          <p style={{ color: theme.muted, margin: 0, fontSize: "0.9rem" }}>
             Manage vehicle flow and real-time gate operations.
           </p>
         </div>
@@ -425,62 +448,42 @@ function CheckInOutPage() {
             gridTemplateColumns: "1fr 1fr",
             gap: "2rem",
             marginBottom: "2rem",
-            marginTop: "1.5rem",
+            marginTop: "1.5rem"
           }}
         >
           <div
             style={{
-              backgroundColor: "#1e293b",
+              background: theme.card,
               padding: "2rem",
-              borderRadius: "0.75rem",
-              border: "1px solid rgba(255, 255, 255, 0.05)",
+              borderRadius: "0.85rem",
+              border: `1px solid ${theme.border}`,
+              boxShadow: theme.shadow
             }}
           >
             <h3
               style={{
-                color: "#fff",
+                color: theme.text,
                 fontSize: "1.1rem",
                 marginBottom: "1.5rem",
                 display: "flex",
                 alignItems: "center",
                 gap: "0.5rem",
-                marginTop: 0,
+                marginTop: 0
               }}
             >
-              <SquarePlay size={18} style={{ color: "#3b82f6" }} />
+              <SquarePlay size={18} style={{ color: theme.blue }} />
               Check-in Entry
             </h3>
 
             <form onSubmit={handleCheckInSubmit}>
               <div style={{ marginBottom: "1.2rem" }}>
-                <label
-                  style={{
-                    color: "#94a3b8",
-                    fontSize: "0.75rem",
-                    fontWeight: "600",
-                    display: "block",
-                    marginBottom: "0.5rem",
-                  }}
-                >
-                  LICENSE PLATE NUMBER
-                </label>
+                <FieldLabel>LICENSE PLATE NUMBER</FieldLabel>
 
-                <input
+                <TextInput
                   type="text"
                   value={licensePlateIn}
                   placeholder={getPlatePlaceholder(vehicleType)}
                   maxLength={normalizeVehicleType(vehicleType) === "car" ? 10 : 13}
-                  style={{
-                    width: "100%",
-                    padding: "0.75rem",
-                    backgroundColor: "#0f172a",
-                    border: "1px solid #334155",
-                    borderRadius: "0.375rem",
-                    color: "#fff",
-                    outline: "none",
-                    letterSpacing: "1px",
-                    fontWeight: "600",
-                  }}
                   required
                   onChange={(e) =>
                     setLicensePlateIn(
@@ -492,8 +495,8 @@ function CheckInOutPage() {
                 <p
                   style={{
                     margin: "0.35rem 0 0",
-                    color: "#64748b",
-                    fontSize: "0.72rem",
+                    color: theme.muted,
+                    fontSize: "0.72rem"
                   }}
                 >
                   {getPlateHint(vehicleType)}
@@ -505,72 +508,31 @@ function CheckInOutPage() {
                   display: "grid",
                   gridTemplateColumns: "1fr 1fr",
                   gap: "1rem",
-                  marginBottom: "1.2rem",
+                  marginBottom: "1.2rem"
                 }}
               >
                 <div>
-                  <label
-                    style={{
-                      color: "#94a3b8",
-                      fontSize: "0.75rem",
-                      fontWeight: "600",
-                      display: "block",
-                      marginBottom: "0.5rem",
-                    }}
-                  >
-                    VEHICLE TYPE
-                  </label>
+                  <FieldLabel>VEHICLE TYPE</FieldLabel>
 
-                  <select
+                  <SelectInput
                     value={vehicleType}
                     onChange={(e) => {
                       setVehicleType(e.target.value);
                       setLicensePlateIn("");
                     }}
-                    style={{
-                      width: "100%",
-                      padding: "0.75rem",
-                      backgroundColor: "#0f172a",
-                      border: "1px solid #334155",
-                      borderRadius: "0.375rem",
-                      color: "#fff",
-                      cursor: "pointer",
-                      outline: "none",
-                    }}
                   >
                     <option value="Car">Car</option>
                     <option value="Motorbike">Motorbike</option>
-                  </select>
+                  </SelectInput>
                 </div>
 
                 <div>
-                  <label
-                    style={{
-                      color: "#94a3b8",
-                      fontSize: "0.75rem",
-                      fontWeight: "600",
-                      display: "block",
-                      marginBottom: "0.5rem",
-                    }}
-                  >
-                    PARKING FLOOR
-                  </label>
+                  <FieldLabel>PARKING FLOOR</FieldLabel>
 
-                  <select
+                  <SelectInput
                     value={parkingFloor}
                     onChange={(e) => setParkingFloor(e.target.value)}
                     disabled={filteredFloors.length === 0}
-                    style={{
-                      width: "100%",
-                      padding: "0.75rem",
-                      backgroundColor: "#0f172a",
-                      border: "1px solid #334155",
-                      borderRadius: "0.375rem",
-                      color: "#fff",
-                      cursor:
-                        filteredFloors.length === 0 ? "not-allowed" : "pointer",
-                      outline: "none",
-                    }}
                   >
                     {filteredFloors.length === 0 ? (
                       <option value="">No floor available</option>
@@ -589,7 +551,7 @@ function CheckInOutPage() {
                         </option>
                       ))
                     )}
-                  </select>
+                  </SelectInput>
                 </div>
               </div>
 
@@ -598,65 +560,19 @@ function CheckInOutPage() {
                   display: "grid",
                   gridTemplateColumns: "1fr 1fr",
                   gap: "1rem",
-                  marginBottom: "2rem",
+                  marginBottom: "2rem"
                 }}
               >
                 <div>
-                  <label
-                    style={{
-                      color: "#94a3b8",
-                      fontSize: "0.75rem",
-                      fontWeight: "600",
-                      display: "block",
-                      marginBottom: "0.5rem",
-                    }}
-                  >
-                    ENTRY TIME
-                  </label>
+                  <FieldLabel>ENTRY TIME</FieldLabel>
 
-                  <input
-                    type="text"
-                    value={entryTime}
-                    readOnly
-                    style={{
-                      width: "100%",
-                      padding: "0.75rem",
-                      backgroundColor: "#1e293b",
-                      border: "1px solid #475569",
-                      borderRadius: "0.375rem",
-                      color: "#94a3b8",
-                      outline: "none",
-                    }}
-                  />
+                  <TextInput type="text" value={entryTime} readOnly muted />
                 </div>
 
                 <div>
-                  <label
-                    style={{
-                      color: "#94a3b8",
-                      fontSize: "0.75rem",
-                      fontWeight: "600",
-                      display: "block",
-                      marginBottom: "0.5rem",
-                    }}
-                  >
-                    TICKET ID
-                  </label>
+                  <FieldLabel>TICKET ID</FieldLabel>
 
-                  <input
-                    type="text"
-                    value={ticketId}
-                    readOnly
-                    style={{
-                      width: "100%",
-                      padding: "0.75rem",
-                      backgroundColor: "#1e293b",
-                      border: "1px solid #475569",
-                      borderRadius: "0.375rem",
-                      color: "#94a3b8",
-                      outline: "none",
-                    }}
-                  />
+                  <TextInput type="text" value={ticketId} readOnly muted />
                 </div>
               </div>
 
@@ -666,14 +582,14 @@ function CheckInOutPage() {
                 style={{
                   width: "100%",
                   padding: "1rem",
-                  backgroundColor:
-                    filteredFloors.length === 0 ? "#334155" : "#3b82f6",
-                  color: filteredFloors.length === 0 ? "#64748b" : "#fff",
+                  background:
+                    filteredFloors.length === 0 ? theme.cardSoft : theme.blue,
+                  color: filteredFloors.length === 0 ? theme.muted : "#ffffff",
                   border: "none",
-                  borderRadius: "0.5rem",
-                  fontWeight: "600",
+                  borderRadius: "0.6rem",
+                  fontWeight: "700",
                   cursor:
-                    filteredFloors.length === 0 ? "not-allowed" : "pointer",
+                    filteredFloors.length === 0 ? "not-allowed" : "pointer"
                 }}
               >
                 Confirm Check-in
@@ -683,24 +599,25 @@ function CheckInOutPage() {
 
           <div
             style={{
-              backgroundColor: "#1e293b",
+              background: theme.card,
               padding: "2rem",
-              borderRadius: "0.75rem",
-              border: "1px solid rgba(255, 255, 255, 0.05)",
+              borderRadius: "0.85rem",
+              border: `1px solid ${theme.border}`,
+              boxShadow: theme.shadow
             }}
           >
             <h3
               style={{
-                color: "#fff",
+                color: theme.text,
                 fontSize: "1.1rem",
                 marginBottom: "1.5rem",
                 display: "flex",
                 alignItems: "center",
                 gap: "0.5rem",
-                marginTop: 0,
+                marginTop: 0
               }}
             >
-              <LogOut size={18} style={{ color: "#10b981" }} />
+              <LogOut size={18} style={{ color: theme.green }} />
               Check-out Exit
             </h3>
 
@@ -709,44 +626,26 @@ function CheckInOutPage() {
               style={{
                 display: "flex",
                 gap: "0.5rem",
-                marginBottom: "1.5rem",
+                marginBottom: "1.5rem"
               }}
             >
-              <input
+              <TextInput
                 type="text"
                 value={searchPlate}
                 placeholder="Biển số"
                 onChange={(e) => setSearchPlate(formatPlateForSearch(e.target.value))}
                 style={{
-                  flex: 1,
-                  padding: "0.75rem",
-                  backgroundColor: "#0f172a",
-                  border: "1px solid #334155",
-                  borderRadius: "0.375rem",
-                  color: "#fff",
-                  outline: "none",
-                  letterSpacing: "1px",
-                  fontWeight: "600",
-                  fontSize: "0.9rem",
+                  flex: 1
                 }}
               />
 
-              <input
+              <TextInput
                 type="text"
                 value={searchTicketId}
                 placeholder="Mã vé (TK-926006)"
                 onChange={(e) => setSearchTicketId(formatTicket(e.target.value))}
                 style={{
-                  flex: 1,
-                  padding: "0.75rem",
-                  backgroundColor: "#0f172a",
-                  border: "1px solid #334155",
-                  borderRadius: "0.375rem",
-                  color: "#fff",
-                  outline: "none",
-                  letterSpacing: "1px",
-                  fontWeight: "600",
-                  fontSize: "0.9rem",
+                  flex: 1
                 }}
               />
 
@@ -754,12 +653,12 @@ function CheckInOutPage() {
                 type="submit"
                 style={{
                   padding: "0 1.5rem",
-                  backgroundColor: "#10b981",
-                  color: "#fff",
+                  background: theme.green,
+                  color: "#ffffff",
                   border: "none",
-                  borderRadius: "0.375rem",
-                  fontWeight: "600",
-                  cursor: "pointer",
+                  borderRadius: "0.5rem",
+                  fontWeight: "700",
+                  cursor: "pointer"
                 }}
               >
                 SEARCH
@@ -769,11 +668,11 @@ function CheckInOutPage() {
             {checkoutData ? (
               <div
                 style={{
-                  backgroundColor: "#0f172a",
+                  background: theme.cardSoft,
                   padding: "1.25rem",
-                  borderRadius: "0.5rem",
+                  borderRadius: "0.7rem",
                   marginBottom: "1.5rem",
-                  border: "1px solid #1e293b",
+                  border: `1px solid ${theme.border}`
                 }}
               >
                 <div
@@ -781,34 +680,35 @@ function CheckInOutPage() {
                     display: "flex",
                     justifyContent: "space-between",
                     marginBottom: "1rem",
+                    gap: "1rem"
                   }}
                 >
                   <div>
                     <h4
                       style={{
-                        color: "#fff",
+                        color: theme.text,
                         margin: 0,
                         fontSize: "1.2rem",
-                        letterSpacing: "1px",
+                        letterSpacing: "1px"
                       }}
                     >
                       {checkoutData.licensePlate}
                     </h4>
 
-                    <span style={{ color: "#64748b", fontSize: "0.75rem" }}>
+                    <span style={{ color: theme.muted, fontSize: "0.75rem" }}>
                       Slot: {checkoutData.slotCode || "N/A"}
                     </span>
                   </div>
 
                   <span
                     style={{
-                      backgroundColor: "rgba(16, 185, 129, 0.1)",
-                      color: "#10b981",
+                      background: theme.greenSoft,
+                      color: theme.green,
                       padding: "0.2rem 0.5rem",
-                      borderRadius: "0.25rem",
+                      borderRadius: "0.35rem",
                       fontSize: "0.7rem",
-                      fontWeight: "600",
-                      height: "fit-content",
+                      fontWeight: "700",
+                      height: "fit-content"
                     }}
                   >
                     STAY ACTIVE
@@ -821,80 +721,63 @@ function CheckInOutPage() {
                     gridTemplateColumns: "1fr 1fr",
                     gap: "0.75rem",
                     fontSize: "0.8rem",
-                    color: "#94a3b8",
-                    borderBottom: "1px solid #1e293b",
+                    color: theme.muted,
+                    borderBottom: `1px solid ${theme.border}`,
                     paddingBottom: "1rem",
-                    marginBottom: "1rem",
+                    marginBottom: "1rem"
                   }}
                 >
-                  <div>
-                    ENTRY TIME
-                    <div style={{ color: "#fff", marginTop: "0.2rem" }}>
-                      {formatDateTime(checkoutData.checkInTime)}
-                    </div>
-                  </div>
+                  <InfoItem label="ENTRY TIME">
+                    {formatDateTime(checkoutData.checkInTime)}
+                  </InfoItem>
 
-                  <div>
-                    CURRENT TIME
-                    <div style={{ color: "#fff", marginTop: "0.2rem" }}>
-                      {formatDateTime(checkoutData.checkOutTime)}
-                    </div>
-                  </div>
+                  <InfoItem label="CURRENT TIME">
+                    {formatDateTime(checkoutData.checkOutTime)}
+                  </InfoItem>
 
-                  <div>
-                    DURATION
-                    <div style={{ color: "#fff", marginTop: "0.2rem" }}>
-                      {checkoutData.durationHours
-                        ? `${checkoutData.durationHours} giờ`
-                        : "N/A"}
-                    </div>
-                  </div>
+                  <InfoItem label="DURATION">
+                    {checkoutData.durationHours
+                      ? `${checkoutData.durationHours} giờ`
+                      : "N/A"}
+                  </InfoItem>
 
-                  <div>
-                    PRICE PER HOUR
-                    <div style={{ color: "#fff", marginTop: "0.2rem" }}>
-                      {checkoutData.pricePerHour
-                        ? `${formatCurrency(checkoutData.pricePerHour)} / giờ`
-                        : "N/A"}
-                    </div>
-                  </div>
+                  <InfoItem label="PRICE PER HOUR">
+                    {checkoutData.pricePerHour
+                      ? `${formatCurrency(checkoutData.pricePerHour)} / giờ`
+                      : "N/A"}
+                  </InfoItem>
                 </div>
 
                 <div
                   style={{
                     fontSize: "0.85rem",
-                    color: "#94a3b8",
+                    color: theme.muted,
                     display: "flex",
                     flexDirection: "column",
-                    gap: "0.5rem",
+                    gap: "0.5rem"
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>Parking Fee</span>
-                    <span style={{ color: "#fff" }}>
-                      {formatCurrency(checkoutData.totalAmount)}
-                    </span>
-                  </div>
+                  <PriceRow
+                    label="Parking Fee"
+                    value={formatCurrency(checkoutData.totalAmount)}
+                  />
 
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>Service Charge</span>
-                    <span style={{ color: "#fff" }}>{formatCurrency(0)}</span>
-                  </div>
+                  <PriceRow label="Service Charge" value={formatCurrency(0)} />
 
                   <div
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
                       fontSize: "1.1rem",
-                      fontWeight: "700",
-                      color: "#fff",
-                      borderTop: "1px dashed #334155",
+                      fontWeight: "800",
+                      color: theme.text,
+                      borderTop: `1px dashed ${theme.border}`,
                       paddingTop: "0.75rem",
-                      marginTop: "0.25rem",
+                      marginTop: "0.25rem"
                     }}
                   >
                     <span>Total Amount</span>
-                    <span style={{ color: "#10b981" }}>
+                    <span style={{ color: theme.green }}>
                       {formatCurrency(checkoutData.totalAmount)}
                     </span>
                   </div>
@@ -903,14 +786,15 @@ function CheckInOutPage() {
             ) : (
               <div
                 style={{
-                  backgroundColor: "#0f172a",
+                  background: theme.cardSoft,
                   padding: "2rem",
-                  borderRadius: "0.5rem",
+                  borderRadius: "0.7rem",
                   marginBottom: "1.5rem",
-                  border: "1px dashed #334155",
+                  border: `1px dashed ${theme.border}`,
                   textAlign: "center",
-                  color: "#64748b",
+                  color: theme.muted,
                   fontSize: "0.9rem",
+                  lineHeight: 1.45
                 }}
               >
                 No payment information available. Please enter a license plate
@@ -924,12 +808,12 @@ function CheckInOutPage() {
               style={{
                 width: "100%",
                 padding: "1rem",
-                backgroundColor: checkoutData ? "#10b981" : "#334155",
-                color: checkoutData ? "#fff" : "#64748b",
+                background: checkoutData ? theme.green : theme.cardSoft,
+                color: checkoutData ? "#ffffff" : theme.muted,
                 border: "none",
-                borderRadius: "0.5rem",
-                fontWeight: "600",
-                cursor: checkoutData ? "pointer" : "not-allowed",
+                borderRadius: "0.6rem",
+                fontWeight: "700",
+                cursor: checkoutData ? "pointer" : "not-allowed"
               }}
             >
               Confirm Check-out
@@ -939,28 +823,29 @@ function CheckInOutPage() {
 
         <div
           style={{
-            backgroundColor: "#1e293b",
+            background: theme.card,
             padding: "1.5rem",
-            borderRadius: "0.75rem",
-            border: "1px solid rgba(255, 255, 255, 0.05)",
+            borderRadius: "0.85rem",
+            border: `1px solid ${theme.border}`,
+            boxShadow: theme.shadow
           }}
         >
           <h3
             style={{
-              color: "#fff",
+              color: theme.text,
               fontSize: "1rem",
-              marginBottom: "1rem",
+              margin: "0 0 1rem 0",
               display: "flex",
               alignItems: "center",
-              gap: "0.5rem",
+              gap: "0.5rem"
             }}
           >
-            <ReceiptText size={18} style={{ color: "#3b82f6" }} />
+            <ReceiptText size={18} style={{ color: theme.blue }} />
             Danh Sách Xe Đang Đỗ Trong Hệ Thống ({activeSessions.length} xe)
           </h3>
 
           {activeSessions.length === 0 ? (
-            <p style={{ color: "#64748b", fontSize: "0.85rem", margin: 0 }}>
+            <p style={{ color: theme.muted, fontSize: "0.85rem", margin: 0 }}>
               Bãi xe trống trơn, hãy thực hiện check-in thêm xe mới.
             </p>
           ) : (
@@ -974,7 +859,7 @@ function CheckInOutPage() {
 
                     try {
                       const res = await parkingSessionApi.searchCheckout({
-                        ticketId: session.ticketId,
+                        ticketId: session.ticketId
                       });
 
                       setCheckoutData(res.data);
@@ -988,28 +873,28 @@ function CheckInOutPage() {
                     }
                   }}
                   style={{
-                    backgroundColor: "#0f172a",
-                    border: "1px solid #334155",
-                    padding: "0.5rem 0.75rem",
-                    borderRadius: "0.375rem",
+                    background: theme.cardSoft,
+                    border: `1px solid ${theme.border}`,
+                    padding: "0.65rem 0.8rem",
+                    borderRadius: "0.5rem",
                     cursor: "pointer",
                     display: "flex",
                     flexDirection: "column",
-                    gap: "2px",
+                    gap: "3px"
                   }}
                   title="Click nhanh để chọn xe này làm thủ tục Check-out"
                 >
                   <span
                     style={{
-                      color: "#fff",
-                      fontWeight: "600",
-                      fontSize: "0.85rem",
+                      color: theme.text,
+                      fontWeight: "700",
+                      fontSize: "0.85rem"
                     }}
                   >
                     {session.licensePlate}
                   </span>
 
-                  <span style={{ color: "#3b82f6", fontSize: "0.7rem" }}>
+                  <span style={{ color: theme.blue, fontSize: "0.7rem" }}>
                     Slot: {session.slotCode || "N/A"} | {session.ticketId}
                   </span>
                 </div>
@@ -1018,6 +903,87 @@ function CheckInOutPage() {
           )}
         </div>
       </main>
+    </div>
+  );
+}
+
+function FieldLabel({ children }) {
+  return (
+    <label
+      style={{
+        color: theme.muted,
+        fontSize: "0.75rem",
+        fontWeight: "700",
+        display: "block",
+        marginBottom: "0.5rem"
+      }}
+    >
+      {children}
+    </label>
+  );
+}
+
+function TextInput({ muted = false, style = {}, ...props }) {
+  return (
+    <input
+      {...props}
+      style={{
+        width: "100%",
+        padding: "0.75rem",
+        background: muted ? theme.cardSoft : theme.input,
+        border: `1px solid ${theme.border}`,
+        borderRadius: "0.5rem",
+        color: muted ? theme.muted : theme.text,
+        outline: "none",
+        letterSpacing: props.readOnly ? "0" : "1px",
+        fontWeight: "650",
+        fontSize: "0.9rem",
+        boxSizing: "border-box",
+        ...style
+      }}
+    />
+  );
+}
+
+function SelectInput({ children, style = {}, ...props }) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: "100%",
+        padding: "0.75rem",
+        background: theme.input,
+        border: `1px solid ${theme.border}`,
+        borderRadius: "0.5rem",
+        color: theme.text,
+        cursor: props.disabled ? "not-allowed" : "pointer",
+        outline: "none",
+        fontWeight: "650",
+        boxSizing: "border-box",
+        ...style
+      }}
+    >
+      {children}
+    </select>
+  );
+}
+
+function InfoItem({ label, children }) {
+  return (
+    <div>
+      {label}
+      <div style={{ color: theme.text, marginTop: "0.2rem", fontWeight: "650" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function PriceRow({ label, value }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between" }}>
+      <span>{label}</span>
+      <span style={{ color: theme.text, fontWeight: "650" }}>{value}</span>
     </div>
   );
 }
