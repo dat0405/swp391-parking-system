@@ -23,6 +23,28 @@ const statusFilters = [
   { key: "maintenance", label: "Maintenance" }
 ];
 
+const theme = {
+  page: "var(--bg-dashboard)",
+  card: "var(--bg-card)",
+  cardSoft: "var(--bg-card-soft)",
+  input: "var(--bg-input)",
+  inputFocus: "var(--bg-input-focus)",
+  border: "var(--border-color)",
+  borderSoft: "var(--border-soft)",
+  text: "var(--text-main)",
+  muted: "var(--text-muted)",
+  soft: "var(--text-soft)",
+  blue: "var(--primary-blue)",
+  blueSoft: "var(--primary-blue-soft)",
+  green: "var(--success-green)",
+  greenSoft: "var(--success-green-soft)",
+  red: "var(--danger-red)",
+  redSoft: "var(--danger-red-soft)",
+  yellow: "var(--warning-yellow)",
+  yellowSoft: "var(--warning-yellow-soft)",
+  shadow: "var(--shadow-card)"
+};
+
 const normalizeStatus = (status) => {
   const value = String(status || "AVAILABLE").trim().toUpperCase();
 
@@ -45,11 +67,7 @@ const normalizeVehicleType = (type) => {
     return "motorbike";
   }
 
-  if (
-    value.includes("car") ||
-    value.includes("ô tô") ||
-    value.includes("oto")
-  ) {
+  if (value.includes("car") || value.includes("ô tô") || value.includes("oto")) {
     return "car";
   }
 
@@ -57,101 +75,27 @@ const normalizeVehicleType = (type) => {
 };
 
 const getSlotCode = (slot) => {
-  return (
-    slot.slotCode ||
-    slot.code ||
-    slot.slotName ||
-    slot.name ||
-    slot.slotNumber ||
-    `SLOT-${slot.id}`
-  );
-};
-
-const getFloorDisplayPrefix = (slot) => {
-  const floorValue = String(slot?.floor || "").trim().toUpperCase();
-  const rawFloorValue = String(slot?.raw?.floorName || slot?.raw?.floorCode || "").trim().toUpperCase();
-  const slotCodeValue = String(slot?.slotCode || slot?.id || "").trim().toUpperCase();
+  const rawSlotCode =
+    slot?.slotCode ||
+    slot?.slot_code ||
+    slot?.parkingSlotCode ||
+    slot?.code ||
+    slot?.slotName ||
+    slot?.name;
 
   if (
-    floorValue === "G" ||
-    floorValue === "GROUND" ||
-    floorValue === "FLOOR G" ||
-    rawFloorValue === "G" ||
-    rawFloorValue === "GROUND" ||
-    rawFloorValue === "FLOOR G" ||
-    slotCodeValue.startsWith("G-") ||
-    slotCodeValue.includes("BIKE") ||
-    slotCodeValue.includes("MOTORBIKE")
+    rawSlotCode !== undefined &&
+    rawSlotCode !== null &&
+    String(rawSlotCode).trim()
   ) {
-    return "G";
+    return String(rawSlotCode).trim();
   }
 
-  if (
-    floorValue === "1" ||
-    floorValue === "A" ||
-    floorValue === "A1" ||
-    floorValue === "F1" ||
-    floorValue === "FLOOR 1" ||
-    floorValue === "FLOOR A" ||
-    floorValue === "FLOOR A1" ||
-    rawFloorValue === "1" ||
-    rawFloorValue === "A" ||
-    rawFloorValue === "A1" ||
-    rawFloorValue === "F1" ||
-    rawFloorValue === "FLOOR 1" ||
-    rawFloorValue === "FLOOR A" ||
-    rawFloorValue === "FLOOR A1" ||
-    slotCodeValue.startsWith("1-") ||
-    slotCodeValue.startsWith("A-") ||
-    slotCodeValue.startsWith("A1-") ||
-    slotCodeValue.startsWith("F1-")
-  ) {
-    return "A";
+  if (slot?.slotNumber !== undefined && slot?.slotNumber !== null) {
+    return `SLOT-${slot.slotNumber}`;
   }
 
-  if (
-    floorValue === "2" ||
-    floorValue === "C" ||
-    floorValue === "A2" ||
-    floorValue === "F2" ||
-    floorValue === "FLOOR 2" ||
-    floorValue === "FLOOR C" ||
-    floorValue === "FLOOR A2" ||
-    rawFloorValue === "2" ||
-    rawFloorValue === "C" ||
-    rawFloorValue === "A2" ||
-    rawFloorValue === "F2" ||
-    rawFloorValue === "FLOOR 2" ||
-    rawFloorValue === "FLOOR C" ||
-    rawFloorValue === "FLOOR A2" ||
-    slotCodeValue.startsWith("2-") ||
-    slotCodeValue.startsWith("C-") ||
-    slotCodeValue.startsWith("A2-") ||
-    slotCodeValue.startsWith("F2-")
-  ) {
-    return "C";
-  }
-
-  const firstLetterMatch = floorValue.match(/[A-Z]/);
-  if (firstLetterMatch) {
-    return firstLetterMatch[0];
-  }
-
-  return "S";
-};
-
-const getDisplaySlotCode = (slot) => {
-  const rawSlotCode = String(slot?.slotCode || slot?.id || "").trim();
-  const rawSlotId = String(slot?.id || "").trim();
-
-  const numberMatch =
-    rawSlotCode.match(/(\d+)$/) ||
-    rawSlotId.match(/(\d+)$/);
-
-  const numberPart = numberMatch ? numberMatch[1].padStart(2, "0") : "00";
-  const floorPrefix = getFloorDisplayPrefix(slot);
-
-  return `${floorPrefix}-${numberPart}`;
+  return `SLOT-${slot?.id || "UNKNOWN"}`;
 };
 
 const getDisplayVehicleType = (type) => {
@@ -238,6 +182,14 @@ const getFloorSortValue = (floorName) => {
     return Number(numberMatch[0]);
   }
 
+  if (value === "A" || value === "A1" || value === "F1") {
+    return 1;
+  }
+
+  if (value === "C" || value === "A2" || value === "F2") {
+    return 2;
+  }
+
   return 999;
 };
 
@@ -255,12 +207,48 @@ const getDisplayFloorName = (floorName) => {
   return `Floor ${value}`;
 };
 
+const getDisplayPrefixByFloor = (floorName) => {
+  const value = normalizeFloorName(floorName).toUpperCase();
+
+  if (value === "G" || value === "GROUND" || value === "FLOOR G") {
+    return "G";
+  }
+
+  if (
+    value === "1" ||
+    value === "A" ||
+    value === "A1" ||
+    value === "F1" ||
+    value === "FLOOR 1" ||
+    value === "FLOOR A" ||
+    value === "FLOOR A1"
+  ) {
+    return "A";
+  }
+
+  if (
+    value === "2" ||
+    value === "C" ||
+    value === "A2" ||
+    value === "F2" ||
+    value === "FLOOR 2" ||
+    value === "FLOOR C" ||
+    value === "FLOOR A2"
+  ) {
+    return "C";
+  }
+
+  return "S";
+};
+
 const mapApiSlotToViewSlot = (slot) => {
   const finalStatus = normalizeStatus(slot.status);
+  const slotCode = getSlotCode(slot);
 
   return {
     id: slot.id,
-    slotCode: getSlotCode(slot),
+    slotCode,
+    displayCode: slotCode,
     floor: getFloorCode(slot),
     floorId: getFloorId(slot),
     type: getVehicleType(slot),
@@ -291,6 +279,31 @@ const getCurrentRole = () => {
   } catch (error) {
     return "";
   }
+};
+
+const getStatusColor = (status) => {
+  if (status === "occupied") return "#ef4444";
+  if (status === "reserved") return "#f59e0b";
+  if (status === "maintenance") return "#64748b";
+
+  return "#10b981";
+};
+
+const getStatusSoftBackground = (status) => {
+  if (status === "occupied") return "rgba(239, 68, 68, 0.1)";
+  if (status === "reserved") return "rgba(245, 158, 11, 0.12)";
+  if (status === "maintenance") return "rgba(100, 116, 139, 0.12)";
+
+  return "rgba(16, 185, 129, 0.1)";
+};
+
+const getStatColor = (key) => {
+  if (key === "available") return "var(--success-green)";
+  if (key === "occupied") return "var(--danger-red)";
+  if (key === "reserved") return "var(--warning-yellow)";
+  if (key === "maintenance") return "var(--text-muted)";
+
+  return "var(--text-main)";
 };
 
 const ParkingManagement = () => {
@@ -334,6 +347,48 @@ const ParkingManagement = () => {
     selectedFloorRef.current = selectedFloor;
   }, [selectedFloor]);
 
+  const buildNormalizedDisplaySlots = (slots) => {
+    const mappedSlots = slots
+      .map(mapApiSlotToViewSlot)
+      .filter((slot) => {
+        const allowedType = getAllowedTypeByFloor(slot.floor);
+
+        if (slot.floor === "Unknown") {
+          return true;
+        }
+
+        return slot.type === allowedType;
+      })
+      .sort((slotA, slotB) => {
+        const floorCompare =
+          getFloorSortValue(slotA.floor) - getFloorSortValue(slotB.floor);
+
+        if (floorCompare !== 0) {
+          return floorCompare;
+        }
+
+        return Number(slotA.id) - Number(slotB.id);
+      });
+
+    const floorCounters = new Map();
+
+    return mappedSlots.map((slot) => {
+      const floorKey = slot.floor || "Unknown";
+      const currentCount = floorCounters.get(floorKey) || 0;
+      const nextNumber = currentCount + 1;
+
+      floorCounters.set(floorKey, nextNumber);
+
+      const prefix = getDisplayPrefixByFloor(slot.floor);
+      const displayCode = `${prefix}-${String(nextNumber).padStart(2, "0")}`;
+
+      return {
+        ...slot,
+        displayCode
+      };
+    });
+  };
+
   const loadParkingSlots = async ({ silent = false } = {}) => {
     try {
       if (!silent) {
@@ -347,24 +402,11 @@ const ParkingManagement = () => {
 
       const slots = Array.isArray(payload)
         ? payload
-        : payload.content ||
-          payload.data ||
-          payload.slots ||
-          [];
+        : payload.content || payload.data || payload.slots || [];
 
-      const mappedSlots = slots
-        .map(mapApiSlotToViewSlot)
-        .filter((slot) => {
-          const allowedType = getAllowedTypeByFloor(slot.floor);
+      const normalizedDisplaySlots = buildNormalizedDisplaySlots(slots);
 
-          if (slot.floor === "Unknown") {
-            return true;
-          }
-
-          return slot.type === allowedType;
-        });
-
-      setSlotsData(mappedSlots);
+      setSlotsData(normalizedDisplaySlots);
       setHasLoadedOnce(true);
       hasLoadedOnceRef.current = true;
     } catch (error) {
@@ -415,9 +457,7 @@ const ParkingManagement = () => {
     const floorMap = new Map();
 
     slotsData.forEach((slot) => {
-      if (!slot.floorId) {
-        return;
-      }
+      if (!slot.floorId) return;
 
       if (!floorMap.has(slot.floorId)) {
         floorMap.set(slot.floorId, {
@@ -438,9 +478,7 @@ const ParkingManagement = () => {
     const vehicleTypeMap = new Map();
 
     slotsData.forEach((slot) => {
-      if (!slot.vehicleTypeId) {
-        return;
-      }
+      if (!slot.vehicleTypeId) return;
 
       if (!vehicleTypeMap.has(slot.vehicleTypeId)) {
         vehicleTypeMap.set(slot.vehicleTypeId, {
@@ -457,9 +495,7 @@ const ParkingManagement = () => {
   }, [slotsData]);
 
   useEffect(() => {
-    if (floors.length === 0) {
-      return;
-    }
+    if (floors.length === 0) return;
 
     const currentSelectedFloor = selectedFloorRef.current;
 
@@ -557,11 +593,14 @@ const ParkingManagement = () => {
       currentFloor?.type || modalFloorOptions[0]?.allowedType || "car";
 
     const defaultVehicleType =
-      modalVehicleTypeOptions.find((item) => item.normalizedType === defaultAllowedType) ||
-      modalVehicleTypeOptions[0];
+      modalVehicleTypeOptions.find(
+        (item) => item.normalizedType === defaultAllowedType
+      ) || modalVehicleTypeOptions[0];
 
     setSelectedModalFloorId(defaultFloorId ? String(defaultFloorId) : "");
-    setSelectedModalVehicleTypeId(defaultVehicleType?.id ? String(defaultVehicleType.id) : "");
+    setSelectedModalVehicleTypeId(
+      defaultVehicleType?.id ? String(defaultVehicleType.id) : ""
+    );
     setIsSlotModalOpen(true);
   };
 
@@ -651,9 +690,7 @@ const ParkingManagement = () => {
   };
 
   const openIncidentModal = (slot) => {
-    if (!canManageSlots) {
-      return;
-    }
+    if (!canManageSlots) return;
 
     setEditingSlot(slot);
     setManualLicensePlate("");
@@ -661,9 +698,7 @@ const ParkingManagement = () => {
   };
 
   const closeIncidentModal = () => {
-    if (slotStatusLoading) {
-      return;
-    }
+    if (slotStatusLoading) return;
 
     setEditingSlot(null);
     setManualLicensePlate("");
@@ -675,25 +710,15 @@ const ParkingManagement = () => {
       return manualLicensePlate.trim() || "Occupied";
     }
 
-    if (statusType === "available") {
-      return "Available";
-    }
-
-    if (statusType === "reserved") {
-      return "Reserved";
-    }
-
-    if (statusType === "maintenance") {
-      return "Maintenance";
-    }
+    if (statusType === "available") return "Available";
+    if (statusType === "reserved") return "Reserved";
+    if (statusType === "maintenance") return "Maintenance";
 
     return "Available";
   };
 
   const handleUpdateSlotStatus = async (statusType) => {
-    if (!editingSlot) {
-      return;
-    }
+    if (!editingSlot) return;
 
     try {
       setSlotStatusLoading(true);
@@ -745,22 +770,27 @@ const ParkingManagement = () => {
 
   const renderSlotCards = () => {
     return currentSlots.map((slot) => {
+      const statusColor = getStatusColor(slot.status);
+      const statusSoftBackground = getStatusSoftBackground(slot.status);
+
       let statusIcon = (
-        <span style={{ fontSize: "1.35rem", color: "#334155", fontWeight: "bold" }}>
+        <span
+          style={{
+            fontSize: "1.35rem",
+            color: statusColor,
+            fontWeight: "bold"
+          }}
+        >
           P
         </span>
       );
-      let statusColor = "#10b981";
 
       if (slot.status === "occupied") {
         statusIcon = <Car size={26} />;
-        statusColor = "#ef4444";
       } else if (slot.status === "reserved") {
         statusIcon = <Clock size={26} />;
-        statusColor = "#f59e0b";
       } else if (slot.status === "maintenance") {
         statusIcon = <Wrench size={26} />;
-        statusColor = "#64748b";
       }
 
       return (
@@ -769,19 +799,33 @@ const ParkingManagement = () => {
           onClick={() => openIncidentModal(slot)}
           title={canManageSlots ? "Click to configure this slot" : ""}
           style={{
-            background: "#0c1322",
+            background: theme.card,
             border: `1px solid ${statusColor}`,
+            borderTop: `4px solid ${statusColor}`,
             padding: "1rem",
-            borderRadius: "0.75rem",
+            borderRadius: "0.9rem",
             display: "flex",
             flexDirection: "column",
             position: "relative",
             minHeight: "124px",
-            cursor: canManageSlots ? "pointer" : "default"
+            cursor: canManageSlots ? "pointer" : "default",
+            boxShadow: theme.shadow,
+            overflow: "hidden"
           }}
         >
           <div
             style={{
+              position: "absolute",
+              inset: 0,
+              background: `linear-gradient(135deg, ${statusSoftBackground} 0%, transparent 45%)`,
+              pointerEvents: "none"
+            }}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              zIndex: 1,
               display: "flex",
               justifyContent: "space-between",
               alignItems: "flex-start",
@@ -792,7 +836,7 @@ const ParkingManagement = () => {
               <h4
                 style={{
                   margin: 0,
-                  color: "#fff",
+                  color: theme.text,
                   fontSize: "1rem",
                   fontWeight: "800",
                   whiteSpace: "nowrap",
@@ -800,14 +844,14 @@ const ParkingManagement = () => {
                   textOverflow: "ellipsis"
                 }}
               >
-                {getDisplaySlotCode(slot)}
+                {slot.displayCode}
               </h4>
 
               <span
                 style={{
                   fontSize: "0.78rem",
-                  color: "#cbd5e1",
-                  fontWeight: "600"
+                  color: theme.muted,
+                  fontWeight: "700"
                 }}
               >
                 {getDisplayVehicleType(slot.type)}
@@ -818,7 +862,7 @@ const ParkingManagement = () => {
               style={{
                 fontSize: "0.62rem",
                 color: statusColor,
-                fontWeight: "bold",
+                fontWeight: "800",
                 textTransform: "uppercase",
                 whiteSpace: "nowrap"
               }}
@@ -829,6 +873,8 @@ const ParkingManagement = () => {
 
           <div
             style={{
+              position: "relative",
+              zIndex: 1,
               flex: 1,
               display: "flex",
               alignItems: "center",
@@ -837,18 +883,34 @@ const ParkingManagement = () => {
               paddingTop: "0.2rem"
             }}
           >
-            {statusIcon}
+            <div
+              style={{
+                width: "42px",
+                height: "42px",
+                borderRadius: "50%",
+                background: statusSoftBackground,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}
+            >
+              {statusIcon}
+            </div>
           </div>
 
           <div
             style={{
+              position: "relative",
+              zIndex: 1,
               textAlign: "center",
               fontSize: "0.78rem",
-              color: slot.status === "occupied" ? "#3b82f6" : "#64748b",
-              fontWeight: "600",
-              background: slot.status === "occupied" ? "#1e293b" : "transparent",
-              padding: "2px 4px",
-              borderRadius: "4px"
+              color: theme.muted,
+              fontWeight: "700",
+              background: statusSoftBackground,
+              padding: "4px 8px",
+              borderRadius: "999px",
+              alignSelf: "center",
+              minWidth: "92px"
             }}
           >
             {slot.info}
@@ -859,14 +921,7 @@ const ParkingManagement = () => {
   };
 
   return (
-    <div
-      className="dashboard-layout"
-      style={{
-        display: "flex",
-        background: "#060b13",
-        minHeight: "100vh"
-      }}
-    >
+    <div className="dashboard-layout">
       <Sidebar />
 
       <main
@@ -874,17 +929,25 @@ const ParkingManagement = () => {
         style={{
           flex: 1,
           padding: "1.5rem",
-          overflowY: "auto"
+          overflowY: "auto",
+          background: theme.page,
+          color: theme.text
         }}
       >
         <Header />
 
         <div style={{ marginBottom: "1.5rem" }}>
-          <h1 style={{ color: "#fff", fontSize: "1.75rem", margin: "0" }}>
+          <h1
+            style={{
+              color: theme.text,
+              fontSize: "1.75rem",
+              margin: "0"
+            }}
+          >
             Parking Floors & Slots
           </h1>
 
-          <p style={{ color: "#64748b", margin: "0.5rem 0" }}>
+          <p style={{ color: theme.muted, margin: "0.5rem 0" }}>
             Live parking slot data from database.
           </p>
         </div>
@@ -899,21 +962,22 @@ const ParkingManagement = () => {
           }}
         >
           {[
-            { label: "TOTAL SLOTS", val: stats.total, color: "#fff" },
-            { label: "AVAILABLE", val: stats.available, color: "#10b981" },
-            { label: "OCCUPIED", val: stats.occupied, color: "#ef4444" },
-            { label: "RESERVED", val: stats.reserved, color: "#f59e0b" },
-            { label: "MAINTENANCE", val: stats.maintenance, color: "#64748b" }
+            { key: "total", label: "TOTAL SLOTS", val: stats.total },
+            { key: "available", label: "AVAILABLE", val: stats.available },
+            { key: "occupied", label: "OCCUPIED", val: stats.occupied },
+            { key: "reserved", label: "RESERVED", val: stats.reserved },
+            { key: "maintenance", label: "MAINTENANCE", val: stats.maintenance }
           ].map((item) => (
             <div
               key={item.label}
               style={{
-                background: "#0c1322",
+                background: theme.card,
                 padding: "1rem",
                 borderRadius: "0.75rem",
-                border: "1px solid #1e293b",
+                border: `1px solid ${theme.border}`,
                 position: "relative",
-                minHeight: "76px"
+                minHeight: "76px",
+                boxShadow: theme.shadow
               }}
             >
               {item.label === "TOTAL SLOTS" && canManageSlots && (
@@ -929,7 +993,7 @@ const ParkingManagement = () => {
                     height: "30px",
                     borderRadius: "10px",
                     border: "1px solid rgba(59, 130, 246, 0.5)",
-                    background: "#1d4ed8",
+                    background: "var(--primary-blue)",
                     color: "#ffffff",
                     display: "flex",
                     alignItems: "center",
@@ -944,7 +1008,7 @@ const ParkingManagement = () => {
               <span
                 style={{
                   fontSize: "0.7rem",
-                  color: "#64748b",
+                  color: theme.muted,
                   fontWeight: "bold"
                 }}
               >
@@ -956,7 +1020,7 @@ const ParkingManagement = () => {
                   fontSize: "1.55rem",
                   fontWeight: "bold",
                   margin: "0.45rem 0 0 0",
-                  color: item.color
+                  color: getStatColor(item.key)
                 }}
               >
                 {item.val.toLocaleString("vi-VN")}
@@ -968,12 +1032,13 @@ const ParkingManagement = () => {
         {errorMessage && (
           <div
             style={{
-              background: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid rgba(239, 68, 68, 0.4)",
-              color: "#fecaca",
+              background: theme.redSoft,
+              border: `1px solid ${theme.red}`,
+              color: theme.red,
               padding: "0.75rem 1rem",
               borderRadius: "0.5rem",
-              marginBottom: "1rem"
+              marginBottom: "1rem",
+              fontWeight: "700"
             }}
           >
             {errorMessage}
@@ -984,152 +1049,183 @@ const ParkingManagement = () => {
           style={{
             position: "sticky",
             top: 0,
-            zIndex: 100,
-            background: "#060b13",
-            padding: "0.85rem 0 1rem 0",
+            zIndex: 300,
+            background: theme.page,
+            padding: "1rem 0 1.25rem 0",
             marginBottom: "1rem",
-            borderBottom: "1px solid #1e293b",
-            boxShadow: "0 -32px 0 #060b13, 0 14px 28px rgba(2, 6, 23, 0.9)"
+            borderBottom: `1px solid ${theme.border}`,
+            boxShadow:
+              "0 -120px 0 120px var(--bg-dashboard), 0 18px 34px rgba(15, 23, 42, 0.12)"
           }}
         >
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "1rem",
-              marginBottom: "0.85rem"
+              background: theme.card,
+              border: `1px solid ${theme.border}`,
+              borderRadius: "0.85rem",
+              padding: "0.85rem",
+              boxShadow: theme.shadow,
+              overflow: "hidden"
             }}
           >
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              {floors.map((floor) => (
-                <button
-                  key={floor.id}
-                  onClick={() => handleFloorChange(floor.id)}
-                  style={{
-                    padding: "0.55rem 1rem",
-                    borderRadius: "0.5rem",
-                    border: "1px solid #1e293b",
-                    background: selectedFloor === floor.id ? "#3b82f6" : "#131c2e",
-                    color: "#fff",
-                    cursor: "pointer",
-                    fontWeight: "600",
-                    transition: "0.2s"
-                  }}
-                >
-                  {getFloorButtonName(floor)}
-                </button>
-              ))}
-
-              {!loading && floors.length === 0 && (
-                <span style={{ color: "#64748b" }}>
-                  Không có dữ liệu floor/slot trong database.
-                </span>
-              )}
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <button
-                onClick={() => loadParkingSlots()}
-                disabled={loading}
-                style={{
-                  background: "#131c2e",
-                  border: "1px solid #1e293b",
-                  color: "#fff",
-                  padding: "0.4rem 0.6rem",
-                  borderRadius: "0.375rem",
-                  cursor: loading ? "not-allowed" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.35rem"
-                }}
-              >
-                <RefreshCw size={15} />
-                {loading ? "Loading" : "Refresh"}
-              </button>
-
-              <span style={{ color: "#64748b", fontSize: "0.85rem" }}>
-                Page {currentPage} of {totalPages}
-              </span>
-
-              <button
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
-                style={{
-                  background: "#131c2e",
-                  border: "1px solid #1e293b",
-                  color: "#fff",
-                  padding: "0.4rem",
-                  borderRadius: "0.375rem",
-                  cursor: currentPage === 1 ? "not-allowed" : "pointer"
-                }}
-              >
-                <ChevronLeft size={16} />
-              </button>
-
-              <button
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))}
-                style={{
-                  background: "#131c2e",
-                  border: "1px solid #1e293b",
-                  color: "#fff",
-                  padding: "0.4rem",
-                  borderRadius: "0.375rem",
-                  cursor: currentPage === totalPages ? "not-allowed" : "pointer"
-                }}
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "1rem",
-              flexWrap: "wrap"
-            }}
-          >
-            <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
-              {statusFilters.map((filter) => {
-                const isActive = selectedStatus === filter.key;
-
-                return (
-                  <button
-                    key={filter.key}
-                    type="button"
-                    onClick={() => handleStatusFilterChange(filter.key)}
-                    style={{
-                      padding: "0.4rem 0.75rem",
-                      borderRadius: "999px",
-                      border: isActive
-                        ? "1px solid #3b82f6"
-                        : "1px solid #1e293b",
-                      background: isActive ? "rgba(59, 130, 246, 0.18)" : "#0c1322",
-                      color: isActive ? "#bfdbfe" : "#94a3b8",
-                      fontSize: "0.78rem",
-                      fontWeight: 700,
-                      cursor: "pointer"
-                    }}
-                  >
-                    {filter.label} ({getStatusCountForCurrentFloor(filter.key)})
-                  </button>
-                );
-              })}
-            </div>
-
-            <span
+            <div
               style={{
-                color: "#64748b",
-                fontSize: "0.82rem",
-                fontWeight: 600
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "1rem",
+                marginBottom: "0.85rem",
+                flexWrap: "wrap"
               }}
             >
-              Showing {showingStart}-{showingEnd} of {filteredSlots.length} slots
-            </span>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                {floors.map((floor) => {
+                  const active = selectedFloor === floor.id;
+
+                  return (
+                    <button
+                      key={floor.id}
+                      onClick={() => handleFloorChange(floor.id)}
+                      style={{
+                        padding: "0.55rem 1rem",
+                        borderRadius: "0.5rem",
+                        border: active
+                          ? "1px solid var(--primary-blue)"
+                          : `1px solid ${theme.border}`,
+                        background: active ? "var(--primary-blue)" : theme.input,
+                        color: active ? "#ffffff" : theme.text,
+                        cursor: "pointer",
+                        fontWeight: "700"
+                      }}
+                    >
+                      {getFloorButtonName(floor)}
+                    </button>
+                  );
+                })}
+
+                {!loading && floors.length === 0 && (
+                  <span style={{ color: theme.muted }}>
+                    Không có dữ liệu floor/slot trong database.
+                  </span>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  flexWrap: "wrap"
+                }}
+              >
+                <button
+                  onClick={() => loadParkingSlots()}
+                  disabled={loading}
+                  style={{
+                    background: theme.input,
+                    border: `1px solid ${theme.border}`,
+                    color: theme.text,
+                    padding: "0.45rem 0.7rem",
+                    borderRadius: "0.5rem",
+                    cursor: loading ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    fontWeight: "700"
+                  }}
+                >
+                  <RefreshCw size={15} />
+                  {loading ? "Loading" : "Refresh"}
+                </button>
+
+                <span style={{ color: theme.muted, fontSize: "0.85rem" }}>
+                  Page {currentPage} of {totalPages}
+                </span>
+
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+                  style={{
+                    background: theme.input,
+                    border: `1px solid ${theme.border}`,
+                    color: theme.text,
+                    padding: "0.45rem",
+                    borderRadius: "0.5rem",
+                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                    opacity: currentPage === 1 ? 0.5 : 1
+                  }}
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() =>
+                    setCurrentPage((page) => Math.min(page + 1, totalPages))
+                  }
+                  style={{
+                    background: theme.input,
+                    border: `1px solid ${theme.border}`,
+                    color: theme.text,
+                    padding: "0.45rem",
+                    borderRadius: "0.5rem",
+                    cursor:
+                      currentPage === totalPages ? "not-allowed" : "pointer",
+                    opacity: currentPage === totalPages ? 0.5 : 1
+                  }}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "1rem",
+                flexWrap: "wrap"
+              }}
+            >
+              <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+                {statusFilters.map((filter) => {
+                  const isActive = selectedStatus === filter.key;
+
+                  return (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      onClick={() => handleStatusFilterChange(filter.key)}
+                      style={{
+                        padding: "0.4rem 0.75rem",
+                        borderRadius: "999px",
+                        border: isActive
+                          ? "1px solid var(--primary-blue)"
+                          : `1px solid ${theme.border}`,
+                        background: isActive ? theme.blueSoft : theme.input,
+                        color: isActive ? "var(--primary-blue)" : theme.muted,
+                        fontSize: "0.78rem",
+                        fontWeight: 800,
+                        cursor: "pointer"
+                      }}
+                    >
+                      {filter.label} ({getStatusCountForCurrentFloor(filter.key)})
+                    </button>
+                  );
+                })}
+              </div>
+
+              <span
+                style={{
+                  color: theme.muted,
+                  fontSize: "0.82rem",
+                  fontWeight: 700
+                }}
+              >
+                Showing {showingStart}-{showingEnd} of {filteredSlots.length} slots
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1145,10 +1241,11 @@ const ParkingManagement = () => {
                 marginTop: "1rem",
                 padding: "1rem",
                 borderRadius: "0.75rem",
-                background: "#0c1322",
-                border: "1px solid #1e293b",
-                color: "#94a3b8",
-                textAlign: "center"
+                background: theme.card,
+                border: `1px solid ${theme.border}`,
+                color: theme.muted,
+                textAlign: "center",
+                boxShadow: theme.shadow
               }}
             >
               Đang tải dữ liệu parking slots...
@@ -1170,10 +1267,11 @@ const ParkingManagement = () => {
                 marginTop: "1rem",
                 padding: "1rem",
                 borderRadius: "0.75rem",
-                background: "#0c1322",
-                border: "1px solid #1e293b",
-                color: "#94a3b8",
-                textAlign: "center"
+                background: theme.card,
+                border: `1px solid ${theme.border}`,
+                color: theme.muted,
+                textAlign: "center",
+                boxShadow: theme.shadow
               }}
             >
               No slots match the selected status filter.
@@ -1183,457 +1281,509 @@ const ParkingManagement = () => {
       </main>
 
       {editingSlot && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(2, 6, 23, 0.78)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 99998,
-            padding: "1rem"
-          }}
-        >
-          <div
-            style={{
-              width: "100%",
-              maxWidth: "430px",
-              background: "#0c1322",
-              border: "1px solid #1e293b",
-              padding: "1.5rem",
-              borderRadius: "0.85rem",
-              color: "#ffffff",
-              boxShadow: "0 24px 60px rgba(0, 0, 0, 0.5)"
-            }}
-          >
-            <h3
-              style={{
-                color: "#fff",
-                margin: "0 0 1.25rem 0",
-                fontSize: "1.2rem"
-              }}
-            >
-              Incident Config: Slot {getDisplaySlotCode(editingSlot)}
-            </h3>
-
-            <div style={{ marginBottom: "1.35rem" }}>
-              <label
-                style={{
-                  color: "#64748b",
-                  fontSize: "0.85rem",
-                  display: "block",
-                  marginBottom: "0.5rem",
-                  lineHeight: 1.35
-                }}
-              >
-                Manual License Plate (Use if system failed to sync check-in):
-              </label>
-
-              <input
-                type="text"
-                placeholder="e.g., NY-8291-K"
-                value={manualLicensePlate}
-                onChange={(event) => setManualLicensePlate(event.target.value)}
-                disabled={slotStatusLoading}
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  height: "40px",
-                  padding: "0 0.75rem",
-                  borderRadius: "0.45rem",
-                  border: "1px solid #1e293b",
-                  background: "#131c2e",
-                  color: "#fff",
-                  outline: "none"
-                }}
-              />
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "0.65rem",
-                marginBottom: "1rem"
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => handleUpdateSlotStatus("occupied")}
-                disabled={slotStatusLoading}
-                style={{
-                  padding: "0.75rem",
-                  background: "#ef4444",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "0.45rem",
-                  cursor: slotStatusLoading ? "not-allowed" : "pointer",
-                  fontWeight: "700"
-                }}
-              >
-                Occupied
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleUpdateSlotStatus("available")}
-                disabled={slotStatusLoading}
-                style={{
-                  padding: "0.75rem",
-                  background: "#10b981",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "0.45rem",
-                  cursor: slotStatusLoading ? "not-allowed" : "pointer",
-                  fontWeight: "700"
-                }}
-              >
-                Available (Clear)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleUpdateSlotStatus("reserved")}
-                disabled={slotStatusLoading}
-                style={{
-                  padding: "0.75rem",
-                  background: "#f59e0b",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "0.45rem",
-                  cursor: slotStatusLoading ? "not-allowed" : "pointer",
-                  fontWeight: "700"
-                }}
-              >
-                Reserved
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleUpdateSlotStatus("maintenance")}
-                disabled={slotStatusLoading}
-                style={{
-                  padding: "0.75rem",
-                  background: "#64748b",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "0.45rem",
-                  cursor: slotStatusLoading ? "not-allowed" : "pointer",
-                  fontWeight: "700"
-                }}
-              >
-                Maintenance
-              </button>
-            </div>
-
-            {slotStatusError && (
-              <div
-                style={{
-                  marginBottom: "1rem",
-                  padding: "0.75rem",
-                  borderRadius: "0.55rem",
-                  background: "rgba(239, 68, 68, 0.12)",
-                  border: "1px solid rgba(239, 68, 68, 0.35)",
-                  color: "#fecaca",
-                  fontSize: "0.85rem"
-                }}
-              >
-                {slotStatusError}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={closeIncidentModal}
-              disabled={slotStatusLoading}
-              style={{
-                width: "100%",
-                padding: "0.65rem",
-                background: "transparent",
-                color: "#64748b",
-                border: "1px solid #1e293b",
-                borderRadius: "0.45rem",
-                cursor: slotStatusLoading ? "not-allowed" : "pointer",
-                fontWeight: "600"
-              }}
-            >
-              {slotStatusLoading ? "Updating..." : "Cancel"}
-            </button>
-          </div>
-        </div>
+        <IncidentModal
+          editingSlot={editingSlot}
+          manualLicensePlate={manualLicensePlate}
+          setManualLicensePlate={setManualLicensePlate}
+          slotStatusLoading={slotStatusLoading}
+          slotStatusError={slotStatusError}
+          handleUpdateSlotStatus={handleUpdateSlotStatus}
+          closeIncidentModal={closeIncidentModal}
+        />
       )}
 
       {isSlotModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(2, 6, 23, 0.75)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 99999,
-            padding: "1rem"
-          }}
-        >
-          <div
-            style={{
-              width: "100%",
-              maxWidth: "520px",
-              background: "#0c1322",
-              border: "1px solid #1e293b",
-              borderRadius: "1rem",
-              padding: "1.5rem",
-              color: "#ffffff",
-              boxShadow: "0 24px 60px rgba(0, 0, 0, 0.45)"
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: "1rem",
-                marginBottom: "1.2rem"
-              }}
-            >
-              <div>
-                <h3 style={{ margin: 0, fontSize: "1.25rem" }}>
-                  Manage parking slots
-                </h3>
-                <p style={{ margin: "0.35rem 0 0", color: "#64748b" }}>
-                  Add or delete available slots safely.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsSlotModalOpen(false)}
-                disabled={slotModalLoading}
-                style={{
-                  width: "34px",
-                  height: "34px",
-                  borderRadius: "10px",
-                  border: "1px solid #1e293b",
-                  background: "#131c2e",
-                  color: "#fff",
-                  cursor: slotModalLoading ? "not-allowed" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                background: "#060b13",
-                padding: "0.25rem",
-                borderRadius: "0.75rem",
-                marginBottom: "1rem"
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setSlotAction("ADD");
-                  setSlotModalError("");
-                  setSlotModalSuccess("");
-                }}
-                style={{
-                  border: "none",
-                  borderRadius: "0.6rem",
-                  padding: "0.75rem",
-                  background: slotAction === "ADD" ? "#2563eb" : "transparent",
-                  color: "#ffffff",
-                  cursor: "pointer",
-                  fontWeight: 700
-                }}
-              >
-                Add slots
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setSlotAction("DELETE");
-                  setSlotModalError("");
-                  setSlotModalSuccess("");
-                }}
-                style={{
-                  border: "none",
-                  borderRadius: "0.6rem",
-                  padding: "0.75rem",
-                  background: slotAction === "DELETE" ? "#dc2626" : "transparent",
-                  color: "#ffffff",
-                  cursor: "pointer",
-                  fontWeight: 700
-                }}
-              >
-                Delete slots
-              </button>
-            </div>
-
-            <div style={{ display: "grid", gap: "1rem" }}>
-              <label style={{ display: "grid", gap: "0.45rem", color: "#cbd5e1" }}>
-                Floor
-                <select
-                  value={selectedModalFloorId}
-                  onChange={(event) => setSelectedModalFloorId(event.target.value)}
-                  disabled={slotModalLoading}
-                  style={{
-                    height: "44px",
-                    borderRadius: "0.65rem",
-                    border: "1px solid #1e293b",
-                    background: "#060b13",
-                    color: "#ffffff",
-                    padding: "0 0.75rem"
-                  }}
-                >
-                  <option value="">Select floor</option>
-                  {modalFloorOptions.map((floor) => (
-                    <option key={floor.id} value={floor.id}>
-                      {floor.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={{ display: "grid", gap: "0.45rem", color: "#cbd5e1" }}>
-                Vehicle type
-                <select
-                  value={selectedModalVehicleTypeId}
-                  onChange={(event) => setSelectedModalVehicleTypeId(event.target.value)}
-                  disabled={slotModalLoading}
-                  style={{
-                    height: "44px",
-                    borderRadius: "0.65rem",
-                    border: "1px solid #1e293b",
-                    background: "#060b13",
-                    color: "#ffffff",
-                    padding: "0 0.75rem"
-                  }}
-                >
-                  <option value="">Select vehicle type</option>
-                  {modalVehicleTypeOptions.map((vehicleType) => (
-                    <option key={vehicleType.id} value={vehicleType.id}>
-                      {vehicleType.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={{ display: "grid", gap: "0.45rem", color: "#cbd5e1" }}>
-                Quantity
-                <input
-                  type="number"
-                  min="1"
-                  max="500"
-                  value={slotQuantity}
-                  onChange={(event) => setSlotQuantity(event.target.value)}
-                  disabled={slotModalLoading}
-                  placeholder="Enter quantity"
-                  style={{
-                    height: "44px",
-                    borderRadius: "0.65rem",
-                    border: "1px solid #1e293b",
-                    background: "#060b13",
-                    color: "#ffffff",
-                    padding: "0 0.75rem"
-                  }}
-                />
-              </label>
-            </div>
-
-            {slotModalError && (
-              <div
-                style={{
-                  marginTop: "1rem",
-                  padding: "0.75rem",
-                  borderRadius: "0.65rem",
-                  background: "rgba(239, 68, 68, 0.12)",
-                  border: "1px solid rgba(239, 68, 68, 0.35)",
-                  color: "#fecaca",
-                  fontSize: "0.85rem"
-                }}
-              >
-                {slotModalError}
-              </div>
-            )}
-
-            {slotModalSuccess && (
-              <div
-                style={{
-                  marginTop: "1rem",
-                  padding: "0.75rem",
-                  borderRadius: "0.65rem",
-                  background: "rgba(16, 185, 129, 0.12)",
-                  border: "1px solid rgba(16, 185, 129, 0.35)",
-                  color: "#bbf7d0",
-                  fontSize: "0.85rem"
-                }}
-              >
-                {slotModalSuccess}
-              </div>
-            )}
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.75rem",
-                marginTop: "1.5rem"
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setIsSlotModalOpen(false)}
-                disabled={slotModalLoading}
-                style={{
-                  height: "42px",
-                  padding: "0 1rem",
-                  borderRadius: "0.65rem",
-                  border: "1px solid #1e293b",
-                  background: "#131c2e",
-                  color: "#cbd5e1",
-                  cursor: slotModalLoading ? "not-allowed" : "pointer",
-                  fontWeight: 700
-                }}
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSubmitSlotManagement}
-                disabled={slotModalLoading}
-                style={{
-                  height: "42px",
-                  padding: "0 1rem",
-                  borderRadius: "0.65rem",
-                  border: "none",
-                  background: slotAction === "DELETE" ? "#dc2626" : "#2563eb",
-                  color: "#ffffff",
-                  cursor: slotModalLoading ? "not-allowed" : "pointer",
-                  fontWeight: 700
-                }}
-              >
-                {slotModalLoading
-                  ? "Processing..."
-                  : slotAction === "ADD"
-                    ? "Add slots"
-                    : "Delete slots"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ManageSlotModal
+          slotAction={slotAction}
+          setSlotAction={setSlotAction}
+          slotModalLoading={slotModalLoading}
+          slotModalError={slotModalError}
+          slotModalSuccess={slotModalSuccess}
+          selectedModalFloorId={selectedModalFloorId}
+          setSelectedModalFloorId={setSelectedModalFloorId}
+          selectedModalVehicleTypeId={selectedModalVehicleTypeId}
+          setSelectedModalVehicleTypeId={setSelectedModalVehicleTypeId}
+          slotQuantity={slotQuantity}
+          setSlotQuantity={setSlotQuantity}
+          modalFloorOptions={modalFloorOptions}
+          modalVehicleTypeOptions={modalVehicleTypeOptions}
+          setIsSlotModalOpen={setIsSlotModalOpen}
+          setSlotModalError={setSlotModalError}
+          setSlotModalSuccess={setSlotModalSuccess}
+          handleSubmitSlotManagement={handleSubmitSlotManagement}
+        />
       )}
     </div>
   );
+};
+
+function IncidentModal({
+  editingSlot,
+  manualLicensePlate,
+  setManualLicensePlate,
+  slotStatusLoading,
+  slotStatusError,
+  handleUpdateSlotStatus,
+  closeIncidentModal
+}) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(2, 6, 23, 0.68)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 99998,
+        padding: "1rem"
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "430px",
+          background: theme.card,
+          border: `1px solid ${theme.border}`,
+          padding: "1.5rem",
+          borderRadius: "0.85rem",
+          color: theme.text,
+          boxShadow: "0 24px 60px rgba(0, 0, 0, 0.32)"
+        }}
+      >
+        <h3
+          style={{
+            color: theme.text,
+            margin: "0 0 1.25rem 0",
+            fontSize: "1.2rem"
+          }}
+        >
+          Incident Config: Slot {editingSlot.displayCode}
+        </h3>
+
+        <div style={{ marginBottom: "1.35rem" }}>
+          <label
+            style={{
+              color: theme.muted,
+              fontSize: "0.85rem",
+              display: "block",
+              marginBottom: "0.5rem",
+              lineHeight: 1.35
+            }}
+          >
+            Manual License Plate (Use if system failed to sync check-in):
+          </label>
+
+          <input
+            type="text"
+            placeholder="e.g., NY-8291-K"
+            value={manualLicensePlate}
+            onChange={(event) => setManualLicensePlate(event.target.value)}
+            disabled={slotStatusLoading}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              height: "40px",
+              padding: "0 0.75rem",
+              borderRadius: "0.45rem",
+              border: `1px solid ${theme.border}`,
+              background: theme.input,
+              color: theme.text,
+              outline: "none"
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "0.65rem",
+            marginBottom: "1rem"
+          }}
+        >
+          <StatusButton
+            label="Occupied"
+            color="#ef4444"
+            disabled={slotStatusLoading}
+            onClick={() => handleUpdateSlotStatus("occupied")}
+          />
+
+          <StatusButton
+            label="Available (Clear)"
+            color="#10b981"
+            disabled={slotStatusLoading}
+            onClick={() => handleUpdateSlotStatus("available")}
+          />
+
+          <StatusButton
+            label="Reserved"
+            color="#f59e0b"
+            disabled={slotStatusLoading}
+            onClick={() => handleUpdateSlotStatus("reserved")}
+          />
+
+          <StatusButton
+            label="Maintenance"
+            color="#64748b"
+            disabled={slotStatusLoading}
+            onClick={() => handleUpdateSlotStatus("maintenance")}
+          />
+        </div>
+
+        {slotStatusError && (
+          <div
+            style={{
+              marginBottom: "1rem",
+              padding: "0.75rem",
+              borderRadius: "0.55rem",
+              background: theme.redSoft,
+              border: `1px solid ${theme.red}`,
+              color: theme.red,
+              fontSize: "0.85rem",
+              fontWeight: "700"
+            }}
+          >
+            {slotStatusError}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={closeIncidentModal}
+          disabled={slotStatusLoading}
+          style={{
+            width: "100%",
+            padding: "0.65rem",
+            background: "transparent",
+            color: theme.muted,
+            border: `1px solid ${theme.border}`,
+            borderRadius: "0.45rem",
+            cursor: slotStatusLoading ? "not-allowed" : "pointer",
+            fontWeight: "600"
+          }}
+        >
+          {slotStatusLoading ? "Updating..." : "Cancel"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StatusButton({ label, color, disabled, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: "0.75rem",
+        background: color,
+        color: "#ffffff",
+        border: "none",
+        borderRadius: "0.45rem",
+        cursor: disabled ? "not-allowed" : "pointer",
+        fontWeight: "700"
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function ManageSlotModal({
+  slotAction,
+  setSlotAction,
+  slotModalLoading,
+  slotModalError,
+  slotModalSuccess,
+  selectedModalFloorId,
+  setSelectedModalFloorId,
+  selectedModalVehicleTypeId,
+  setSelectedModalVehicleTypeId,
+  slotQuantity,
+  setSlotQuantity,
+  modalFloorOptions,
+  modalVehicleTypeOptions,
+  setIsSlotModalOpen,
+  setSlotModalError,
+  setSlotModalSuccess,
+  handleSubmitSlotManagement
+}) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(2, 6, 23, 0.68)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 99999,
+        padding: "1rem"
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "520px",
+          background: theme.card,
+          border: `1px solid ${theme.border}`,
+          borderRadius: "1rem",
+          padding: "1.5rem",
+          color: theme.text,
+          boxShadow: "0 24px 60px rgba(0, 0, 0, 0.32)"
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "1rem",
+            marginBottom: "1.2rem"
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0, fontSize: "1.25rem", color: theme.text }}>
+              Manage parking slots
+            </h3>
+            <p style={{ margin: "0.35rem 0 0", color: theme.muted }}>
+              Add or delete available slots safely.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsSlotModalOpen(false)}
+            disabled={slotModalLoading}
+            style={{
+              width: "34px",
+              height: "34px",
+              borderRadius: "10px",
+              border: `1px solid ${theme.border}`,
+              background: theme.input,
+              color: theme.text,
+              cursor: slotModalLoading ? "not-allowed" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            background: theme.cardSoft,
+            padding: "0.25rem",
+            borderRadius: "0.75rem",
+            marginBottom: "1rem"
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setSlotAction("ADD");
+              setSlotModalError("");
+              setSlotModalSuccess("");
+            }}
+            style={{
+              border: "none",
+              borderRadius: "0.6rem",
+              padding: "0.75rem",
+              background: slotAction === "ADD" ? "#2563eb" : "transparent",
+              color: slotAction === "ADD" ? "#ffffff" : theme.text,
+              cursor: "pointer",
+              fontWeight: 700
+            }}
+          >
+            Add slots
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSlotAction("DELETE");
+              setSlotModalError("");
+              setSlotModalSuccess("");
+            }}
+            style={{
+              border: "none",
+              borderRadius: "0.6rem",
+              padding: "0.75rem",
+              background: slotAction === "DELETE" ? "#dc2626" : "transparent",
+              color: slotAction === "DELETE" ? "#ffffff" : theme.text,
+              cursor: "pointer",
+              fontWeight: 700
+            }}
+          >
+            Delete slots
+          </button>
+        </div>
+
+        <div style={{ display: "grid", gap: "1rem" }}>
+          <ModalField label="Floor">
+            <select
+              value={selectedModalFloorId}
+              onChange={(event) => setSelectedModalFloorId(event.target.value)}
+              disabled={slotModalLoading}
+              style={inputStyle}
+            >
+              <option value="">Select floor</option>
+              {modalFloorOptions.map((floor) => (
+                <option key={floor.id} value={floor.id}>
+                  {floor.name}
+                </option>
+              ))}
+            </select>
+          </ModalField>
+
+          <ModalField label="Vehicle type">
+            <select
+              value={selectedModalVehicleTypeId}
+              onChange={(event) =>
+                setSelectedModalVehicleTypeId(event.target.value)
+              }
+              disabled={slotModalLoading}
+              style={inputStyle}
+            >
+              <option value="">Select vehicle type</option>
+              {modalVehicleTypeOptions.map((vehicleType) => (
+                <option key={vehicleType.id} value={vehicleType.id}>
+                  {vehicleType.name}
+                </option>
+              ))}
+            </select>
+          </ModalField>
+
+          <ModalField label="Quantity">
+            <input
+              type="number"
+              min="1"
+              max="500"
+              value={slotQuantity}
+              onChange={(event) => setSlotQuantity(event.target.value)}
+              disabled={slotModalLoading}
+              placeholder="Enter quantity"
+              style={inputStyle}
+            />
+          </ModalField>
+        </div>
+
+        {slotModalError && (
+          <div
+            style={{
+              marginTop: "1rem",
+              padding: "0.75rem",
+              borderRadius: "0.65rem",
+              background: theme.redSoft,
+              border: `1px solid ${theme.red}`,
+              color: theme.red,
+              fontSize: "0.85rem",
+              fontWeight: "700"
+            }}
+          >
+            {slotModalError}
+          </div>
+        )}
+
+        {slotModalSuccess && (
+          <div
+            style={{
+              marginTop: "1rem",
+              padding: "0.75rem",
+              borderRadius: "0.65rem",
+              background: theme.greenSoft,
+              border: `1px solid ${theme.green}`,
+              color: theme.green,
+              fontSize: "0.85rem",
+              fontWeight: "700"
+            }}
+          >
+            {slotModalSuccess}
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: "0.75rem",
+            marginTop: "1.5rem"
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setIsSlotModalOpen(false)}
+            disabled={slotModalLoading}
+            style={{
+              height: "42px",
+              padding: "0 1rem",
+              borderRadius: "0.65rem",
+              border: `1px solid ${theme.border}`,
+              background: theme.input,
+              color: theme.text,
+              cursor: slotModalLoading ? "not-allowed" : "pointer",
+              fontWeight: 700
+            }}
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSubmitSlotManagement}
+            disabled={slotModalLoading}
+            style={{
+              height: "42px",
+              padding: "0 1rem",
+              borderRadius: "0.65rem",
+              border: "none",
+              background: slotAction === "DELETE" ? "#dc2626" : "#2563eb",
+              color: "#ffffff",
+              cursor: slotModalLoading ? "not-allowed" : "pointer",
+              fontWeight: 700
+            }}
+          >
+            {slotModalLoading
+              ? "Processing..."
+              : slotAction === "ADD"
+                ? "Add slots"
+                : "Delete slots"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalField({ label, children }) {
+  return (
+    <label
+      style={{
+        display: "grid",
+        gap: "0.45rem",
+        color: theme.muted,
+        fontWeight: "700",
+        fontSize: "0.85rem"
+      }}
+    >
+      {label}
+      {children}
+    </label>
+  );
+}
+
+const inputStyle = {
+  height: "44px",
+  borderRadius: "0.65rem",
+  border: "1px solid var(--border-color)",
+  background: "var(--bg-input)",
+  color: "var(--text-main)",
+  padding: "0 0.75rem"
 };
 
 export default ParkingManagement;

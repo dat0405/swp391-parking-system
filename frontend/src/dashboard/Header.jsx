@@ -13,6 +13,49 @@ import axiosClient from '../api/axiosClient';
 const NOTIFICATION_STORAGE_KEY = 'parking_notifications';
 const LOGOUT_FLAG_KEY = 'isLoggingOut';
 const LOGOUT_STARTED_AT_KEY = 'logoutStartedAt';
+const THEME_STORAGE_KEY = 'theme';
+const LOGOUT_GUARD_MS = 15000;
+
+const getInitialTheme = () => {
+  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+
+  if (savedTheme === 'light') return 'light';
+  if (savedTheme === 'dark') return 'dark';
+
+  return 'dark';
+};
+
+const applyThemeToBody = (theme) => {
+  if (theme === 'light') {
+    document.body.classList.add('light-mode');
+    document.body.dataset.theme = 'light';
+    localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    return;
+  }
+
+  document.body.classList.remove('light-mode');
+  document.body.dataset.theme = 'dark';
+  localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+};
+
+const clearExpiredLogoutGuard = () => {
+  const isLoggingOut = localStorage.getItem(LOGOUT_FLAG_KEY) === 'true';
+  const logoutStartedAt = Number(localStorage.getItem(LOGOUT_STARTED_AT_KEY) || 0);
+
+  if (!isLoggingOut) return false;
+
+  const isStillFresh =
+    logoutStartedAt > 0 && Date.now() - logoutStartedAt < LOGOUT_GUARD_MS;
+
+  if (isStillFresh) {
+    return true;
+  }
+
+  localStorage.removeItem(LOGOUT_FLAG_KEY);
+  localStorage.removeItem(LOGOUT_STARTED_AT_KEY);
+
+  return false;
+};
 
 function Header() {
   const [currentUser, setCurrentUser] = useState({
@@ -25,16 +68,14 @@ function Header() {
   const [isOpenDropdown, setIsOpenDropdown] = useState(false);
   const [isOpenSettings, setIsOpenSettings] = useState(false);
   const [activeToast, setActiveToast] = useState(null);
-
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    return localStorage.getItem('theme') !== 'light';
-  });
+  const [theme, setTheme] = useState(getInitialTheme);
 
   const dropdownRef = useRef(null);
   const settingsRef = useRef(null);
   const currentUserRef = useRef(currentUser);
   const isLoggingOutRef = useRef(false);
 
+  const isDarkMode = theme === 'dark';
   const displayNotifications = notifications.slice(0, 8);
   const unreadCount = notifications.filter((notification) => !notification.isRead).length;
 
@@ -90,10 +131,7 @@ function Header() {
   };
 
   const loadUserInformation = async () => {
-    if (
-      isLoggingOutRef.current ||
-      localStorage.getItem(LOGOUT_FLAG_KEY) === 'true'
-    ) {
+    if (isLoggingOutRef.current || clearExpiredLogoutGuard()) {
       return;
     }
 
@@ -164,7 +202,6 @@ function Header() {
 
     try {
       const parsedNotifications = JSON.parse(savedNotifications);
-
       setNotifications(Array.isArray(parsedNotifications) ? parsedNotifications : []);
     } catch (error) {
       console.error('Không thể đọc notifications từ localStorage:', error);
@@ -215,28 +252,30 @@ function Header() {
   };
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.body.classList.remove('light-mode');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.body.classList.add('light-mode');
-      localStorage.setItem('theme', 'light');
-    }
-  }, [isDarkMode]);
+    applyThemeToBody(theme);
+  }, [theme]);
 
   useEffect(() => {
-    const handleStorageChange = () => {
-      if (localStorage.getItem(LOGOUT_FLAG_KEY) === 'true') {
+    const handleStorageChange = (event) => {
+      if (event.key === THEME_STORAGE_KEY) {
+        const nextTheme = event.newValue === 'light' ? 'light' : 'dark';
+        setTheme(nextTheme);
+        return;
+      }
+
+      if (clearExpiredLogoutGuard()) {
         return;
       }
 
       loadUserInformation();
+      loadNotificationsFromStorage();
     };
 
     const handlePageNotification = (event) => {
       triggerNewNotification(event.detail);
     };
 
+    applyThemeToBody(getInitialTheme());
     loadUserInformation();
     loadNotificationsFromStorage();
 
@@ -294,6 +333,10 @@ function Header() {
     });
   };
 
+  const handleToggleTheme = () => {
+    setTheme((prevTheme) => (prevTheme === 'dark' ? 'light' : 'dark'));
+  };
+
   const handleLogOut = async () => {
     if (isLoggingOutRef.current) {
       return;
@@ -325,11 +368,6 @@ function Header() {
       localStorage.removeItem('user');
       sessionStorage.clear();
 
-      /*
-       * Không xóa isLoggingOut và logoutStartedAt ở đây.
-       * App.jsx sẽ tự xóa sau một khoảng ngắn hoặc khi user login lại.
-       * Làm vậy để heartbeat không chạy lại trong lúc redirect.
-       */
       window.location.replace('/login');
     }
   };
@@ -341,13 +379,14 @@ function Header() {
 
   return (
     <div
+      className="app-header"
       style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: 'var(--bg-column-left, #0b0f19)',
+        backgroundColor: 'var(--bg-column-left)',
         padding: '0.75rem 1.5rem',
-        borderBottom: '1px solid var(--border-color, rgba(255, 255, 255, 0.05))',
+        border: '1px solid var(--border-color)',
         position: 'relative',
         width: '100%',
         boxSizing: 'border-box'
@@ -361,7 +400,7 @@ function Header() {
             left: '12px',
             top: '50%',
             transform: 'translateY(-50%)',
-            color: '#475569'
+            color: 'var(--text-muted)'
           }}
         />
 
@@ -371,10 +410,10 @@ function Header() {
           style={{
             width: '100%',
             padding: '0.5rem 1rem 0.5rem 2.5rem',
-            backgroundColor: 'var(--bg-input, #111827)',
-            border: '1px solid var(--border-color, #1f2937)',
+            backgroundColor: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
             borderRadius: '0.375rem',
-            color: 'var(--text-main, #f8fafc)',
+            color: 'var(--text-main)',
             fontSize: '0.85rem',
             outline: 'none',
             boxSizing: 'border-box'
@@ -392,24 +431,23 @@ function Header() {
       >
         <button
           type="button"
-          onClick={() => setIsDarkMode((prev) => !prev)}
+          onClick={handleToggleTheme}
           style={{
             background: 'none',
             border: 'none',
-            color: '#94a3b8',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
             padding: '0.25rem',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'color 0.2s ease'
+            justifyContent: 'center'
           }}
           title={isDarkMode ? 'Chuyển sang Chế độ Sáng' : 'Chuyển sang Chế độ Tối'}
         >
           {isDarkMode ? (
             <Sun size={20} style={{ color: '#f59e0b' }} />
           ) : (
-            <Moon size={20} style={{ color: '#475569' }} />
+            <Moon size={20} style={{ color: 'var(--text-muted)' }} />
           )}
         </button>
 
@@ -427,7 +465,7 @@ function Header() {
             style={{
               background: 'none',
               border: 'none',
-              color: '#94a3b8',
+              color: 'var(--text-muted)',
               cursor: 'pointer',
               padding: '0.25rem',
               position: 'relative',
@@ -437,7 +475,9 @@ function Header() {
           >
             <Bell
               size={20}
-              style={{ color: isOpenDropdown ? 'var(--text-main, #f8fafc)' : '#94a3b8' }}
+              style={{
+                color: isOpenDropdown ? 'var(--text-main)' : 'var(--text-muted)'
+              }}
             />
 
             {unreadCount > 0 && (
@@ -450,7 +490,7 @@ function Header() {
                   height: '8px',
                   backgroundColor: '#ef4444',
                   borderRadius: '50%',
-                  border: '2px solid var(--bg-column-left, #0b0f19)'
+                  border: '2px solid var(--bg-column-left)'
                 }}
               />
             )}
@@ -463,9 +503,9 @@ function Header() {
                 top: '40px',
                 right: '0',
                 width: '320px',
-                backgroundColor: 'var(--bg-input, #1e293b)',
+                backgroundColor: 'var(--bg-card)',
                 border: '1px solid #3b82f6',
-                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
+                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.35)',
                 borderRadius: '0.5rem',
                 padding: '0.75rem',
                 zIndex: 9999
@@ -504,7 +544,7 @@ function Header() {
                 style={{
                   margin: 0,
                   fontSize: '0.78rem',
-                  color: 'var(--text-main, #f1f5f9)',
+                  color: 'var(--text-main)',
                   lineHeight: '1.4'
                 }}
               >
@@ -520,10 +560,10 @@ function Header() {
                 top: '40px',
                 right: '0',
                 width: '360px',
-                backgroundColor: 'var(--bg-column-left, #0f172a)',
-                border: '1px solid var(--border-color, #1e293b)',
+                backgroundColor: 'var(--bg-column-left)',
+                border: '1px solid var(--border-color)',
                 borderRadius: '0.5rem',
-                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.35)',
                 zIndex: 9998,
                 padding: '0.5rem 0'
               }}
@@ -531,7 +571,7 @@ function Header() {
               <div
                 style={{
                   padding: '0.5rem 1rem',
-                  borderBottom: '1px solid var(--border-color, #1e293b)',
+                  borderBottom: '1px solid var(--border-color)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
@@ -542,7 +582,7 @@ function Header() {
                   style={{
                     fontSize: '0.85rem',
                     fontWeight: '700',
-                    color: 'var(--text-main, #ffffff)'
+                    color: 'var(--text-main)'
                   }}
                 >
                   Notifications
@@ -558,8 +598,8 @@ function Header() {
                   <span
                     style={{
                       fontSize: '0.7rem',
-                      backgroundColor: 'var(--bg-input, #1e293b)',
-                      color: 'var(--text-muted, #94a3b8)',
+                      backgroundColor: 'var(--bg-input)',
+                      color: 'var(--text-muted)',
                       padding: '0.1rem 0.4rem',
                       borderRadius: '0.25rem'
                     }}
@@ -591,7 +631,7 @@ function Header() {
                   <div
                     style={{
                       padding: '1rem',
-                      color: 'var(--text-muted, #64748b)',
+                      color: 'var(--text-muted)',
                       fontSize: '0.78rem',
                       textAlign: 'center'
                     }}
@@ -604,10 +644,10 @@ function Header() {
                       key={notification.id}
                       style={{
                         padding: '0.75rem 1rem',
-                        borderBottom: '1px solid rgba(255,255,255,0.02)',
+                        borderBottom: '1px solid var(--border-color)',
                         backgroundColor: notification.isRead
                           ? 'transparent'
-                          : 'rgba(59, 130, 246, 0.03)',
+                          : 'rgba(59, 130, 246, 0.08)',
                         cursor: 'pointer'
                       }}
                     >
@@ -615,14 +655,19 @@ function Header() {
                         style={{
                           margin: '0 0 0.35rem 0',
                           fontSize: '0.78rem',
-                          color: 'var(--text-main, #cbd5e1)',
+                          color: 'var(--text-main)',
                           lineHeight: '1.4'
                         }}
                       >
                         {notification.text}
                       </p>
 
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted, #64748b)' }}>
+                      <span
+                        style={{
+                          fontSize: '0.68rem',
+                          color: 'var(--text-muted)'
+                        }}
+                      >
                         {getTimeText(notification.createdAt)}
                       </span>
                     </div>
@@ -647,7 +692,7 @@ function Header() {
             style={{
               background: 'none',
               border: 'none',
-              color: '#94a3b8',
+              color: 'var(--text-muted)',
               cursor: 'pointer',
               padding: '0.25rem',
               display: 'flex',
@@ -656,7 +701,9 @@ function Header() {
           >
             <Settings
               size={20}
-              style={{ color: isOpenSettings ? 'var(--text-main, #f8fafc)' : '#94a3b8' }}
+              style={{
+                color: isOpenSettings ? 'var(--text-main)' : 'var(--text-muted)'
+              }}
             />
           </button>
 
@@ -667,10 +714,10 @@ function Header() {
                 top: '40px',
                 right: '0',
                 width: '150px',
-                backgroundColor: 'var(--bg-column-left, #0f172a)',
-                border: '1px solid var(--border-color, #1e293b)',
+                backgroundColor: 'var(--bg-column-left)',
+                border: '1px solid var(--border-color)',
                 borderRadius: '0.375rem',
-                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.35)',
                 zIndex: 9999,
                 padding: '0.25rem 0'
               }}
@@ -702,7 +749,7 @@ function Header() {
           style={{
             width: '1px',
             height: '24px',
-            backgroundColor: 'rgba(255,255,255,0.08)'
+            backgroundColor: 'var(--border-color)'
           }}
         />
 
@@ -712,8 +759,8 @@ function Header() {
               style={{
                 margin: 0,
                 fontSize: '0.88rem',
-                fontWeight: '600',
-                color: 'var(--text-main, #ffffff)',
+                fontWeight: '700',
+                color: 'var(--text-main)',
                 letterSpacing: '0.3px'
               }}
             >
@@ -723,8 +770,8 @@ function Header() {
             <span
               style={{
                 fontSize: '0.7rem',
-                color: 'var(--text-muted, #64748b)',
-                fontWeight: '500',
+                color: 'var(--text-muted)',
+                fontWeight: '600',
                 display: 'block',
                 marginTop: '1px'
               }}
@@ -739,11 +786,11 @@ function Header() {
               height: '32px',
               borderRadius: '50%',
               backgroundColor: '#3b82f6',
-              color: '#fff',
+              color: '#ffffff',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontWeight: '600',
+              fontWeight: '700',
               fontSize: '0.85rem'
             }}
           >
