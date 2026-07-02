@@ -378,19 +378,10 @@ function Header() {
   };
 
   return (
-    <div
-      className="app-header"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: 'var(--bg-column-left)',
-        padding: '0.75rem 1.5rem',
-        border: '1px solid var(--border-color)',
-        position: 'relative',
-        width: '100%',
-        boxSizing: 'border-box'
-      }}
+    /* 🔥 SỬA LỖI: Thay thế div bằng thẻ header, áp class đồng bộ và gỡ bỏ inline style gò bó nền/khung */
+    <header
+      className="dashboard-header"
+      style={{ boxSizing: 'border-box' }}
     >
       <div style={{ position: 'relative', width: '320px' }}>
         <Search
@@ -496,11 +487,12 @@ function Header() {
             )}
           </button>
 
+          {/* 🔥 CÂN CHỈNH DROPDOWN: Hạ top xuống 52px để khớp với chiều cao Header 70px mới */}
           {activeToast && (
             <div
               style={{
                 position: 'absolute',
-                top: '40px',
+                top: '52px',
                 right: '0',
                 width: '320px',
                 backgroundColor: 'var(--bg-card)',
@@ -553,11 +545,12 @@ function Header() {
             </div>
           )}
 
+          {/* 🔥 CÂN CHỈNH DROPDOWN: Hạ top xuống 52px */}
           {isOpenDropdown && (
             <div
               style={{
                 position: 'absolute',
-                top: '40px',
+                top: '52px',
                 right: '0',
                 width: '360px',
                 backgroundColor: 'var(--bg-column-left)',
@@ -707,11 +700,12 @@ function Header() {
             />
           </button>
 
+          {/* 🔥 CÂN CHỈNH DROPDOWN: Hạ top xuống 52px */}
           {isOpenSettings && (
             <div
               style={{
                 position: 'absolute',
-                top: '40px',
+                top: '52px',
                 right: '0',
                 width: '150px',
                 backgroundColor: 'var(--bg-column-left)',
@@ -798,7 +792,7 @@ function Header() {
           </div>
         </div>
       </div>
-    </div>
+    </header>
   );
 }
 

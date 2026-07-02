@@ -11,7 +11,9 @@ import {
   ArrowRight,
   CheckCircle2,
   X,
-  ChevronDown
+  ChevronDown,
+  Zap,
+  ShieldCheck
 } from "lucide-react";
 
 import Sidebar from "../dashboard/Sidebar";
@@ -316,6 +318,12 @@ function Booking() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successModal, setSuccessModal] = useState({ show: false, data: null });
+
+  // Khắc phục QR: Để mã QR luôn hiển thị đen trắng chuẩn mực trên mọi loại nền
+  const getFakeQRCode = (slotCode, amount) => {
+    const dataString = `Booking-Slot-${slotCode}-Amount-${amount}-VND`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=165x165&data=${encodeURIComponent(dataString)}&dark=000000&bgcolor=ffffff`;
+  };
 
   const getInitialTimeState = () => {
     const now = new Date();
@@ -1188,87 +1196,38 @@ function Booking() {
               padding: 0 0.5rem;
             }
 
-            .modal-overlay {
-              position: fixed;
-              top: 0;
-              left: 0;
-              right: 0;
-              bottom: 0;
-              background: rgba(3, 7, 18, 0.72);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              z-index: 2000;
-              backdrop-filter: blur(4px);
-              padding: 1rem;
+            /* =======================================================
+               CSS QUẢN LÝ ĐẢO MÀU MODAL THEO LIGHT/DARK MODE (TỰ ĐỘNG)
+               ======================================================= */
+            .pm-modal-card {
+              background: #111827 !important;
+              border: 1px solid rgba(59, 130, 246, 0.4) !important;
+              box-shadow: 0 0 35px rgba(59, 130, 246, 0.55) !important;
+            }
+            .pm-text-title { color: #ffffff !important; }
+            .pm-text-license { color: #ffffff !important; }
+            .pm-text-label { color: #6b7280 !important; }
+            .pm-text-value { color: #e5e7eb !important; }
+            .pm-text-subrow { color: #9ca3af !important; }
+            .pm-qr-box { 
+              background: #1e293b !important; 
+              border: 1px solid #334155 !important; 
             }
 
-            .modal-content-card {
-              background: var(--bg-card);
-              border: 1px solid var(--border-color);
-              padding: 2.5rem 2rem;
-              border-radius: 1rem;
-              width: 440px;
-              max-width: 100%;
-              text-align: center;
-              box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
-              position: relative;
-              box-sizing: border-box;
-              color: var(--text-main);
+            /* Áp dụng khi body ở chế độ Light Mode (Sáng) */
+            body.light-mode .pm-modal-card {
+              background: var(--bg-card) !important;
+              border: 1px solid var(--border-color) !important;
+              box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08), 0 0 15px rgba(59, 130, 246, 0.15) !important;
             }
-
-            .modal-close-btn {
-              position: absolute;
-              top: 1rem;
-              right: 1rem;
-              background: transparent;
-              border: none;
-              color: var(--text-muted);
-              cursor: pointer;
-            }
-
-            .modal-icon-circle {
-              background: var(--success-green-soft);
-              color: var(--success-green);
-              width: 64px;
-              height: 64px;
-              border-radius: 50%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              margin: 0 auto 1.5rem auto;
-            }
-
-            .modal-info-box {
-              background: var(--bg-card-soft);
-              border: 1px solid var(--border-color);
-              padding: 1rem;
-              border-radius: 0.6rem;
-              text-align: left;
-              margin-bottom: 1.5rem;
-              display: flex;
-              flex-direction: column;
-              gap: 0.5rem;
-              font-size: 0.85rem;
-            }
-
-            .info-box-row {
-              display: flex;
-              justify-content: space-between;
-              gap: 1rem;
-            }
-
-            .modal-primary-btn {
-              width: 100%;
-              padding: 0.75rem;
-              background: var(--success-green);
-              color: #ffffff;
-              border: none;
-              border-radius: 0.6rem;
-              cursor: pointer;
-              font-weight: 800;
-              font-size: 0.9rem;
-              box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+            body.light-mode .pm-text-title { color: var(--text-main) !important; }
+            body.light-mode .pm-text-license { color: var(--text-main) !important; }
+            body.light-mode .pm-text-label { color: var(--text-muted) !important; }
+            body.light-mode .pm-text-value { color: var(--text-main) !important; }
+            body.light-mode .pm-text-subrow { color: var(--text-muted) !important; }
+            body.light-mode .pm-qr-box { 
+              background: var(--bg-card-soft) !important; 
+              border: 1px solid var(--border-color) !important; 
             }
 
             @media (max-width: 1024px) {
@@ -1306,86 +1265,52 @@ function Booking() {
 
           <div className="booking-grid-layout">
             <form className="form-section-container" onSubmit={handleSubmit}>
+              {/* Form inputs blocks... */}
               <div className="booking-card-block">
                 <span className="block-section-tag">1. Vehicle Type</span>
-
                 <div className="vehicle-selector-grid">
                   <div
-                    className={`vehicle-card-option ${
-                      formData.vehicleType === "CAR" ? "active" : ""
-                    }`}
+                    className={`vehicle-card-option ${formData.vehicleType === "CAR" ? "active" : ""}`}
                     onClick={() => handleVehicleTypeChange("CAR")}
                   >
                     <Car
                       size={32}
-                      color={
-                        formData.vehicleType === "CAR"
-                          ? "#3b82f6"
-                          : "var(--text-muted)"
-                      }
+                      color={formData.vehicleType === "CAR" ? "#3b82f6" : "var(--text-muted)"}
                       style={{ margin: "0 auto 0.75rem auto" }}
                     />
-
                     <p className="vehicle-card-title">Car</p>
-
                     {formData.vehicleType === "CAR" && (
-                      <CheckCircle2
-                        size={18}
-                        color="#3b82f6"
-                        className="vehicle-card-check-icon"
-                      />
+                      <CheckCircle2 size={18} color="#3b82f6" className="vehicle-card-check-icon" />
                     )}
                   </div>
 
                   <div
-                    className={`vehicle-card-option ${
-                      formData.vehicleType === "MOTORBIKE" ? "active" : ""
-                    }`}
+                    className={`vehicle-card-option ${formData.vehicleType === "MOTORBIKE" ? "active" : ""}`}
                     onClick={() => handleVehicleTypeChange("MOTORBIKE")}
                   >
                     <Bike
                       size={32}
-                      color={
-                        formData.vehicleType === "MOTORBIKE"
-                          ? "#3b82f6"
-                          : "var(--text-muted)"
-                      }
+                      color={formData.vehicleType === "MOTORBIKE" ? "#3b82f6" : "var(--text-muted)"}
                       style={{ margin: "0 auto 0.75rem auto" }}
                     />
-
                     <p className="vehicle-card-title">Motorbike</p>
-
                     {formData.vehicleType === "MOTORBIKE" && (
-                      <CheckCircle2
-                        size={18}
-                        color="#3b82f6"
-                        className="vehicle-card-check-icon"
-                      />
+                      <CheckCircle2 size={18} color="#3b82f6" className="vehicle-card-check-icon" />
                     )}
                   </div>
                 </div>
               </div>
 
               <div className="booking-card-block">
-                <span className="block-section-tag">
-                  2. Reservation Details
-                </span>
-
+                <span className="block-section-tag">2. Reservation Details</span>
                 <div className="booking-inner-form">
                   <div className="form-group">
                     <label>Current user</label>
-
                     <div className="input-wrapper">
                       <User size={14} />
-
                       <input
                         type="text"
-                        value={
-                          currentUser?.fullName ||
-                          currentUser?.name ||
-                          currentUser?.email ||
-                          "Unknown user"
-                        }
+                        value={currentUser?.fullName || currentUser?.name || currentUser?.email || "Unknown user"}
                         readOnly
                       />
                     </div>
@@ -1393,7 +1318,6 @@ function Booking() {
 
                   <div className="form-group">
                     <label>User ID</label>
-
                     <div className="input-wrapper">
                       <FileText size={14} />
                       <input type="text" value={currentUserId || ""} readOnly />
@@ -1402,68 +1326,41 @@ function Booking() {
 
                   <div className="form-group">
                     <label>Available slot</label>
-
                     <div className="input-wrapper">
                       <MapPin size={14} />
-
-                      <div
-                        className="custom-slot-dropdown"
-                        ref={slotDropdownRef}
-                      >
+                      <div className="custom-slot-dropdown" ref={slotDropdownRef}>
                         <button
                           type="button"
                           className="custom-slot-trigger"
-                          onClick={() => {
-                            if (!slotsLoading) {
-                              setIsSlotDropdownOpen((prev) => !prev);
-                            }
-                          }}
+                          onClick={() => !slotsLoading && setIsSlotDropdownOpen((prev) => !prev)}
                           disabled={slotsLoading}
                         >
-                          <span
-                            className={
-                              !selectedSlot
-                                ? "custom-slot-trigger-placeholder"
-                                : ""
-                            }
-                          >
+                          <span className={!selectedSlot ? "custom-slot-trigger-placeholder" : ""}>
                             {slotsLoading
                               ? "Loading available slots..."
                               : selectedSlot
                                 ? `${selectedSlot.displayCode} - ${selectedSlot.typeLabel}`
                                 : "Select available slot"}
                           </span>
-
                           <ChevronDown size={16} />
                         </button>
 
                         {isSlotDropdownOpen && (
                           <div className="custom-slot-menu">
                             {availableSlots.length === 0 ? (
-                              <div className="custom-slot-empty">
-                                No available slots for this vehicle type.
-                              </div>
+                              <div className="custom-slot-empty">No available slots for this vehicle type.</div>
                             ) : (
                               availableSlots.map((slot) => {
-                                const isActive =
-                                  String(slot.id) === String(formData.slotId);
-
+                                const isActive = String(slot.id) === String(formData.slotId);
                                 return (
                                   <button
                                     key={slot.id}
                                     type="button"
-                                    className={`custom-slot-option ${
-                                      isActive ? "active" : ""
-                                    }`}
+                                    className={`custom-slot-option ${isActive ? "active" : ""}`}
                                     onClick={() => handleSelectSlot(slot)}
                                   >
-                                    <span className="custom-slot-option-code">
-                                      {slot.displayCode}
-                                    </span>
-
-                                    <span className="custom-slot-option-type">
-                                      {slot.typeLabel}
-                                    </span>
+                                    <span className="custom-slot-option-code">{slot.displayCode}</span>
+                                    <span className="custom-slot-option-type">{slot.typeLabel}</span>
                                   </button>
                                 );
                               })
@@ -1472,27 +1369,17 @@ function Booking() {
                         )}
                       </div>
                     </div>
-
                     {slotsError ? (
                       <small className="field-error-text">{slotsError}</small>
                     ) : (
-                      <small className="field-helper-text">
-                        Only available slots for the selected vehicle type are
-                        shown.
-                      </small>
+                      <small className="field-helper-text">Only available slots for the selected vehicle type are shown.</small>
                     )}
                   </div>
 
                   <div className="form-group">
                     <label>License plate</label>
-
                     <div className="input-wrapper">
-                      {formData.vehicleType === "CAR" ? (
-                        <Car size={14} />
-                      ) : (
-                        <Bike size={14} />
-                      )}
-
+                      {formData.vehicleType === "CAR" ? <Car size={14} /> : <Bike size={14} />}
                       <input
                         type="text"
                         name="licensePlate"
@@ -1501,205 +1388,100 @@ function Booking() {
                         placeholder={getPlatePlaceholder(formData.vehicleType)}
                       />
                     </div>
-
-                    <small className="plate-hint">
-                      {getPlateHint(formData.vehicleType)}
-                    </small>
+                    <small className="plate-hint">{getPlateHint(formData.vehicleType)}</small>
                   </div>
 
                   <div className="time-section-header">
                     <div>
                       <h4>Parking Time</h4>
-                      <p>
-                        Choose a start and end time using 24-hour format. You can
-                        also use quick duration buttons.
-                      </p>
+                      <p>Choose a start and end time using 24-hour format. You can also use quick duration buttons.</p>
                     </div>
                   </div>
 
                   <div className="quick-duration-row">
                     <span className="quick-duration-label">Quick select</span>
-
-                    <button
-                      type="button"
-                      className="quick-duration-btn"
-                      onClick={() => applyQuickDuration(1)}
-                    >
-                      +1 hour
-                    </button>
-
-                    <button
-                      type="button"
-                      className="quick-duration-btn"
-                      onClick={() => applyQuickDuration(2)}
-                    >
-                      +2 hours
-                    </button>
-
-                    <button
-                      type="button"
-                      className="quick-duration-btn"
-                      onClick={() => applyQuickDuration(4)}
-                    >
-                      +4 hours
-                    </button>
-
-                    <button
-                      type="button"
-                      className="quick-duration-btn"
-                      onClick={applyFullDay}
-                    >
-                      Full day
-                    </button>
+                    <button type="button" className="quick-duration-btn" onClick={() => applyQuickDuration(1)}>+1 hour</button>
+                    <button type="button" className="quick-duration-btn" onClick={() => applyQuickDuration(2)}>+2 hours</button>
+                    <button type="button" className="quick-duration-btn" onClick={() => applyQuickDuration(4)}>+4 hours</button>
+                    <button type="button" className="quick-duration-btn" onClick={applyFullDay}>Full day</button>
                   </div>
 
                   <div className="form-group">
                     <label>Start date</label>
-
                     <div className="input-wrapper">
                       <CalendarDays size={14} />
-
-                      <input
-                        type="date"
-                        name="startDate"
-                        value={formData.startDate}
-                        onChange={handleChange}
-                      />
+                      <input type="date" name="startDate" value={formData.startDate} onChange={handleChange} />
                     </div>
                   </div>
 
                   <div className="form-group">
                     <label>Start time</label>
-
                     <div className="input-wrapper">
                       <Clock size={14} />
-
-                      <input
-                        type="time"
-                        name="startTime"
-                        value={formData.startTime}
-                        onChange={handleChange}
-                        step="300"
-                      />
+                      <input type="time" name="startTime" value={formData.startTime} onChange={handleChange} step="300" />
                     </div>
                   </div>
 
                   <div className="form-group">
                     <label>End date</label>
-
                     <div className="input-wrapper">
                       <CalendarDays size={14} />
-
-                      <input
-                        type="date"
-                        name="endDate"
-                        value={formData.endDate}
-                        onChange={handleChange}
-                      />
+                      <input type="date" name="endDate" value={formData.endDate} onChange={handleChange} />
                     </div>
                   </div>
 
                   <div className="form-group">
                     <label>End time</label>
-
                     <div className="input-wrapper">
                       <Clock size={14} />
-
-                      <input
-                        type="time"
-                        name="endTime"
-                        value={formData.endTime}
-                        onChange={handleChange}
-                        step="300"
-                      />
+                      <input type="time" name="endTime" value={formData.endTime} onChange={handleChange} step="300" />
                     </div>
                   </div>
 
-                  {timeError && (
-                    <div className="time-error-box">{timeError}</div>
-                  )}
+                  {timeError && <div className="time-error-box">{timeError}</div>}
                 </div>
               </div>
             </form>
 
+            {/* Sidebar Summary */}
             <div className="summary-sidebar-panel">
               <h3 className="summary-title">Reservation Summary</h3>
-
-              <div
-                className="info-box-row"
-                style={{ fontSize: "0.9rem", marginBottom: "1rem" }}
-              >
+              <div className="summary-time-row" style={{ fontSize: "0.9rem", marginBottom: "1rem" }}>
                 <span className="summary-label">Vehicle Type</span>
                 <span className="summary-value">{formData.vehicleType}</span>
               </div>
-
-              <div
-                className="info-box-row"
-                style={{ fontSize: "0.9rem", marginBottom: "1rem" }}
-              >
+              <div className="summary-time-row" style={{ fontSize: "0.9rem", marginBottom: "1rem" }}>
                 <span className="summary-label">Selected Slot</span>
-                <span className="summary-value">
-                  {selectedSlot ? selectedSlot.displayCode : "Not selected"}
-                </span>
+                <span className="summary-value">{selectedSlot ? selectedSlot.displayCode : "Not selected"}</span>
               </div>
-
-              <div
-                className="info-box-row"
-                style={{ fontSize: "0.9rem", marginBottom: "1rem" }}
-              >
+              <div className="summary-time-row" style={{ fontSize: "0.9rem", marginBottom: "1rem" }}>
                 <span className="summary-label">License Plate</span>
-                <span className="summary-value">
-                  {formData.licensePlate || "Not entered"}
-                </span>
+                <span className="summary-value">{formData.licensePlate || "Not entered"}</span>
               </div>
 
               <div className="summary-time-box">
                 <div className="summary-time-row">
                   <span className="summary-label">From</span>
-                  <span className="summary-value">
-                    {formatDisplayDateTime(
-                      formData.startDate,
-                      formData.startTime
-                    )}
-                  </span>
+                  <span className="summary-value">{formatDisplayDateTime(formData.startDate, formData.startTime)}</span>
                 </div>
-
                 <div className="summary-time-row">
                   <span className="summary-label">To</span>
-                  <span className="summary-value">
-                    {formatDisplayDateTime(formData.endDate, formData.endTime)}
-                  </span>
+                  <span className="summary-value">{formatDisplayDateTime(formData.endDate, formData.endTime)}</span>
                 </div>
-
                 <div className="summary-time-row">
                   <span className="summary-label">Duration</span>
-                  <span className="summary-value">
-                    {formatDurationText(durationMinutes)}
-                  </span>
+                  <span className="summary-value">{formatDurationText(durationMinutes)}</span>
                 </div>
               </div>
 
-              <div
-                className="info-box-row"
-                style={{ fontSize: "0.9rem", marginBottom: "1rem" }}
-              >
+              <div className="summary-time-row" style={{ fontSize: "0.9rem", marginBottom: "1rem" }}>
                 <span className="summary-label">Rate per Hour</span>
-                <span className="summary-value">
-                  {formData.vehicleType === "CAR" ? "5,000" : "4,000"} VNĐ
-                </span>
+                <span className="summary-value">{formData.vehicleType === "CAR" ? "5,000" : "4,000"} VNĐ</span>
               </div>
-
               <div className="summary-divider"></div>
-
-              <div
-                className="info-box-row"
-                style={{ alignItems: "center", marginBottom: "1.75rem" }}
-              >
+              <div className="summary-time-row" style={{ alignItems: "center", marginBottom: "1.75rem" }}>
                 <span className="summary-total-label">TOTAL ESTIMATED</span>
-
-                <span className="summary-total-value">
-                  {totalEstimated.toLocaleString("vi-VN")} VNĐ
-                </span>
+                <span className="summary-total-value">{totalEstimated.toLocaleString("vi-VN")} VNĐ</span>
               </div>
 
               <button
@@ -1711,122 +1493,168 @@ function Booking() {
                 <span>{isSubmitting ? "Creating..." : "Confirm Booking"}</span>
                 <ArrowRight size={16} />
               </button>
-
-              <p className="booking-note-text">
-                After a booking is created successfully, the system will
-                redirect you to the Reservations page for tracking and
-                management.
-              </p>
+              <p className="booking-note-text">After a booking is created successfully, the system will redirect you to the Reservations page.</p>
             </div>
           </div>
         </div>
 
-        {successModal.show && (
-          <div className="modal-overlay">
-            <div className="modal-content-card">
-              <button onClick={closeSuccessModal} className="modal-close-btn">
-                <X size={18} />
-              </button>
-
-              <div className="modal-icon-circle">
-                <CheckCircle2 size={36} />
-              </div>
-
-              <h3
+        {/* ==========================================
+            OVERLAY MODAL FIXED FOR LIGHT & DARK MODE
+           ========================================== */}
+        {successModal.show && successModal.data && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0, left: 0, right: 0, bottom: 0,
+              background: "rgba(10, 15, 30, 0.8)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              backdropFilter: "blur(4px)",
+              padding: "1rem"
+            }}
+          >
+            <div
+              className="pm-modal-card"
+              style={{
+                padding: "2rem",
+                borderRadius: "1rem",
+                width: "720px",
+                maxWidth: "100%",
+                position: "relative",
+                fontFamily: "sans-serif",
+                boxSizing: "border-box",
+                transition: "all 0.25s ease"
+              }}
+            >
+              {/* Close Button X */}
+              <button
+                onClick={closeSuccessModal}
                 style={{
-                  color: "var(--text-main)",
-                  margin: "0 0 0.5rem 0",
-                  fontSize: "1.4rem",
-                  fontWeight: "800"
+                  position: "absolute",
+                  top: "1.25rem", right: "1.25rem",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#9ca3af"
                 }}
               >
-                Booking Confirmed!
+                <X size={20} />
+              </button>
+
+              {/* Modal Header */}
+              <h3 className="pm-text-title" style={{ marginTop: 0, fontSize: "1.1rem", fontWeight: "600", marginBottom: "1.5rem" }}>
+                Booking & QR Payment
               </h3>
 
-              <p
-                style={{
-                  color: "var(--text-muted)",
-                  fontSize: "0.9rem",
-                  margin: "0 0 1.75rem 0",
-                  lineHeight: "1.5"
-                }}
-              >
-                Your parking reservation has been created successfully.
-              </p>
+              {/* Two Column Content Grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: "2.5rem" }}>
+                
+                {/* LEFT DETAILS PANEL */}
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    <span className="pm-text-license" style={{ fontSize: "1.8rem", fontWeight: "800", letterSpacing: "0.5px" }}>
+                      {successModal.data.licensePlate}
+                    </span>
+                    <span style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981", padding: "0.25rem 0.6rem", borderRadius: "0.375rem", fontSize: "0.72rem", fontWeight: "700" }}>
+                      CONFIRMED
+                    </span>
+                  </div>
 
-              <div className="modal-info-box">
-                <div className="info-box-row">
-                  <span style={{ color: "var(--text-muted)" }}>
-                    Vehicle Type:
-                  </span>
-                  <span
-                    style={{
-                      color: "var(--text-main)",
-                      fontWeight: "700"
-                    }}
-                  >
-                    {successModal.data?.vehicleType}
-                  </span>
+                  <div className="pm-text-subrow" style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>
+                    Slot: {successModal.data.slotDisplayCode || "N/A"}
+                  </div>
+
+                  {/* Metadata 2x2 Grid */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem 1rem", marginTop: "1.5rem" }}>
+                    <div>
+                      <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>START TIME</div>
+                      <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
+                        {formatDisplayDateTime(formData.startDate, formData.startTime)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>END TIME</div>
+                      <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
+                        {formatDisplayDateTime(formData.endDate, formData.endTime)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>DURATION</div>
+                      <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
+                        {successModal.data.durationText}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>PRICE PER HOUR</div>
+                      <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
+                        {formData.vehicleType === "CAR" ? "5,000" : "4,000"} VNĐ / giờ
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Price breakdown block */}
+                  <div style={{ marginTop: "1.5rem", borderTop: "1px solid rgba(128,128,128,0.2)", paddingTop: "1.25rem", display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
+                      <span className="pm-text-subrow">Reservation Fee</span>
+                      <span className="pm-text-title" style={{ fontWeight: "600" }}>{totalEstimated.toLocaleString("vi-VN")} VNĐ</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
+                      <span className="pm-text-subrow">Service Charge</span>
+                      <span className="pm-text-title" style={{ fontWeight: "600" }}>0 VNĐ</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.1rem", fontWeight: "700", borderTop: "1px dashed rgba(128,128,128,0.3)", paddingTop: "1rem", marginTop: "0.25rem" }}>
+                      <span className="pm-text-title">Total Amount</span>
+                      <span style={{ color: "#10b981", fontSize: "1.25rem", fontWeight: "800" }}>
+                        {totalEstimated.toLocaleString("vi-VN")} VNĐ
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="info-box-row">
-                  <span style={{ color: "var(--text-muted)" }}>
-                    Target Location:
-                  </span>
-                  <span
+                {/* RIGHT QR PAYMENT CODE PANEL */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <div className="pm-text-title" style={{ fontSize: "1.1rem", fontWeight: "600", marginBottom: "1rem" }}>
+                    Scan QR Code for Payment
+                  </div>
+
+                  <div
+                    className="pm-qr-box"
                     style={{
-                      color: "var(--primary-blue)",
-                      fontWeight: "800"
+                      padding: "1.25rem",
+                      borderRadius: "0.75rem",
+                      display: "inline-block"
                     }}
                   >
-                    {successModal.data?.slotDisplayCode}
-                  </span>
+                    {/* Hộp màu trắng bao quanh mã QR luôn cố định để chống lỗi lóa mắt / đảo ngược màu */}
+                    <div style={{ background: "#ffffff", padding: "0.5rem", borderRadius: "0.4rem", display: "block" }}>
+                      <img
+                        src={getFakeQRCode(successModal.data.slotDisplayCode, totalEstimated)}
+                        alt="Scannable standard booking payment QR code"
+                        style={{ display: "block" }}
+                        width={165}
+                        height={165}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pm-text-subrow" style={{ fontSize: "0.78rem", textAlign: "center", marginTop: "1rem", maxWidth: "220px", lineHeight: "1.4" }}>
+                    Please scan the QR code to complete your parking payment.
+                  </div>
+
+                  {/* Verification Badges Section */}
+                  <div style={{ display: "flex", gap: "1rem", marginTop: "1.5rem", borderTop: "1px solid rgba(128,128,128,0.2)", paddingTop: "1rem", width: "100%", justifyContent: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: "#60a5fa", fontSize: "0.72rem", fontWeight: "600" }}>
+                      <Zap size={13} fill="#60a5fa" /> Instant Confirmation
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: "#60a5fa", fontSize: "0.72rem", fontWeight: "600" }}>
+                      <ShieldCheck size={13} fill="transparent" /> Secure Payment
+                    </div>
+                  </div>
                 </div>
 
-                <div className="info-box-row">
-                  <span style={{ color: "var(--text-muted)" }}>
-                    License Plate:
-                  </span>
-                  <span
-                    style={{
-                      color: "var(--success-green)",
-                      fontWeight: "800"
-                    }}
-                  >
-                    {successModal.data?.licensePlate}
-                  </span>
-                </div>
-
-                <div className="info-box-row">
-                  <span style={{ color: "var(--text-muted)" }}>Duration:</span>
-                  <span
-                    style={{
-                      color: "var(--text-main)",
-                      fontWeight: "800"
-                    }}
-                  >
-                    {successModal.data?.durationText}
-                  </span>
-                </div>
-
-                <div className="info-box-row">
-                  <span style={{ color: "var(--text-muted)" }}>
-                    Total Estimated:
-                  </span>
-                  <span
-                    style={{
-                      color: "var(--primary-blue)",
-                      fontWeight: "800"
-                    }}
-                  >
-                    {totalEstimated.toLocaleString("vi-VN")} VNĐ
-                  </span>
-                </div>
               </div>
-
-              <button onClick={closeSuccessModal} className="modal-primary-btn">
-                Great, Thank You
-              </button>
             </div>
           </div>
         )}

@@ -44,7 +44,7 @@
   );
   --sidebar-active-text: #ffffff;
 
-  --shadow-card: 0 18px 40px rgba(0, 0, 0, 0.28);
+  --shadow-card: 0 20px 40px rgba(0, 0, 0, 0.4);
 }
 
 body.light-mode {
@@ -85,7 +85,7 @@ body.light-mode {
   --sidebar-active-bg: linear-gradient(90deg, #dbeafe 0%, #f1f5ff 100%);
   --sidebar-active-text: #0f172a;
 
-  --shadow-card: 0 12px 28px rgba(15, 23, 42, 0.08);
+  --shadow-card: 0 12px 28px rgba(15, 23, 42, 0.06);
 }
 
 /* ==========================================================================
@@ -99,7 +99,8 @@ body.light-mode {
     background-color 0.22s ease,
     border-color 0.22s ease,
     color 0.22s ease,
-    box-shadow 0.22s ease !important;
+    box-shadow 0.22s ease,
+    transform 0.22s ease !important;
   box-sizing: border-box;
 }
 
@@ -352,21 +353,8 @@ textarea::placeholder {
   flex-shrink: 0 !important;
 }
 
-.brand-text h2 {
-  margin: 0 !important;
-  color: var(--text-main) !important;
-  font-size: 1rem !important;
-  font-weight: 800 !important;
-  line-height: 1.2 !important;
-}
-
-.brand-text span {
-  display: block !important;
-  margin-top: 0.25rem !important;
-  color: var(--text-muted) !important;
-  font-size: 0.65rem !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.08em !important;
+.sidebar-brand * {
+  color: inherit !important;
 }
 
 .sidebar-menu {
@@ -384,7 +372,6 @@ textarea::placeholder {
   background: transparent !important;
 }
 
-/* Reset menu button */
 .sidebar .menu-item {
   appearance: none !important;
   -webkit-appearance: none !important;
@@ -412,39 +399,10 @@ textarea::placeholder {
   stroke: currentColor !important;
 }
 
-.sidebar .menu-item-icon {
-  width: 22px !important;
-  height: 22px !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  color: inherit !important;
-  flex-shrink: 0 !important;
-}
-
-.sidebar .menu-item-label {
-  color: inherit !important;
-  white-space: nowrap !important;
-}
-
 /* Dark sidebar */
 body:not(.light-mode) .sidebar {
   background-color: #05070c !important;
   border-right-color: #1e293b !important;
-}
-
-body:not(.light-mode) .sidebar .brand-text h2 {
-  color: #ffffff !important;
-}
-
-body:not(.light-mode) .sidebar .brand-text span {
-  color: #94a3b8 !important;
-}
-
-body:not(.light-mode) .sidebar .menu-item {
-  background: transparent !important;
-  background-color: transparent !important;
-  color: #cbd5e1 !important;
 }
 
 body:not(.light-mode) .sidebar .menu-item:hover {
@@ -454,11 +412,7 @@ body:not(.light-mode) .sidebar .menu-item:hover {
 
 body:not(.light-mode) .sidebar .menu-item.active,
 body:not(.light-mode) .sidebar .menu-item[aria-current="page"] {
-  background: linear-gradient(
-    90deg,
-    rgba(59, 130, 246, 0.28) 0%,
-    rgba(15, 23, 42, 0.92) 100%
-  ) !important;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.28) 0%, rgba(15, 23, 42, 0.92) 100%) !important;
   color: #ffffff !important;
   border-left: 3px solid #3b82f6 !important;
 }
@@ -469,20 +423,6 @@ body.light-mode .sidebar {
   border-right-color: #dbe3ee !important;
 }
 
-body.light-mode .sidebar .brand-text h2 {
-  color: #020617 !important;
-}
-
-body.light-mode .sidebar .brand-text span {
-  color: #64748b !important;
-}
-
-body.light-mode .sidebar .menu-item {
-  background: transparent !important;
-  background-color: transparent !important;
-  color: #0f172a !important;
-}
-
 body.light-mode .sidebar .menu-item:hover {
   background: #eef5ff !important;
   color: #2563eb !important;
@@ -490,155 +430,14 @@ body.light-mode .sidebar .menu-item:hover {
 
 body.light-mode .sidebar .menu-item.active,
 body.light-mode .sidebar .menu-item[aria-current="page"] {
-  background: linear-gradient(
-    90deg,
-    #dbeafe 0%,
-    #f1f5ff 100%
-  ) !important;
+  background: linear-gradient(90deg, #dbeafe 0%, #f1f5ff 100%) !important;
   color: #0f172a !important;
   border-left: 3px solid #2563eb !important;
 }
 
-/* Prevent global rules from turning sidebar text white */
 body.light-mode .sidebar .menu-item *,
 body:not(.light-mode) .sidebar .menu-item * {
   color: inherit !important;
-}
-
-/* ==========================================================================
-   THEME HELPER CLASSES
-   ========================================================================== */
-
-.theme-card,
-.stat-card,
-.chart-card,
-.report-card,
-.report-summary-card,
-.report-chart-card,
-.report-side-card,
-.report-operational-log,
-.occupancy-trends-box {
-  background-color: var(--bg-card) !important;
-  border: 1px solid var(--border-color) !important;
-  color: var(--text-main) !important;
-  box-shadow: var(--shadow-card);
-}
-
-.text-main {
-  color: var(--text-main) !important;
-}
-
-.text-muted {
-  color: var(--text-muted) !important;
-}
-
-.text-soft {
-  color: var(--text-soft) !important;
-}
-
-.bg-page {
-  background-color: var(--bg-dashboard) !important;
-}
-
-.bg-card {
-  background-color: var(--bg-card) !important;
-}
-
-.border-theme {
-  border-color: var(--border-color) !important;
-}
-
-/* ==========================================================================
-   LIGHT MODE FIX FOR INLINE-STYLED PAGES
-   ========================================================================== */
-
-body.light-mode .main-content {
-  background-color: var(--bg-dashboard) !important;
-  color: var(--text-main) !important;
-}
-
-body.light-mode .main-content h1,
-body.light-mode .main-content h2,
-body.light-mode .main-content h3,
-body.light-mode .main-content h4 {
-  color: var(--text-main) !important;
-}
-
-/* Inline white text turns dark in light mode */
-body.light-mode .main-content *:not(button)[style*="color: #fff"],
-body.light-mode .main-content *:not(button)[style*="color:#fff"],
-body.light-mode .main-content *:not(button)[style*="color: #ffffff"],
-body.light-mode .main-content *:not(button)[style*="color:#ffffff"],
-body.light-mode .main-content *:not(button)[style*="color: rgb(255, 255, 255)"] {
-  color: var(--text-main) !important;
-}
-
-/* Muted text */
-body.light-mode .main-content *[style*="color: #94a3b8"],
-body.light-mode .main-content *[style*="color:#94a3b8"],
-body.light-mode .main-content *[style*="color: rgb(148, 163, 184)"] {
-  color: var(--text-muted) !important;
-}
-
-body.light-mode .main-content *[style*="color: #64748b"],
-body.light-mode .main-content *[style*="color:#64748b"],
-body.light-mode .main-content *[style*="color: rgb(100, 116, 139)"] {
-  color: var(--text-muted) !important;
-}
-
-/* Convert dark cards/panels to light cards */
-body.light-mode .main-content div[style*="background: #0c1322"],
-body.light-mode .main-content div[style*="background:#0c1322"],
-body.light-mode .main-content div[style*="background-color: #0c1322"],
-body.light-mode .main-content div[style*="background-color:#0c1322"],
-body.light-mode .main-content div[style*="background: rgb(12, 19, 34)"],
-body.light-mode .main-content div[style*="background-color: rgb(12, 19, 34)"] {
-  background: var(--bg-card) !important;
-  background-color: var(--bg-card) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-main) !important;
-  box-shadow: var(--shadow-card);
-}
-
-/* Inputs/selects in light mode */
-body.light-mode .main-content input,
-body.light-mode .main-content select,
-body.light-mode .main-content textarea {
-  background-color: var(--bg-input) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-main) !important;
-}
-
-/* Keep dark action buttons readable */
-body.light-mode .main-content button[style*="#0c1322"],
-body.light-mode .main-content button[style*="#111827"],
-body.light-mode .main-content button[style*="#0f172a"],
-body.light-mode .main-content button[style*="rgb(12, 19, 34)"] {
-  background-color: #111827 !important;
-  color: #ffffff !important;
-  border-color: #1e293b !important;
-}
-
-body.light-mode .main-content button[style*="#3b82f6"],
-body.light-mode .main-content button[style*="#2563eb"] {
-  color: #ffffff !important;
-}
-
-/* ==========================================================================
-   DARK MODE FIX FOR INLINE-STYLED PAGES
-   ========================================================================== */
-
-body:not(.light-mode) .main-content {
-  background-color: var(--bg-dashboard) !important;
-  color: var(--text-main) !important;
-}
-
-body:not(.light-mode) .main-content input,
-body:not(.light-mode) .main-content select,
-body:not(.light-mode) .main-content textarea {
-  background-color: var(--bg-input) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-main) !important;
 }
 
 /* ==========================================================================
@@ -658,14 +457,6 @@ thead,
 tbody,
 .table-row {
   background-color: var(--bg-table-row);
-}
-
-th {
-  color: var(--text-muted);
-}
-
-td {
-  color: var(--text-main);
 }
 
 body.light-mode .main-content table {
@@ -694,39 +485,234 @@ body.light-mode .main-content tr {
   border-color: var(--border-soft) !important;
 }
 
-/* Pricing table */
-.pricing-table-wrapper {
-  width: 100% !important;
-  overflow-x: auto !important;
-  overflow-y: visible !important;
+/* ==========================================================================
+   🔥 ULTRA GLASSMORPHISM SYSTEM WITH EXTRA DEPTH
+   ========================================================================== */
+
+.app-global-private-container {
+  width: 100vw !important;
+  height: 100vh !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  position: relative !important;
+  overflow: hidden !important;
 }
 
-.pricing-table-wrapper table {
+/* Lớp phủ mờ bãi xe */
+.app-global-backdrop-mask {
   width: 100% !important;
-  min-width: 1050px !important;
+  height: 100% !important;
+  background: rgba(4, 6, 12, 0.62) !important; 
+  position: relative !important;
 }
 
-.pricing-table-wrapper tr {
-  height: 76px !important;
+body.light-mode .app-global-backdrop-mask {
+  background: rgba(240, 244, 250, 0.72) !important;
+}
+
+body.light-mode .app-global-private-container .main-content,
+body:not(.light-mode) .app-global-private-container .main-content,
+.app-global-private-container .dashboard-layout,
+.app-global-private-container .main-content {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.app-global-private-container .main-content {
+  padding-top: 6.5rem !important; 
+}
+
+body.light-mode .main-content p {
+  color: #334155 !important; 
+}
+
+/* HEADER TRÀN VIỀN GHIM CỨNG BẤT ĐỘNG 100% */
+.main-content > header,
+.main-content > .header,
+.main-content > div:first-child,
+.dashboard-header {
+  position: fixed !important;
+  top: 0 !important;
+  right: 0 !important;
+  left: 260px !important; 
+  height: 70px !important; 
+  margin: 0 !important; 
+  border-radius: 0 !important; 
+  border-left: none !important;
+  border-top: none !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  padding: 0 2rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  z-index: 1000 !important; 
+}
+
+.app-global-private-container .main-content > header,
+.app-global-private-container .main-content > .header,
+.app-global-private-container .main-content > div:first-child,
+.dashboard-header {
+  background: rgba(12, 19, 34, 0.9) !important;
+  background-color: rgba(12, 19, 34, 0.9) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.4) !important;
+}
+
+body.light-mode .app-global-private-container .main-content > header,
+body.light-mode .app-global-private-container .main-content > .header,
+body.light-mode .app-global-private-container .main-content > div:first-child,
+body.light-mode .dashboard-header {
+  background: rgba(255, 255, 255, 0.95) !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.12) !important;
+  box-shadow: 0 6px 30px rgba(15, 23, 42, 0.05) !important;
+}
+
+/* CARD KÍNH MỜ CHẾ ĐỘ TỐI */
+.app-global-private-container .theme-card,
+.app-global-private-container .stat-card,
+.app-global-private-container .chart-card,
+.app-global-private-container .report-card,
+.app-global-private-container .report-summary-card,
+.app-global-private-container .report-chart-card,
+.app-global-private-container .report-side-card,
+.app-global-private-container .report-operational-log,
+.app-global-private-container .occupancy-trends-box,
+.feature-card-glass,
+.main-content div[class*="card"],
+.main-content div[class*="box"],
+.main-content div[class*="Card"],
+.main-content div[class*="Box"],
+.app-global-private-container .main-content div[style*="background: #0c1322"],
+.app-global-private-container .main-content div[style*="background:#0c1322"],
+.app-global-private-container .main-content div[style*="background-color: #0c1322"],
+.app-global-private-container .main-content div[style*="background-color:#0c1322"],
+.app-global-private-container .main-content div[style*="background: rgb(12, 19, 34)"],
+.app-global-private-container .main-content div[style*="background-color: rgb(12, 19, 34)"] {
+  background: rgba(11, 17, 32, 0.84) !important; 
+  background-color: rgba(11, 17, 32, 0.84) !important;
+  backdrop-filter: blur(28px) !important; 
+  -webkit-backdrop-filter: blur(28px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 30px 65px -10px rgba(0, 0, 0, 0.75), 
+              0 15px 30px -5px rgba(0, 0, 0, 0.5), 
+              inset 0 1px 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+
+.app-global-private-container .theme-card:hover,
+.app-global-private-container .stat-card:hover,
+.app-global-private-container .chart-card:hover,
+.app-global-private-container .report-card:hover,
+.app-global-private-container .report-summary-card:hover,
+.app-global-private-container .report-chart-card:hover,
+.app-global-private-container .report-side-card:hover,
+.app-global-private-container .report-operational-log:hover,
+.app-global-private-container .occupancy-trends-box:hover,
+.feature-card-glass:hover,
+.main-content div[class*="card"]:hover,
+.main-content div[class*="box"]:hover,
+.main-content div[class*="Card"]:hover,
+.main-content div[class*="Box"]:hover,
+.app-global-private-container .main-content div[style*="background"]:hover {
+  transform: translateY(-5px) !important;
+  border-color: rgba(59, 130, 246, 0.45) !important;
+  box-shadow: 0 40px 80px -15px rgba(0, 0, 0, 0.9), 
+              0 20px 40px -8px rgba(59, 130, 246, 0.35), 
+              inset 0 1px 1px 0 rgba(255, 255, 255, 0.3) !important;
+}
+
+/* CARD KÍNH MỜ CHẾ ĐỘ SÁNG */
+body.light-mode .app-global-private-container .theme-card,
+body.light-mode .app-global-private-container .stat-card,
+body.light-mode .app-global-private-container .chart-card,
+body.light-mode .app-global-private-container .report-card,
+body.light-mode .app-global-private-container .report-summary-card,
+body.light-mode .app-global-private-container .report-chart-card,
+body.light-mode .app-global-private-container .report-side-card,
+body.light-mode .app-global-private-container .report-operational-log,
+body.light-mode .app-global-private-container .occupancy-trends-box,
+body.light-mode .feature-card-glass,
+body.light-mode .main-content div[class*="card"],
+body.light-mode .main-content div[class*="box"],
+body.light-mode .main-content div[class*="Card"],
+body.light-mode .main-content div[class*="Box"],
+body.light-mode .app-global-private-container .main-content div[style*="background"],
+body.light-mode .app-global-private-container .main-content div[style*="background-color"] {
+  background: rgba(255, 255, 255, 0.92) !important;
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  border: 1px solid rgba(15, 23, 42, 0.12) !important;
+  color: var(--text-main) !important;
+  box-shadow: 0 25px 55px -12px rgba(15, 23, 42, 0.12), 
+              0 10px 25px -5px rgba(15, 23, 42, 0.06), 
+              inset 0 1px 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+
+body.light-mode .app-global-private-container .theme-card:hover,
+body.light-mode .app-global-private-container .stat-card:hover,
+body.light-mode .app-global-private-container .chart-card:hover,
+body.light-mode .app-global-private-container .report-card:hover,
+body.light-mode .app-global-private-container .report-summary-card:hover,
+body.light-mode .app-global-private-container .report-chart-card:hover,
+body.light-mode .app-global-private-container .report-side-card:hover,
+body.light-mode .app-global-private-container .report-operational-log:hover,
+body.light-mode .app-global-private-container .occupancy-trends-box:hover,
+body.light-mode .feature-card-glass:hover,
+body.light-mode .main-content div[class*="card"]:hover,
+body.light-mode .main-content div[class*="box"]:hover,
+body.light-mode .main-content div[class*="Card"]:hover,
+body.light-mode .main-content div[class*="Box"]:hover,
+body.light-mode .app-global-private-container .main-content div[style*="background"]:hover {
+  transform: translateY(-5px) !important;
+  border-color: rgba(37, 99, 235, 0.4) !important;
+  box-shadow: 0 35px 70px -15px rgba(15, 23, 42, 0.2), 
+              0 15px 35px -10px rgba(37, 99, 235, 0.16), 
+              inset 0 1px 1px 0 rgba(255, 255, 255, 0.95) !important;
 }
 
 /* ==========================================================================
-   PAGE-SPECIFIC LIGHT MODE CLEANUP
+   🔥 ULTRA CONTRAST SAFEGUARD - SỬA TRIỆT ĐỂ LỖI ẨN CHỮ TRẮNG Ở LIGHT MODE
    ========================================================================== */
 
-body.light-mode .report-summary-card,
-body.light-mode .report-chart-card,
-body.light-mode .report-side-card,
-body.light-mode .report-operational-log {
-  background-color: var(--bg-card) !important;
-  border-color: var(--border-color) !important;
+/* Ép toàn bộ các class text chữ trắng của Tailwind (text-white, text-slate-50...) tự động đổi màu tối ở Light mode */
+body.light-mode .main-content .text-white,
+body.light-mode .main-content .text-slate-50,
+body.light-mode .main-content .text-slate-100,
+body.light-mode .main-content .text-gray-50,
+body.light-mode .main-content .text-gray-100,
+body.light-mode .main-content .text-neutral-50,
+body.light-mode .main-content .text-neutral-100,
+body.light-mode .main-content [class*="text-white"],
+body.light-mode .main-content [class*="text-slate-50"],
+body.light-mode .main-content [class*="text-slate-100"] {
   color: var(--text-main) !important;
 }
 
-/* Parking slot cards can stay dark if they are intentionally slot blocks */
-body.light-mode .main-content [class*="slot"],
-body.light-mode .main-content [class*="Slot"] {
-  color: inherit;
+/* Ép toàn bộ mớ inline style chữ màu trắng (bất kể ghi hoa/thường) quay về màu tối tương phản cao ở Light mode */
+body.light-mode .main-content *:not(button)[style*="color"][style*="fff" i],
+body.light-mode .main-content *:not(button)[style*="color"][style*="white" i],
+body.light-mode .main-content *:not(button)[style*="color"][style*="255, 255"] {
+  color: var(--text-main) !important;
+}
+
+/* 👑 TITLES RESET */
+.main-content h1,
+.main-content h2,
+.main-content h3,
+.main-content h4,
+.main-content .page-title,
+.main-content [class*="title-text"] {
+  overflow: visible !important;
+  height: auto !important;
+  min-height: min-content !important;
+  line-height: 1.4 !important;
 }
 
 /* ==========================================================================
