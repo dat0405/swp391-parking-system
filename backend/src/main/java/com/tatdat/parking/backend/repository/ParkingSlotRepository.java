@@ -4,8 +4,10 @@ import com.tatdat.parking.backend.dto.ParkingFloorStatsResponse;
 import com.tatdat.parking.backend.entity.ParkingSlot;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -64,4 +66,46 @@ public interface ParkingSlotRepository extends JpaRepository<ParkingSlot, Intege
             ORDER BY f.id, vt.id
             """)
     List<ParkingFloorStatsResponse> getParkingFloorStats();
+
+    @Query("""
+            SELECT s
+            FROM ParkingSlot s
+            WHERE s.vehicleType.id = :vehicleTypeId
+              AND UPPER(s.status) NOT IN ('OCCUPIED', 'MAINTENANCE')
+              AND s.id NOT IN (
+                  SELECT b.slot.id
+                  FROM Booking b
+                  WHERE b.status IN ('PENDING_PAYMENT', 'CONFIRMED', 'CHECKED_IN')
+                    AND b.startTime < :endTime
+                    AND b.endTime > :startTime
+              )
+            ORDER BY s.zone.floor.id ASC, s.id ASC
+            """)
+    List<ParkingSlot> findBookableSlotsByVehicleType(
+            @Param("vehicleTypeId") Integer vehicleTypeId,
+            @Param("startTime") LocalDateTime startTime,
+            @Param("endTime") LocalDateTime endTime
+    );
+
+    @Query("""
+            SELECT s
+            FROM ParkingSlot s
+            WHERE s.vehicleType.id = :vehicleTypeId
+              AND s.zone.floor.id = :floorId
+              AND UPPER(s.status) NOT IN ('OCCUPIED', 'MAINTENANCE')
+              AND s.id NOT IN (
+                  SELECT b.slot.id
+                  FROM Booking b
+                  WHERE b.status IN ('PENDING_PAYMENT', 'CONFIRMED', 'CHECKED_IN')
+                    AND b.startTime < :endTime
+                    AND b.endTime > :startTime
+              )
+            ORDER BY s.id ASC
+            """)
+    List<ParkingSlot> findBookableSlotsByVehicleTypeAndFloor(
+            @Param("vehicleTypeId") Integer vehicleTypeId,
+            @Param("floorId") Integer floorId,
+            @Param("startTime") LocalDateTime startTime,
+            @Param("endTime") LocalDateTime endTime
+    );
 }
