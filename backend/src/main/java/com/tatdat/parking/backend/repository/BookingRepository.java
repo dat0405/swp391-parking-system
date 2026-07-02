@@ -2,6 +2,7 @@ package com.tatdat.parking.backend.repository;
 
 import com.tatdat.parking.backend.entity.Booking;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -23,7 +24,7 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
             SELECT b
             FROM Booking b
             WHERE b.slot.id = :slotId
-              AND b.status IN ('PENDING', 'CONFIRMED')
+              AND b.status IN ('PENDING_PAYMENT', 'CONFIRMED', 'CHECKED_IN')
               AND b.startTime < :endTime
               AND b.endTime > :startTime
             """)
@@ -36,12 +37,45 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
     @Query("""
             SELECT DISTINCT b.slot.id
             FROM Booking b
-            WHERE b.status IN ('PENDING', 'CONFIRMED')
+            WHERE b.status IN ('PENDING_PAYMENT', 'CONFIRMED', 'CHECKED_IN')
               AND b.startTime < :endTime
               AND b.endTime > :startTime
             """)
     List<Integer> findBookedSlotIdsBetween(
             @Param("startTime") LocalDateTime startTime,
             @Param("endTime") LocalDateTime endTime
+    );
+
+    @Query("""
+            SELECT b
+            FROM Booking b
+            WHERE b.status = 'PENDING_PAYMENT'
+              AND b.paymentExpiredAt IS NOT NULL
+              AND b.paymentExpiredAt <= :now
+            """)
+    List<Booking> findExpiredPendingPaymentBookings(
+            @Param("now") LocalDateTime now
+    );
+
+    @Query("""
+            SELECT b
+            FROM Booking b
+            WHERE b.status = 'CONFIRMED'
+              AND b.startTime < :now
+            """)
+    List<Booking> findConfirmedBookingsPastStartTime(
+            @Param("now") LocalDateTime now
+    );
+
+    @Modifying
+    @Query("""
+            UPDATE Booking b
+            SET b.status = 'EXPIRED'
+            WHERE b.status = 'PENDING_PAYMENT'
+              AND b.paymentExpiredAt IS NOT NULL
+              AND b.paymentExpiredAt <= :now
+            """)
+    int expirePendingPaymentBookings(
+            @Param("now") LocalDateTime now
     );
 }

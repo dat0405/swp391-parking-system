@@ -27,8 +27,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class BookingServiceImpl implements BookingService {
 
+    private static final int PAYMENT_TIMEOUT_MINUTES = 10;
+
     private static final String SLOT_STATUS_AVAILABLE = "AVAILABLE";
     private static final String SLOT_STATUS_RESERVED = "RESERVED";
+    private static final String SLOT_STATUS_OCCUPIED = "OCCUPIED";
+    private static final String SLOT_STATUS_MAINTENANCE = "MAINTENANCE";
 
     private final BookingRepository bookingRepository;
     private final BookingHistoryRepository bookingHistoryRepository;
@@ -99,22 +103,29 @@ public class BookingServiceImpl implements BookingService {
 
         vehicleRepository.save(vehicle);
 
+        LocalDateTime now = LocalDateTime.now();
+
         Booking booking = Booking.builder()
                 .user(user)
                 .vehicle(vehicle)
                 .slot(slot)
-                .bookingTime(LocalDateTime.now())
+                .bookingTime(now)
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
-                .status(Booking.STATUS_PENDING)
+                .status(Booking.STATUS_PENDING_PAYMENT)
+                .paymentExpiredAt(now.plusMinutes(PAYMENT_TIMEOUT_MINUTES))
                 .build();
 
         Booking savedBooking = bookingRepository.save(booking);
 
-        if (SLOT_STATUS_AVAILABLE.equalsIgnoreCase(slot.getStatus())) {
-            slot.setStatus(SLOT_STATUS_RESERVED);
-            parkingSlotRepository.save(slot);
-        }
+        /*
+         * Important:
+         * Do not set parking slot status to RESERVED here.
+         *
+         * bookings.status controls reservation by time range.
+         * parking_slots.status should represent physical/live status:
+         * AVAILABLE, OCCUPIED, MAINTENANCE, etc.
+         */
 
         return BookingResponse.fromEntity(savedBooking);
     }
@@ -182,24 +193,59 @@ public class BookingServiceImpl implements BookingService {
     public BookingResponse confirmBooking(Integer bookingId) {
         Booking booking = findBookingOrThrow(bookingId);
 
-        if (Booking.STATUS_CANCELLED.equalsIgnoreCase(booking.getStatus())) {
+        String currentStatus = normalizeStatus(booking.getStatus());
+
+        if (Booking.STATUS_CANCELLED.equals(currentStatus)) {
             throw new RuntimeException("Cancelled booking cannot be confirmed");
         }
 
-        if (Booking.STATUS_COMPLETED.equalsIgnoreCase(booking.getStatus())) {
+        if (Booking.STATUS_COMPLETED.equals(currentStatus)) {
             throw new RuntimeException("Completed booking cannot be confirmed again");
         }
 
+        if (Booking.STATUS_EXPIRED.equals(currentStatus)) {
+            throw new RuntimeException("Expired booking cannot be confirmed");
+        }
+
+        if (Booking.STATUS_NO_SHOW.equals(currentStatus)) {
+            throw new RuntimeException("No-show booking cannot be confirmed");
+        }
+
+        if (Booking.STATUS_REFUNDED.equals(currentStatus)) {
+            throw new RuntimeException("Refunded booking cannot be confirmed");
+        }
+
+        if (Booking.STATUS_CONFIRMED.equals(currentStatus)) {
+            return BookingResponse.fromEntity(booking);
+        }
+
+        if (!Booking.STATUS_PENDING_PAYMENT.equals(currentStatus)) {
+            throw new RuntimeException("Only pending payment booking can be confirmed");
+        }
+
+        if (booking.getPaymentExpiredAt() != null
+                && booking.getPaymentExpiredAt().isBefore(LocalDateTime.now())) {
+            booking.setStatus(Booking.STATUS_EXPIRED);
+            Booking expiredBooking = bookingRepository.save(booking);
+            throw new RuntimeException("Payment time expired. Booking has been expired.");
+        }
+
+        List<Booking> overlappingBookings = bookingRepository.findOverlappingBookings(
+                        booking.getSlot().getId(),
+                        booking.getStartTime(),
+                        booking.getEndTime()
+                ).stream()
+                .filter(item -> !item.getId().equals(booking.getId()))
+                .toList();
+
+        if (!overlappingBookings.isEmpty()) {
+            throw new RuntimeException("Selected slot is already reserved in this time range");
+        }
+
         booking.setStatus(Booking.STATUS_CONFIRMED);
+        booking.setPaidAt(LocalDateTime.now());
 
         Booking savedBooking = bookingRepository.save(booking);
-
-        ParkingSlot slot = savedBooking.getSlot();
-
-        if (slot != null && SLOT_STATUS_AVAILABLE.equalsIgnoreCase(slot.getStatus())) {
-            slot.setStatus(SLOT_STATUS_RESERVED);
-            parkingSlotRepository.save(slot);
-        }
 
         return BookingResponse.fromEntity(savedBooking);
     }
@@ -209,15 +255,24 @@ public class BookingServiceImpl implements BookingService {
     public BookingResponse cancelBooking(Integer bookingId) {
         Booking booking = findBookingOrThrow(bookingId);
 
-        if (Booking.STATUS_COMPLETED.equalsIgnoreCase(booking.getStatus())) {
+        String currentStatus = normalizeStatus(booking.getStatus());
+
+        if (Booking.STATUS_COMPLETED.equals(currentStatus)) {
             throw new RuntimeException("Completed booking cannot be cancelled");
         }
 
+        if (Booking.STATUS_CANCELLED.equals(currentStatus)) {
+            return BookingResponse.fromEntity(booking);
+        }
+
+        if (Booking.STATUS_REFUNDED.equals(currentStatus)) {
+            throw new RuntimeException("Refunded booking cannot be cancelled");
+        }
+
         booking.setStatus(Booking.STATUS_CANCELLED);
+        booking.setCancelledAt(LocalDateTime.now());
 
         Booking savedBooking = bookingRepository.save(booking);
-
-        releaseSlotIfNoActiveBooking(savedBooking.getSlot());
 
         return BookingResponse.fromEntity(savedBooking);
     }
@@ -226,11 +281,7 @@ public class BookingServiceImpl implements BookingService {
     @Transactional
     public void deleteBooking(Integer bookingId) {
         Booking booking = findBookingOrThrow(bookingId);
-        ParkingSlot slot = booking.getSlot();
-
         bookingRepository.delete(booking);
-
-        releaseSlotIfNoActiveBooking(slot);
     }
 
     private Booking findBookingOrThrow(Integer bookingId) {
@@ -286,11 +337,7 @@ public class BookingServiceImpl implements BookingService {
             throw new RuntimeException("Selected slot does not support this vehicle type");
         }
 
-        if (slot.getStatus() != null
-                && !SLOT_STATUS_AVAILABLE.equalsIgnoreCase(slot.getStatus())
-                && !SLOT_STATUS_RESERVED.equalsIgnoreCase(slot.getStatus())) {
-            throw new RuntimeException("Selected slot is not available for booking");
-        }
+        validatePhysicalSlotStatus(slot);
 
         List<Booking> overlappingBookings = bookingRepository.findOverlappingBookings(
                 slot.getId(),
@@ -300,6 +347,25 @@ public class BookingServiceImpl implements BookingService {
 
         if (!overlappingBookings.isEmpty()) {
             throw new RuntimeException("Selected slot is already reserved in this time range");
+        }
+    }
+
+    private void validatePhysicalSlotStatus(ParkingSlot slot) {
+        String slotStatus = slot.getStatus() == null
+                ? SLOT_STATUS_AVAILABLE
+                : slot.getStatus().trim().toUpperCase();
+
+        if (SLOT_STATUS_OCCUPIED.equals(slotStatus)) {
+            throw new RuntimeException("Selected slot is currently occupied");
+        }
+
+        if (SLOT_STATUS_MAINTENANCE.equals(slotStatus)) {
+            throw new RuntimeException("Selected slot is under maintenance");
+        }
+
+        if (!SLOT_STATUS_AVAILABLE.equals(slotStatus)
+                && !SLOT_STATUS_RESERVED.equals(slotStatus)) {
+            throw new RuntimeException("Selected slot is not available for booking");
         }
     }
 
@@ -323,26 +389,21 @@ public class BookingServiceImpl implements BookingService {
         return normalizedValue.isEmpty() ? null : normalizedValue;
     }
 
-    private void releaseSlotIfNoActiveBooking(ParkingSlot slot) {
-        if (slot == null) {
-            return;
+    private String normalizeStatus(String status) {
+        if (status == null || status.trim().isEmpty()) {
+            return Booking.STATUS_PENDING_PAYMENT;
         }
 
-        List<Booking> activeBookings = bookingRepository.findByStatusOrderByBookingTimeDesc(Booking.STATUS_PENDING)
-                .stream()
-                .filter(booking -> booking.getSlot() != null && booking.getSlot().getId().equals(slot.getId()))
-                .toList();
+        String normalizedStatus = status.trim().toUpperCase();
 
-        if (activeBookings.isEmpty()) {
-            activeBookings = bookingRepository.findByStatusOrderByBookingTimeDesc(Booking.STATUS_CONFIRMED)
-                    .stream()
-                    .filter(booking -> booking.getSlot() != null && booking.getSlot().getId().equals(slot.getId()))
-                    .toList();
+        if ("PENDING".equals(normalizedStatus)) {
+            return Booking.STATUS_PENDING_PAYMENT;
         }
 
-        if (activeBookings.isEmpty()) {
-            slot.setStatus(SLOT_STATUS_AVAILABLE);
-            parkingSlotRepository.save(slot);
+        if ("CANCELED".equals(normalizedStatus)) {
+            return Booking.STATUS_CANCELLED;
         }
+
+        return normalizedStatus;
     }
 }

@@ -9,10 +9,12 @@ import com.tatdat.parking.backend.dto.UpdateSlotStatusRequest;
 import com.tatdat.parking.backend.entity.ParkingSlot;
 import com.tatdat.parking.backend.service.ParkingSlotService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -106,6 +108,48 @@ public class ParkingSlotController {
     ) {
         return ResponseEntity.ok(
                 parkingSlotService.getAvailableSlotsByVehicleType(vehicleTypeId)
+        );
+    }
+
+    /*
+     * API mới cho Booking.
+     *
+     * Dùng API này để lấy slot còn trống theo đúng khung giờ user chọn.
+     *
+     * Example:
+     * GET /api/parking-slots/available-for-booking
+     *     ?vehicleTypeId=1
+     *     &startTime=2026-07-02T10:00:00
+     *     &endTime=2026-07-02T12:00:00
+     */
+    @GetMapping("/available-for-booking")
+    public ResponseEntity<List<ParkingSlot>> getAvailableSlotsForBooking(
+            @RequestParam Integer vehicleTypeId,
+            @RequestParam(required = false) Integer floorId,
+            @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime startTime,
+            @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime endTime
+    ) {
+        if (floorId != null) {
+            return ResponseEntity.ok(
+                    parkingSlotService.getAvailableSlotsForBookingByFloor(
+                            vehicleTypeId,
+                            floorId,
+                            startTime,
+                            endTime
+                    )
+            );
+        }
+
+        return ResponseEntity.ok(
+                parkingSlotService.getAvailableSlotsForBooking(
+                        vehicleTypeId,
+                        startTime,
+                        endTime
+                )
         );
     }
 

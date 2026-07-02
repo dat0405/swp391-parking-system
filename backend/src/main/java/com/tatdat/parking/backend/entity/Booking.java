@@ -14,10 +14,33 @@ import java.time.LocalDateTime;
 @Builder
 public class Booking {
 
-    public static final String STATUS_PENDING = "PENDING";
+    /*
+     * Booking status flow:
+     *
+     * PENDING_PAYMENT: User created booking, waiting for payment
+     * CONFIRMED: Payment/admin confirmation completed
+     * CHECKED_IN: Vehicle has entered the parking lot
+     * COMPLETED: Booking finished / checked out
+     * CANCELLED: Cancelled by user/admin
+     * EXPIRED: Payment timeout / pending booking expired
+     * NO_SHOW: User did not arrive at booking time
+     * REFUNDED: Refund completed
+     */
+
+    public static final String STATUS_PENDING_PAYMENT = "PENDING_PAYMENT";
     public static final String STATUS_CONFIRMED = "CONFIRMED";
-    public static final String STATUS_CANCELLED = "CANCELLED";
+    public static final String STATUS_CHECKED_IN = "CHECKED_IN";
     public static final String STATUS_COMPLETED = "COMPLETED";
+    public static final String STATUS_CANCELLED = "CANCELLED";
+    public static final String STATUS_EXPIRED = "EXPIRED";
+    public static final String STATUS_NO_SHOW = "NO_SHOW";
+    public static final String STATUS_REFUNDED = "REFUNDED";
+
+    /*
+     * Keep this old constant temporarily so old service/controller code
+     * that still uses Booking.STATUS_PENDING will not break.
+     */
+    public static final String STATUS_PENDING = STATUS_PENDING_PAYMENT;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -44,8 +67,26 @@ public class Booking {
     @Column(name = "end_time", nullable = false)
     private LocalDateTime endTime;
 
-    @Column(length = 20, nullable = false)
+    @Column(length = 30, nullable = false)
     private String status;
+
+    @Column(name = "payment_expired_at")
+    private LocalDateTime paymentExpiredAt;
+
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
+    @Column(name = "checked_in_at")
+    private LocalDateTime checkedInAt;
+
+    @Column(name = "checked_out_at")
+    private LocalDateTime checkedOutAt;
+
+    @Column(name = "refunded_at")
+    private LocalDateTime refundedAt;
 
     @PrePersist
     public void prePersist() {
@@ -54,16 +95,48 @@ public class Booking {
         }
 
         if (status == null || status.trim().isEmpty()) {
-            status = STATUS_PENDING;
+            status = STATUS_PENDING_PAYMENT;
         }
 
-        status = status.trim().toUpperCase();
+        status = normalizeStatus(status);
+
+        if (STATUS_PENDING_PAYMENT.equals(status) && paymentExpiredAt == null) {
+            paymentExpiredAt = bookingTime.plusMinutes(10);
+        }
     }
 
     @PreUpdate
     public void preUpdate() {
         if (status != null) {
-            status = status.trim().toUpperCase();
+            status = normalizeStatus(status);
         }
+    }
+
+    private String normalizeStatus(String inputStatus) {
+        String normalizedStatus = inputStatus.trim().toUpperCase();
+
+        if ("PENDING".equals(normalizedStatus)) {
+            return STATUS_PENDING_PAYMENT;
+        }
+
+        if ("CANCELED".equals(normalizedStatus)) {
+            return STATUS_CANCELLED;
+        }
+
+        return normalizedStatus;
+    }
+
+    public boolean isActiveForOverlapCheck() {
+        return STATUS_PENDING_PAYMENT.equals(status)
+                || STATUS_CONFIRMED.equals(status)
+                || STATUS_CHECKED_IN.equals(status);
+    }
+
+    public boolean isFinalStatus() {
+        return STATUS_COMPLETED.equals(status)
+                || STATUS_CANCELLED.equals(status)
+                || STATUS_EXPIRED.equals(status)
+                || STATUS_NO_SHOW.equals(status)
+                || STATUS_REFUNDED.equals(status);
     }
 }

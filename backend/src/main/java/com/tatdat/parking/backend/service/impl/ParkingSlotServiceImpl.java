@@ -21,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 
@@ -119,6 +120,40 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
         return parkingSlotRepository.findByVehicleType_IdAndStatusIgnoreCase(
                 vehicleTypeId,
                 SlotStatus.AVAILABLE.name()
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ParkingSlot> getAvailableSlotsForBooking(
+            Integer vehicleTypeId,
+            LocalDateTime startTime,
+            LocalDateTime endTime
+    ) {
+        validateAvailableForBookingRequest(vehicleTypeId, null, startTime, endTime);
+
+        return parkingSlotRepository.findBookableSlotsByVehicleType(
+                vehicleTypeId,
+                startTime,
+                endTime
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ParkingSlot> getAvailableSlotsForBookingByFloor(
+            Integer vehicleTypeId,
+            Integer floorId,
+            LocalDateTime startTime,
+            LocalDateTime endTime
+    ) {
+        validateAvailableForBookingRequest(vehicleTypeId, floorId, startTime, endTime);
+
+        return parkingSlotRepository.findBookableSlotsByVehicleTypeAndFloor(
+                vehicleTypeId,
+                floorId,
+                startTime,
+                endTime
         );
     }
 
@@ -265,6 +300,37 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
                 .vehicleTypeName(vehicleType.getTypeName())
                 .message("Deleted " + deletableSlots.size() + " parking slots successfully")
                 .build();
+    }
+
+    private void validateAvailableForBookingRequest(
+            Integer vehicleTypeId,
+            Integer floorId,
+            LocalDateTime startTime,
+            LocalDateTime endTime
+    ) {
+        if (vehicleTypeId == null) {
+            throw new RuntimeException("Vehicle type ID is required");
+        }
+
+        if (floorId != null && floorId <= 0) {
+            throw new RuntimeException("Floor ID is invalid");
+        }
+
+        if (startTime == null) {
+            throw new RuntimeException("Start time is required");
+        }
+
+        if (endTime == null) {
+            throw new RuntimeException("End time is required");
+        }
+
+        if (!endTime.isAfter(startTime)) {
+            throw new RuntimeException("End time must be after start time");
+        }
+
+        if (startTime.isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Start time must be in the future");
+        }
     }
 
     private ParkingZone getOrCreateDefaultZone(ParkingFloor floor) {
