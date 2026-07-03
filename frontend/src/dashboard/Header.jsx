@@ -378,10 +378,19 @@ function Header() {
   };
 
   return (
-    /* 🔥 SỬA LỖI: Thay thế div bằng thẻ header, áp class đồng bộ và gỡ bỏ inline style gò bó nền/khung */
-    <header
-      className="dashboard-header"
-      style={{ boxSizing: 'border-box' }}
+    <div
+      className="app-header"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: 'var(--bg-column-left)',
+        padding: '0.75rem 1.5rem',
+        border: '1px solid var(--border-color)',
+        position: 'relative',
+        width: '100%',
+        boxSizing: 'border-box'
+      }}
     >
       <div style={{ position: 'relative', width: '320px' }}>
         <Search
@@ -792,7 +801,7 @@ function Header() {
           </div>
         </div>
       </div>
-    </header>
+    </div>
   );
 }
 

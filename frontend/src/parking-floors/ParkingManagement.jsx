@@ -798,8 +798,8 @@ const ParkingManagement = () => {
           key={`${slot.id}-${slot.slotCode}`}
           onClick={() => openIncidentModal(slot)}
           title={canManageSlots ? "Click to configure this slot" : ""}
-          className="feature-card-glass"
           style={{
+            background: theme.card,
             border: `1px solid ${statusColor}`,
             borderTop: `4px solid ${statusColor}`,
             padding: "1rem",
@@ -924,12 +924,13 @@ const ParkingManagement = () => {
     <div className="dashboard-layout">
       <Sidebar />
 
-      {/* 🔥 SỬA LỖI 1: Xóa thuộc tính background: theme.page cứng nhắc để lộ ảnh nền bãi xe phía sau */}
       <main
         className="main-content"
         style={{
           flex: 1,
+          padding: "1.5rem",
           overflowY: "auto",
+          background: theme.page,
           color: theme.text
         }}
       >
@@ -951,7 +952,6 @@ const ParkingManagement = () => {
           </p>
         </div>
 
-        {/* Áp dụng kính mờ thống nhất cho dàn thẻ thống kê số liệu */}
         <div
           className="stats-bar"
           style={{
@@ -970,10 +970,11 @@ const ParkingManagement = () => {
           ].map((item) => (
             <div
               key={item.label}
-              className="feature-card-glass"
               style={{
+                background: theme.card,
                 padding: "1rem",
                 borderRadius: "0.75rem",
+                border: `1px solid ${theme.border}`,
                 position: "relative",
                 minHeight: "76px",
                 boxShadow: theme.shadow
@@ -1044,19 +1045,26 @@ const ParkingManagement = () => {
           </div>
         )}
 
-        {/* 🔥 SỬA LỖI 2: ĐẬP TAN KHỐI TRẮNG KHỔNG LỒ
-            Xóa bỏ hoàn toàn cái box-shadow quái dị che khuất chữ. 
-            Thay thế bằng một thanh điều hướng dạng kính mờ mỏng nhẹ, sang trọng, bo góc 100% chuẩn bài */}
         <div
-  style={{
-    position: "relative",
-    marginBottom: "1.5rem"
-  }}
->
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 300,
+            background: theme.page,
+            padding: "1rem 0 1.25rem 0",
+            marginBottom: "1rem",
+            borderBottom: `1px solid ${theme.border}`,
+            boxShadow:
+              "0 -120px 0 120px var(--bg-dashboard), 0 18px 34px rgba(15, 23, 42, 0.12)"
+          }}
+        >
           <div
-            className="feature-card-glass"
             style={{
+              background: theme.card,
+              border: `1px solid ${theme.border}`,
+              borderRadius: "0.85rem",
               padding: "0.85rem",
+              boxShadow: theme.shadow,
               overflow: "hidden"
             }}
           >
@@ -1084,7 +1092,7 @@ const ParkingManagement = () => {
                         border: active
                           ? "1px solid var(--primary-blue)"
                           : `1px solid ${theme.border}`,
-                        background: active ? "var(--primary-blue)" : "var(--bg-input)",
+                        background: active ? "var(--primary-blue)" : theme.input,
                         color: active ? "#ffffff" : theme.text,
                         cursor: "pointer",
                         fontWeight: "700"
@@ -1114,7 +1122,7 @@ const ParkingManagement = () => {
                   onClick={() => loadParkingSlots()}
                   disabled={loading}
                   style={{
-                    background: "var(--bg-input)",
+                    background: theme.input,
                     border: `1px solid ${theme.border}`,
                     color: theme.text,
                     padding: "0.45rem 0.7rem",
@@ -1138,7 +1146,7 @@ const ParkingManagement = () => {
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
                   style={{
-                    background: "var(--bg-input)",
+                    background: theme.input,
                     border: `1px solid ${theme.border}`,
                     color: theme.text,
                     padding: "0.45rem",
@@ -1156,7 +1164,7 @@ const ParkingManagement = () => {
                     setCurrentPage((page) => Math.min(page + 1, totalPages))
                   }
                   style={{
-                    background: "var(--bg-input)",
+                    background: theme.input,
                     border: `1px solid ${theme.border}`,
                     color: theme.text,
                     padding: "0.45rem",
@@ -1195,7 +1203,7 @@ const ParkingManagement = () => {
                         border: isActive
                           ? "1px solid var(--primary-blue)"
                           : `1px solid ${theme.border}`,
-                        background: isActive ? theme.blueSoft : "var(--bg-input)",
+                        background: isActive ? theme.blueSoft : theme.input,
                         color: isActive ? "var(--primary-blue)" : theme.muted,
                         fontSize: "0.78rem",
                         fontWeight: 800,
@@ -1229,11 +1237,12 @@ const ParkingManagement = () => {
         >
           {loading && !hasLoadedOnce ? (
             <div
-              className="feature-card-glass"
               style={{
                 marginTop: "1rem",
                 padding: "1rem",
                 borderRadius: "0.75rem",
+                background: theme.card,
+                border: `1px solid ${theme.border}`,
                 color: theme.muted,
                 textAlign: "center",
                 boxShadow: theme.shadow
@@ -1254,11 +1263,12 @@ const ParkingManagement = () => {
             </div>
           ) : (
             <div
-              className="feature-card-glass"
               style={{
                 marginTop: "1rem",
                 padding: "1rem",
                 borderRadius: "0.75rem",
+                background: theme.card,
+                border: `1px solid ${theme.border}`,
                 color: theme.muted,
                 textAlign: "center",
                 boxShadow: theme.shadow
