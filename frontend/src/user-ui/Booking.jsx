@@ -421,6 +421,15 @@ function Booking() {
     setIsSlotDropdownOpen(false);
   };
 
+  const handleSelectSlot = (slot) => {
+    setFormData((prev) => ({
+      ...prev,
+      slotId: String(slot.id)
+    }));
+
+    setIsSlotDropdownOpen(false);
+  };
+
   const handleLicensePlateChange = (event) => {
     const formattedPlate = formatPlateByVehicleType(
       event.target.value,

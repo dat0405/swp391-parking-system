@@ -11,10 +11,17 @@ import {
   PlusCircle
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+// 🔥 Import mảng quyền và bộ cấu hình Role từ file auth.js tập trung
+import { ROUTE_PERMISSIONS, ROLES } from "../utils/auth";
 
 function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Đọc thông tin user thực tế từ localStorage
+  const savedUser = localStorage.getItem('user');
+  const userObject = savedUser ? JSON.parse(savedUser) : null;
+  const userRole = userObject ? userObject.role : null;
 
   const isActive = (path) => location.pathname === path;
 
@@ -69,12 +76,14 @@ function Sidebar() {
 
   return (
     <aside className="sidebar">
+      {/* Brand Header: Giữ nguyên cấu trúc class CSS sáng tối của bạn mày */}
       <div className="sidebar-brand">
         <div className="brand-icon">P</div>
 
         <div className="brand-text">
           <h2>ParkSystem Pro</h2>
-          <span>MANAGEMENT CONSOLE</span>
+          {/* Giữ lại dòng hiển thị Role động rất khôn của mày để tiện debug */}
+          <span>ROLE: {userRole ? userRole.toUpperCase() : 'GUEST'}</span>
         </div>
       </div>
 

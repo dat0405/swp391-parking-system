@@ -147,6 +147,7 @@ function App() {
         <Route path="/reports" element={<Reports />} />
       </Route>
 
+      {/* URL bậy bạ tự động đá về trang giới thiệu */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

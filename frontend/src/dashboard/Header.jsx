@@ -496,11 +496,12 @@ function Header() {
             )}
           </button>
 
+          {/* 🔥 CÂN CHỈNH DROPDOWN: Hạ top xuống 52px để khớp với chiều cao Header 70px mới */}
           {activeToast && (
             <div
               style={{
                 position: 'absolute',
-                top: '40px',
+                top: '52px',
                 right: '0',
                 width: '320px',
                 backgroundColor: 'var(--bg-card)',
@@ -553,11 +554,12 @@ function Header() {
             </div>
           )}
 
+          {/* 🔥 CÂN CHỈNH DROPDOWN: Hạ top xuống 52px */}
           {isOpenDropdown && (
             <div
               style={{
                 position: 'absolute',
-                top: '40px',
+                top: '52px',
                 right: '0',
                 width: '360px',
                 backgroundColor: 'var(--bg-column-left)',
@@ -707,11 +709,12 @@ function Header() {
             />
           </button>
 
+          {/* 🔥 CÂN CHỈNH DROPDOWN: Hạ top xuống 52px */}
           {isOpenSettings && (
             <div
               style={{
                 position: 'absolute',
-                top: '40px',
+                top: '52px',
                 right: '0',
                 width: '150px',
                 backgroundColor: 'var(--bg-column-left)',

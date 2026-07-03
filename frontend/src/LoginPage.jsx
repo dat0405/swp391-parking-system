@@ -47,13 +47,64 @@ function LoginPage() {
     }, 4000);
   };
 
+  // 🔥 GIỮ NGUYÊN SƠ ĐỒ ĐIỀU HƯỚNG CHUẨN XÁC CỦA MÀY
   const getRedirectPathByRole = (role) => {
-    if (role === 'SYSTEM_ADMIN') return '/dashboard';
-    if (role === 'PARKING_MANAGER') return '/dashboard';
-    if (role === 'PARKING_STAFF') return '/check-in-out';
-    if (role === 'DRIVER') return '/dashboard';
+    const cleanRole = String(role).toUpperCase();
+    if (cleanRole === 'SYSTEM_ADMIN' || cleanRole === 'PARKING_MANAGER') return '/dashboard';
+    if (cleanRole === 'PARKING_STAFF') return '/check-in-out';
+    if (cleanRole === 'DRIVER' || cleanRole === 'USER') return '/user-ui';
 
-    return '/dashboard';
+    return '/user-ui'; 
+  };
+
+  const saveAuthDataIfExists = (data) => {
+    const accessToken = data?.accessToken || data?.token || data?.jwt;
+    const refreshToken = data?.refreshToken;
+
+    if (accessToken) {
+      localStorage.setItem('token', accessToken);
+    }
+
+    if (refreshToken) {
+      localStorage.setItem('refreshToken', refreshToken);
+    }
+  };
+
+  // 🔥 HÀM TỐI ƯU: Chạy chung cho cả 2 kiểu Login, chứa bộ quét quyền tối tân của mày
+  const loadCurrentUserAndRedirect = async (emailFallback = '') => {
+    const meResponse = await axiosClient.get('/auth/me');
+    const data = meResponse.data || {};
+
+    // 🔥 BỘ QUÉT QUYẾT SẠCH CẤU TRÚC ROLE CỦA MÀY
+    let finalRole = 'DRIVER'; 
+    if (data.role && typeof data.role === 'object') {
+      finalRole = data.role.roleName || data.role.name || data.role.authority || 'DRIVER';
+    } else if (data.role && typeof data.role === 'string') {
+      finalRole = data.role;
+    } else if (data.roleName) {
+      finalRole = data.roleName;
+    } else if (data.authority) {
+      finalRole = data.authority;
+    }
+
+    const userObj = {
+      userId: data.userId,
+      fullName: data.fullName || data.name || data.email || emailFallback,
+      email: data.email || emailFallback,
+      role: finalRole.toUpperCase()
+    };
+
+    localStorage.setItem('user', JSON.stringify(userObj));
+    localStorage.setItem('user_role', userObj.role); // Đồng bộ quyền ra biến riêng cho mày xài
+
+    showToast('Login successful! Redirecting...', 'success');
+
+    setTimeout(() => {
+      setIsLoading(false);
+      setIsGoogleLoading(false);
+      // Điều hướng chuẩn bằng hàm của mày
+      navigate(getRedirectPathByRole(userObj.role));
+    }, 800);
   };
 
   const saveAuthDataIfExists = (data) => {
@@ -110,14 +161,10 @@ function LoginPage() {
       await loadCurrentUserAndRedirect(email);
     } catch (error) {
       console.error('Lỗi API login:', error);
-
       showToast(
-        error.response?.data?.message ||
-          error.response?.data ||
-          'Invalid email or password.',
+        error.response?.data?.message || error.response?.data || 'Invalid email or password.',
         'error'
       );
-
       setIsLoading(false);
     }
   };
@@ -221,21 +268,13 @@ function LoginPage() {
           >
             Welcome back.
           </h1>
-
-          <p
-            style={{
-              color: '#64748b',
-              fontSize: '0.85rem',
-              marginBottom: '2.5rem'
-            }}
-          >
+          <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '2.5rem' }}>
             Enter credentials to access the station.
           </p>
 
           <form onSubmit={handleLogin}>
             <div className="input-group">
               <label className="input-label">EMAIL / USERNAME</label>
-
               <div className="input-wrapper">
                 <User size={16} className="input-icon-left" />
 
@@ -254,7 +293,6 @@ function LoginPage() {
 
             <div className="input-group" style={{ marginBottom: '1.5rem' }}>
               <label className="input-label">PASSWORD</label>
-
               <div className="input-wrapper">
                 <Lock size={16} className="input-icon-left" />
 
@@ -268,7 +306,6 @@ function LoginPage() {
                   disabled={isPageLoading}
                   required
                 />
-
                 <button
                   type="button"
                   className="input-icon-right"
@@ -342,7 +379,16 @@ function LoginPage() {
             </button>
           </form>
 
-          <div
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+            <div style={{ flex: 1, height: '1px', background: '#1e293b' }} />
+            <span style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 600 }}>OR</span>
+            <div style={{ flex: 1, height: '1px', background: '#1e293b' }} />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoogleButtonClick}
+            disabled={isPageLoading}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -453,23 +499,9 @@ function LoginPage() {
           </div>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            gap: '0.5rem',
-            alignItems: 'center',
-            marginTop: '1.5rem'
-          }}
-        >
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '1.5rem' }}>
           <ShieldCheck size={16} style={{ color: '#22c55e' }} />
-
-          <p
-            style={{
-              fontSize: '0.72rem',
-              color: '#64748b',
-              margin: 0
-            }}
-          >
+          <p style={{ fontSize: '0.72rem', color: '#64748b', margin: 0 }}>
             Protected System. Unauthorized access attempts will be logged.
           </p>
         </div>
@@ -480,11 +512,7 @@ function LoginPage() {
           <img
             src={new URL('./Pictures/carparking.png', import.meta.url).href}
             alt="Dashboard Preview"
-            style={{
-              width: '100%',
-              borderRadius: '0.75rem',
-              boxShadow: '-20px 30px 60px rgba(0, 0, 0, 0.7)'
-            }}
+            style={{ width: '100%', borderRadius: '0.75rem', boxShadow: '-20px 30px 60px rgba(0, 0, 0, 0.7)' }}
           />
         </div>
       </div>

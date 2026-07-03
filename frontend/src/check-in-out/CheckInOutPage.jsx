@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Sidebar from "../dashboard/Sidebar";
 import Header from "../dashboard/Header";
-import { SquarePlay, LogOut, ReceiptText } from "lucide-react";
+import { SquarePlay, LogOut, ReceiptText, X, Zap, ShieldCheck } from "lucide-react";
 import { parkingSessionApi } from "../api/parkingSessionApi";
 
 const theme = {
@@ -39,75 +39,48 @@ function CheckInOutPage() {
   const [searchTicketId, setSearchTicketId] = useState("");
   const [checkoutData, setCheckoutData] = useState(null);
 
+  // Quản lý trạng thái hiển thị Modal QR tính tiền khi Checkout thành công
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+  // Fix lỗi ảnh QR bị đảo màu âm bản: Cố định thông số dark và bgcolor chuẩn mực
+  const getFakeQRCode = (ticketId, amount) => {
+    const dataString = `Payment-Ticket-${ticketId}-Amount-${amount}-VND`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=165x165&data=${encodeURIComponent(dataString)}&dark=000000&bgcolor=ffffff`;
+  };
+
   const normalizeVehicleType = (value) => {
     const text = String(value || "").trim().toLowerCase();
-
-    if (
-      text === "car" ||
-      text === "cars" ||
-      text === "oto" ||
-      text === "ô tô" ||
-      text === "automobile"
-    ) {
-      return "car";
-    }
-
-    if (
-      text === "motorbike" ||
-      text === "motorbikes" ||
-      text === "bike" ||
-      text === "motorcycle" ||
-      text === "xe máy"
-    ) {
-      return "motorbike";
-    }
-
+    if (["car", "cars", "oto", "ô tô", "automobile"].includes(text)) return "car";
+    if (["motorbike", "motorbikes", "bike", "motorcycle", "xe máy"].includes(text)) return "motorbike";
     return text;
   };
 
   const cleanPlateInput = (value) => {
-    return String(value || "")
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "");
+    return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   };
 
   const formatCarPlate = (value) => {
     const raw = cleanPlateInput(value).slice(0, 8);
-
     const provinceCode = raw.slice(0, 2);
     const series = raw.slice(2, 3);
     const numbers = raw.slice(3, 8);
 
     let result = provinceCode;
-
-    if (series) {
-      result += series;
-    }
-
-    if (numbers.length > 0) {
-      result += `-${numbers.slice(0, 3)}`;
-    }
-
-    if (numbers.length > 3) {
-      result += `.${numbers.slice(3, 5)}`;
-    }
-
+    if (series) result += series;
+    if (numbers.length > 0) result += `-${numbers.slice(0, 3)}`;
+    if (numbers.length > 3) result += `.${numbers.slice(3, 5)}`;
     return result;
   };
 
   const formatMotorbikePlate = (value) => {
     const raw = cleanPlateInput(value).slice(0, 9);
-
     const provinceCode = raw.slice(0, 2);
     const rest = raw.slice(2);
 
     let series = "";
     let numberStartIndex = 0;
 
-    if (/^[A-Z]{2}/.test(rest)) {
-      series = rest.slice(0, 2);
-      numberStartIndex = 2;
-    } else if (/^[A-Z]\d/.test(rest)) {
+    if (/^[A-Z]{2}/.test(rest) || /^[A-Z]\d/.test(rest)) {
       series = rest.slice(0, 2);
       numberStartIndex = 2;
     } else if (/^[A-Z]/.test(rest)) {
@@ -118,19 +91,9 @@ function CheckInOutPage() {
     const numbers = rest.slice(numberStartIndex, numberStartIndex + 5);
 
     let result = provinceCode;
-
-    if (series) {
-      result += `-${series}`;
-    }
-
-    if (numbers.length > 0) {
-      result += ` ${numbers.slice(0, 3)}`;
-    }
-
-    if (numbers.length > 3) {
-      result += `.${numbers.slice(3, 5)}`;
-    }
-
+    if (series) result += `-${series}`;
+    if (numbers.length > 0) result += ` ${numbers.slice(0, 3)}`;
+    if (numbers.length > 3) result += `.${numbers.slice(3, 5)}`;
     return result;
   };
 
@@ -138,71 +101,49 @@ function CheckInOutPage() {
     if (normalizeVehicleType(type) === "car") {
       return formatCarPlate(value);
     }
-
     return formatMotorbikePlate(value);
   };
 
   const getPlatePlaceholder = (type) => {
-    if (normalizeVehicleType(type) === "car") {
-      return "e.g., 30F-256.58";
-    }
-
+    if (normalizeVehicleType(type) === "car") return "e.g., 30F-256.58";
     return "e.g., 29-K6 447.43 / 59-AA 123.56";
   };
 
   const getPlateHint = (type) => {
-    if (normalizeVehicleType(type) === "car") {
-      return "Car format: 30F-256.58";
-    }
-
+    if (normalizeVehicleType(type) === "car") return "Car format: 30F-256.58";
     return "Motorbike format: 29-K6 447.43 or 59-AA 123.56";
   };
 
   const validateVietnamPlate = (plate, type) => {
     const value = String(plate || "").trim().toUpperCase();
-
     const carRegex = /^\d{2}[A-Z]-\d{3}\.\d{2}$/;
     const motorbikeRegex = /^\d{2}-[A-Z]{1,2}\d?\s\d{3}\.\d{2}$/;
 
-    if (normalizeVehicleType(type) === "car") {
-      return carRegex.test(value);
-    }
-
+    if (normalizeVehicleType(type) === "car") return carRegex.test(value);
     return motorbikeRegex.test(value);
   };
 
   const formatPlateForSearch = (value) => {
     const raw = String(value || "").toUpperCase();
-
-    if (raw.includes(" ")) {
-      return formatMotorbikePlate(raw);
-    }
-
+    if (raw.includes(" ")) return formatMotorbikePlate(raw);
     const cleaned = cleanPlateInput(raw);
-
     if (/^\d{2}[A-Z]\d/.test(cleaned) || /^\d{2}[A-Z]{2}/.test(cleaned)) {
       return formatMotorbikePlate(cleaned);
     }
-
     return formatCarPlate(cleaned);
   };
 
   const formatTicket = (value) => {
     let clean = String(value || "").toUpperCase().replace(/^TK-/, "");
     let raw = clean.replace(/[^0-9]/g, "");
-
     if (raw.length > 6) raw = raw.slice(0, 6);
-
     return raw.length ? `TK-${raw}` : "";
   };
 
   const formatDateTime = (value) => {
     if (!value) return "N/A";
-
     const date = new Date(value);
-
     if (Number.isNaN(date.getTime())) return "N/A";
-
     return date.toLocaleString("vi-VN", {
       hour: "2-digit",
       minute: "2-digit",
@@ -223,9 +164,7 @@ function CheckInOutPage() {
   const loadActiveSessions = async () => {
     try {
       const res = await parkingSessionApi.getActiveSessions();
-      const sessions = Array.isArray(res.data) ? res.data : [];
-
-      setActiveSessions(sessions);
+      setActiveSessions(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error("Load active sessions failed:", error);
       setActiveSessions([]);
@@ -235,9 +174,7 @@ function CheckInOutPage() {
   const loadParkingFloorStats = async () => {
     try {
       const res = await parkingSessionApi.getParkingFloorStats();
-      const floors = Array.isArray(res.data) ? res.data : [];
-
-      setFloorsData(floors);
+      setFloorsData(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error("Load parking floor stats failed:", error);
       setFloorsData([]);
@@ -251,9 +188,7 @@ function CheckInOutPage() {
 
   useEffect(() => {
     const availableFloors = floorsData.filter(
-      (floor) =>
-        normalizeVehicleType(floor.vehicleType) ===
-        normalizeVehicleType(vehicleType)
+      (floor) => normalizeVehicleType(floor.vehicleType) === normalizeVehicleType(vehicleType)
     );
 
     if (availableFloors.length > 0) {
@@ -272,19 +207,14 @@ function CheckInOutPage() {
       const now = new Date();
       setEntryTime(now.toTimeString().split(" ")[0]);
     };
-
     updateTime();
-
     const interval = setInterval(updateTime, 1000);
-
     return () => clearInterval(interval);
   }, []);
 
   const handleCheckInSubmit = async (e) => {
     e.preventDefault();
-
     const formattedPlate = licensePlateIn.trim().toUpperCase();
-
     if (!formattedPlate) return;
 
     if (!validateVietnamPlate(formattedPlate, vehicleType)) {
@@ -299,8 +229,7 @@ function CheckInOutPage() {
     const selectedFloor = floorsData.find(
       (floor) =>
         String(floor.floorId) === String(parkingFloor) &&
-        normalizeVehicleType(floor.vehicleType) ===
-          normalizeVehicleType(vehicleType)
+        normalizeVehicleType(floor.vehicleType) === normalizeVehicleType(vehicleType)
     );
 
     if (!selectedFloor) {
@@ -348,7 +277,6 @@ function CheckInOutPage() {
 
   const handleSearchCheckout = async (e) => {
     if (e) e.preventDefault();
-
     const plate = searchPlate.trim().toUpperCase();
     const ticket = searchTicketId.trim().toUpperCase();
 
@@ -362,7 +290,6 @@ function CheckInOutPage() {
         licensePlate: plate || undefined,
         ticketId: ticket || undefined
       });
-
       setCheckoutData(res.data);
     } catch (error) {
       alert(error.response?.data?.message || "Vehicle not found in system");
@@ -392,15 +319,21 @@ function CheckInOutPage() {
         })
       );
 
-      setSearchPlate("");
-      setSearchTicketId("");
-      setCheckoutData(null);
+      // Kích hoạt hiển thị Box Modal tính tiền thành công
+      setShowPaymentModal(true);
 
       await loadActiveSessions();
       await loadParkingFloorStats();
     } catch (error) {
       alert(error.response?.data?.message || "Check-out thất bại");
     }
+  };
+
+  const handleCloseModal = () => {
+    setShowPaymentModal(false);
+    setSearchPlate("");
+    setSearchTicketId("");
+    setCheckoutData(null);
   };
 
   const filteredFloors = floorsData.filter(
@@ -451,6 +384,7 @@ function CheckInOutPage() {
             marginTop: "1.5rem"
           }}
         >
+          {/* COLUMN LEFT: CHECK-IN ENTRY */}
           <div
             style={{
               background: theme.card,
@@ -486,9 +420,7 @@ function CheckInOutPage() {
                   maxLength={normalizeVehicleType(vehicleType) === "car" ? 10 : 13}
                   required
                   onChange={(e) =>
-                    setLicensePlateIn(
-                      formatPlateByVehicleType(e.target.value, vehicleType)
-                    )
+                    setLicensePlateIn(formatPlateByVehicleType(e.target.value, vehicleType))
                   }
                 />
 
@@ -568,7 +500,6 @@ function CheckInOutPage() {
 
                   <TextInput type="text" value={entryTime} readOnly muted />
                 </div>
-
                 <div>
                   <FieldLabel>TICKET ID</FieldLabel>
 
@@ -597,6 +528,7 @@ function CheckInOutPage() {
             </form>
           </div>
 
+          {/* COLUMN RIGHT: CHECK-OUT EXIT */}
           <div
             style={{
               background: theme.card,
@@ -856,7 +788,6 @@ function CheckInOutPage() {
                   onClick={async () => {
                     setSearchPlate(session.licensePlate);
                     setSearchTicketId(session.ticketId);
-
                     try {
                       const res = await parkingSessionApi.searchCheckout({
                         ticketId: session.ticketId
@@ -902,6 +833,160 @@ function CheckInOutPage() {
             </div>
           )}
         </div>
+
+        {/* ========================================================
+            FIXED BOX OVERLAY MODAL: AUTODETECT LIGHT & DARK THEME
+           ======================================================== */}
+        {showPaymentModal && checkoutData && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0, left: 0, right: 0, bottom: 0,
+              background: "rgba(10, 15, 30, 0.8)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              backdropFilter: "blur(4px)",
+              padding: "1rem"
+            }}
+          >
+            <div
+              className="pm-modal-card"
+              style={{
+                padding: "2rem",
+                borderRadius: "1rem",
+                width: "720px",
+                maxWidth: "100%",
+                position: "relative",
+                fontFamily: "sans-serif",
+                boxSizing: "border-box",
+                transition: "all 0.25s ease"
+              }}
+            >
+              {/* Close Button X */}
+              <button
+                onClick={handleCloseModal}
+                style={{
+                  position: "absolute",
+                  top: "1.25rem", right: "1.25rem",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#9ca3af"
+                }}
+              >
+                <X size={20} />
+              </button>
+
+              {/* Title Block */}
+              <h3 className="pm-text-title" style={{ marginTop: 0, fontSize: "1.1rem", fontWeight: "600", marginBottom: "1.5rem" }}>
+                Check-out & QR Payment
+              </h3>
+
+              {/* Two Column Content Grid Layout */}
+              <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: "2.5rem" }}>
+                
+                {/* LEFT DATA DETAILS SUMMARY PANEL */}
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    <span className="pm-text-license" style={{ fontSize: "1.8rem", fontWeight: "800", letterSpacing: "0.5px" }}>
+                      {checkoutData.licensePlate}
+                    </span>
+                    <span style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981", padding: "0.25rem 0.6rem", borderRadius: "0.375rem", fontSize: "0.72rem", fontWeight: "700" }}>
+                      STAY ACTIVE
+                    </span>
+                  </div>
+
+                  <div className="pm-text-subrow" style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>
+                    Slot: {checkoutData.slotCode || "N/A"}
+                  </div>
+
+                  {/* Metadata Info Grid */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem 1rem", marginTop: "1.5rem" }}>
+                    <div>
+                      <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>ENTRY TIME</div>
+                      <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
+                        {checkoutData.checkInTime ? new Date(checkoutData.checkInTime).toLocaleTimeString("vi-VN") : "--:--"} {checkoutData.checkInTime ? new Date(checkoutData.checkInTime).toLocaleDateString("vi-VN") : ""}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>CURRENT TIME</div>
+                      <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
+                        {checkoutData.checkOutTime ? new Date(checkoutData.checkOutTime).toLocaleTimeString("vi-VN") : "--:--"} {checkoutData.checkOutTime ? new Date(checkoutData.checkOutTime).toLocaleDateString("vi-VN") : ""}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>DURATION</div>
+                      <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
+                        {checkoutData.durationHours || 1} giờ
+                      </div>
+                    </div>
+                    <div>
+                      <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>PRICE PER HOUR</div>
+                      <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
+                        {formatCurrency(checkoutData.pricePerHour || 5000)} / giờ
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Price Row Breakdown */}
+                  <div style={{ marginTop: "1.5rem", borderTop: "1px solid rgba(128,128,128,0.2)", paddingTop: "1.25rem", display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
+                      <span className="pm-text-subrow">Parking Fee</span>
+                      <span className="pm-text-title" style={{ fontWeight: "600" }}>{formatCurrency(checkoutData.totalAmount)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
+                      <span className="pm-text-subrow">Service Charge</span>
+                      <span className="pm-text-title" style={{ fontWeight: "600" }}>{formatCurrency(0)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.1rem", fontWeight: "700", borderTop: "1px dashed rgba(128,128,128,0.3)", paddingTop: "1rem", marginTop: "0.25rem" }}>
+                      <span className="pm-text-title">Total Amount</span>
+                      <span style={{ color: "#10b981", fontSize: "1.25rem", fontWeight: "800" }}>
+                        {formatCurrency(checkoutData.totalAmount)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* RIGHT PANEL: INTERACTIVE SCAN QR CARD METHOD */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <div className="pm-text-title" style={{ fontSize: "1.1rem", fontWeight: "600", marginBottom: "1rem" }}>
+                    Quét mã QR để thanh toán
+                  </div>
+
+                  <div className="pm-qr-box" style={{ padding: "1.25rem", borderRadius: "0.75rem", display: "inline-block" }}>
+                    {/* Bọc cứng thẻ div nền trắng chuẩn mực ngăn chặn mã QR bị dính nền đen/âm bản */}
+                    <div style={{ background: "#ffffff", padding: "0.5rem", borderRadius: "0.4rem", display: "block" }}>
+                      <img
+                        src={getFakeQRCode(checkoutData.ticketId, checkoutData.totalAmount)}
+                        alt="Scannable real gate check-out payment QR simulation target"
+                        style={{ display: "block" }}
+                        width={165}
+                        height={165}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pm-text-subrow" style={{ fontSize: "0.78rem", textAlign: "center", marginTop: "1rem", maxWidth: "220px", lineHeight: "1.4" }}>
+                    Vui lòng quét mã QR để thanh toán phí gửi xe.
+                  </div>
+
+                  {/* Verification Secure Footers */}
+                  <div style={{ display: "flex", gap: "1rem", marginTop: "1.5rem", borderTop: "1px solid rgba(128,128,128,0.2)", paddingTop: "1rem", width: "100%", justifyContent: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: "#60a5fa", fontSize: "0.72rem", fontWeight: "600" }}>
+                      <Zap size={13} fill="#60a5fa" /> Xác nhận tức thì
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: "#60a5fa", fontSize: "0.72rem", fontWeight: "600" }}>
+                      <ShieldCheck size={13} fill="transparent" /> Thanh toán bảo mật
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

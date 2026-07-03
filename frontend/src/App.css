@@ -697,17 +697,155 @@ body.light-mode .main-content tr {
 /* Pricing table */
 .pricing-table-wrapper {
   width: 100% !important;
-  overflow-x: auto !important;
-  overflow-y: visible !important;
+  min-height: 46px !important;
+  border: none !important;
+  outline: none !important;
+  border-radius: 0.65rem !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  color: var(--text-main) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.85rem !important;
+  padding: 0.75rem 1rem !important;
+  font-size: 0.95rem !important;
+  font-weight: 650 !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
 }
 
-.pricing-table-wrapper table {
+.sidebar .menu-item svg {
+  color: currentColor !important;
+  stroke: currentColor !important;
+}
+
+/* Dark sidebar */
+body:not(.light-mode) .sidebar {
+  background-color: #05070c !important;
+  border-right-color: #1e293b !important;
+}
+
+body:not(.light-mode) .sidebar .menu-item:hover {
+  background: rgba(59, 130, 246, 0.14) !important;
+  color: #ffffff !important;
+}
+
+body:not(.light-mode) .sidebar .menu-item.active,
+body:not(.light-mode) .sidebar .menu-item[aria-current="page"] {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.28) 0%, rgba(15, 23, 42, 0.92) 100%) !important;
+  color: #ffffff !important;
+  border-left: 3px solid #3b82f6 !important;
+}
+
+/* Light sidebar */
+body.light-mode .sidebar {
+  background-color: #ffffff !important;
+  border-right-color: #dbe3ee !important;
+}
+
+body.light-mode .sidebar .menu-item:hover {
+  background: #eef5ff !important;
+  color: #2563eb !important;
+}
+
+body.light-mode .sidebar .menu-item.active,
+body.light-mode .sidebar .menu-item[aria-current="page"] {
+  background: linear-gradient(90deg, #dbeafe 0%, #f1f5ff 100%) !important;
+  color: #0f172a !important;
+  border-left: 3px solid #2563eb !important;
+}
+
+body.light-mode .sidebar .menu-item *,
+body:not(.light-mode) .sidebar .menu-item * {
+  color: inherit !important;
+}
+
+/* ==========================================================================
+   TABLES
+   ========================================================================== */
+
+table {
+  color: var(--text-main);
+}
+
+thead,
+.table-header {
+  background-color: var(--bg-table-header);
+  color: var(--text-muted);
+}
+
+tbody,
+.table-row {
+  background-color: var(--bg-table-row);
+}
+
+body.light-mode .main-content table {
+  background-color: var(--bg-table-row) !important;
+  color: var(--text-main) !important;
+}
+
+body.light-mode .main-content thead,
+body.light-mode .main-content thead tr {
+  background-color: var(--bg-table-header) !important;
+}
+
+body.light-mode .main-content th {
+  background-color: var(--bg-table-header) !important;
+  color: var(--text-muted) !important;
+  border-color: var(--border-color) !important;
+}
+
+body.light-mode .main-content td {
+  background-color: var(--bg-table-row) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border-soft) !important;
+}
+
+body.light-mode .main-content tr {
+  border-color: var(--border-soft) !important;
+}
+
+/* ==========================================================================
+   🔥 ULTRA GLASSMORPHISM SYSTEM WITH EXTRA DEPTH
+   ========================================================================== */
+
+.app-global-private-container {
+  width: 100vw !important;
+  height: 100vh !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+/* Lớp phủ mờ bãi xe */
+.app-global-backdrop-mask {
   width: 100% !important;
-  min-width: 1050px !important;
+  height: 100% !important;
+  background: rgba(4, 6, 12, 0.62) !important; 
+  position: relative !important;
 }
 
-.pricing-table-wrapper tr {
-  height: 76px !important;
+body.light-mode .app-global-backdrop-mask {
+  background: rgba(240, 244, 250, 0.72) !important;
+}
+
+body.light-mode .app-global-private-container .main-content,
+body:not(.light-mode) .app-global-private-container .main-content,
+.app-global-private-container .dashboard-layout,
+.app-global-private-container .main-content {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.app-global-private-container .main-content {
+  padding-top: 6.5rem !important; 
+}
+
+body.light-mode .main-content p {
+  color: #334155 !important; 
 }
 
 /* ==========================================================================
