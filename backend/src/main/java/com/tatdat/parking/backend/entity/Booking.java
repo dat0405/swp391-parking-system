@@ -42,6 +42,12 @@ public class Booking {
      */
     public static final String STATUS_PENDING = STATUS_PENDING_PAYMENT;
 
+    public static final String PAYMENT_STATUS_PENDING = "PENDING";
+    public static final String PAYMENT_STATUS_PAID = "PAID";
+    public static final String PAYMENT_STATUS_CANCELLED = "CANCELLED";
+    public static final String PAYMENT_STATUS_EXPIRED = "EXPIRED";
+    public static final String PAYMENT_STATUS_FAILED = "FAILED";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
@@ -88,6 +94,33 @@ public class Booking {
     @Column(name = "refunded_at")
     private LocalDateTime refundedAt;
 
+    /*
+     * PayOS fields
+     */
+    @Column(name = "payment_order_code", unique = true)
+    private Long paymentOrderCode;
+
+    @Column(name = "payment_link_id", length = 100)
+    private String paymentLinkId;
+
+    @Column(name = "checkout_url", length = 1000)
+    private String checkoutUrl;
+
+    @Column(name = "qr_code", columnDefinition = "NVARCHAR(MAX)")
+    private String qrCode;
+
+    @Column(name = "payment_amount")
+    private Integer paymentAmount;
+
+    @Column(name = "payment_currency", length = 10)
+    private String paymentCurrency;
+
+    @Column(name = "payment_status", length = 30)
+    private String paymentStatus;
+
+    @Column(name = "payment_description", length = 255)
+    private String paymentDescription;
+
     @PrePersist
     public void prePersist() {
         if (bookingTime == null) {
@@ -103,12 +136,30 @@ public class Booking {
         if (STATUS_PENDING_PAYMENT.equals(status) && paymentExpiredAt == null) {
             paymentExpiredAt = bookingTime.plusMinutes(10);
         }
+
+        if (paymentCurrency == null || paymentCurrency.trim().isEmpty()) {
+            paymentCurrency = "VND";
+        }
+
+        if (paymentStatus == null || paymentStatus.trim().isEmpty()) {
+            paymentStatus = PAYMENT_STATUS_PENDING;
+        }
+
+        paymentStatus = normalizePaymentStatus(paymentStatus);
     }
 
     @PreUpdate
     public void preUpdate() {
         if (status != null) {
             status = normalizeStatus(status);
+        }
+
+        if (paymentStatus != null) {
+            paymentStatus = normalizePaymentStatus(paymentStatus);
+        }
+
+        if (paymentCurrency != null) {
+            paymentCurrency = paymentCurrency.trim().toUpperCase();
         }
     }
 
@@ -126,6 +177,16 @@ public class Booking {
         return normalizedStatus;
     }
 
+    private String normalizePaymentStatus(String inputPaymentStatus) {
+        String normalizedPaymentStatus = inputPaymentStatus.trim().toUpperCase();
+
+        if ("CANCELED".equals(normalizedPaymentStatus)) {
+            return PAYMENT_STATUS_CANCELLED;
+        }
+
+        return normalizedPaymentStatus;
+    }
+
     public boolean isActiveForOverlapCheck() {
         return STATUS_PENDING_PAYMENT.equals(status)
                 || STATUS_CONFIRMED.equals(status)
@@ -138,5 +199,13 @@ public class Booking {
                 || STATUS_EXPIRED.equals(status)
                 || STATUS_NO_SHOW.equals(status)
                 || STATUS_REFUNDED.equals(status);
+    }
+
+    public boolean isPaymentPending() {
+        return PAYMENT_STATUS_PENDING.equals(paymentStatus);
+    }
+
+    public boolean isPaymentPaid() {
+        return PAYMENT_STATUS_PAID.equals(paymentStatus);
     }
 }

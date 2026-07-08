@@ -13,8 +13,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Integer> {
     @Query("""
             SELECT COALESCE(SUM(p.amount), 0)
             FROM Payment p
-            WHERE p.paymentStatus = 'PAID'
-
+            WHERE UPPER(p.paymentStatus) = 'PAID'
             """)
     BigDecimal getTotalRevenue();
 
@@ -23,12 +22,31 @@ public interface PaymentRepository extends JpaRepository<Payment, Integer> {
     @Query("""
             SELECT COALESCE(SUM(p.amount), 0)
             FROM Payment p
-            WHERE p.paymentStatus = 'PAID'
-
-            AND p.paymentTime >= :startOfDay
-            AND p.paymentTime < :endOfDay
+            WHERE UPPER(p.paymentStatus) = 'PAID'
+              AND p.paymentTime >= :startOfDay
+              AND p.paymentTime < :endOfDay
             """)
     BigDecimal sumTodayRevenue(
+            @Param("startOfDay") LocalDateTime startOfDay,
+            @Param("endOfDay") LocalDateTime endOfDay
+    );
+
+    /*
+     * Doanh thu từ Booking PayOS.
+     *
+     * Bảng bookings không phải entity Payment,
+     * nên mình dùng nativeQuery để sum trực tiếp từ database.
+     */
+    @Query(value = """
+            SELECT COALESCE(SUM(b.payment_amount), 0)
+            FROM bookings b
+            WHERE UPPER(b.status) = 'CONFIRMED'
+              AND UPPER(b.payment_status) = 'PAID'
+              AND b.paid_at IS NOT NULL
+              AND b.paid_at >= :startOfDay
+              AND b.paid_at < :endOfDay
+            """, nativeQuery = true)
+    BigDecimal sumTodayBookingRevenue(
             @Param("startOfDay") LocalDateTime startOfDay,
             @Param("endOfDay") LocalDateTime endOfDay
     );

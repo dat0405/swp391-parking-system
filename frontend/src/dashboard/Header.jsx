@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import {
   Search,
   Bell,
@@ -15,6 +15,60 @@ const LOGOUT_FLAG_KEY = 'isLoggingOut';
 const LOGOUT_STARTED_AT_KEY = 'logoutStartedAt';
 const THEME_STORAGE_KEY = 'theme';
 const LOGOUT_GUARD_MS = 15000;
+const USER_CACHE_KEY = 'user';
+const USER_SYNCED_AT_KEY = 'headerUserSyncedAt';
+const USER_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+
+const formatRole = (role) => {
+  if (!role) return 'Staff';
+
+  if (role === 'SYSTEM_ADMIN') return 'System Admin';
+  if (role === 'PARKING_MANAGER') return 'Parking Manager';
+  if (role === 'PARKING_STAFF') return 'Parking Staff';
+  if (role === 'DRIVER') return 'Driver';
+  if (role === 'USER') return 'User';
+
+  return String(role)
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
+const getCurrentUserFromStorage = () => {
+  const savedUser = localStorage.getItem(USER_CACHE_KEY);
+
+  if (!savedUser) {
+    return {
+      name: 'Parking User',
+      role: 'Staff',
+      rawRole: 'PARKING_STAFF'
+    };
+  }
+
+  try {
+    const parsedUser = JSON.parse(savedUser);
+    const rawRole = parsedUser.role || parsedUser.roleName || 'PARKING_STAFF';
+
+    return {
+      name:
+        parsedUser.fullName ||
+        parsedUser.name ||
+        parsedUser.email ||
+        'Parking User',
+      role: formatRole(rawRole),
+      rawRole
+    };
+  } catch (error) {
+    console.error('Không thể đọc dữ liệu user từ localStorage:', error);
+
+    return {
+      name: 'Parking User',
+      role: 'Staff',
+      rawRole: 'PARKING_STAFF'
+    };
+  }
+};
 
 const getInitialTheme = () => {
   const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
@@ -58,12 +112,7 @@ const clearExpiredLogoutGuard = () => {
 };
 
 function Header() {
-  const [currentUser, setCurrentUser] = useState({
-    name: 'Loading...',
-    role: 'Staff',
-    rawRole: 'PARKING_STAFF'
-  });
-
+  const [currentUser, setCurrentUser] = useState(() => getCurrentUserFromStorage());
   const [notifications, setNotifications] = useState([]);
   const [isOpenDropdown, setIsOpenDropdown] = useState(false);
   const [isOpenSettings, setIsOpenSettings] = useState(false);
@@ -74,64 +123,44 @@ function Header() {
   const settingsRef = useRef(null);
   const currentUserRef = useRef(currentUser);
   const isLoggingOutRef = useRef(false);
+  const hasMountedRef = useRef(false);
 
   const isDarkMode = theme === 'dark';
   const displayNotifications = notifications.slice(0, 8);
   const unreadCount = notifications.filter((notification) => !notification.isRead).length;
 
-  const formatRole = (role) => {
-    if (!role) return 'Staff';
+  const syncUserState = (nextUser) => {
+    const current = currentUserRef.current;
 
-    if (role === 'SYSTEM_ADMIN') return 'System Admin';
-    if (role === 'PARKING_MANAGER') return 'Parking Manager';
-    if (role === 'PARKING_STAFF') return 'Parking Staff';
-    if (role === 'DRIVER') return 'Driver';
-    if (role === 'USER') return 'User';
-
-    return String(role)
-      .toLowerCase()
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  };
-
-  const getCurrentUserFromStorage = () => {
-    const savedUser = localStorage.getItem('user');
-
-    if (!savedUser) {
-      return {
-        name: 'Guest User',
-        role: 'Staff',
-        rawRole: 'PARKING_STAFF'
-      };
+    if (
+      current.name === nextUser.name &&
+      current.role === nextUser.role &&
+      current.rawRole === nextUser.rawRole
+    ) {
+      return;
     }
 
-    try {
-      const parsedUser = JSON.parse(savedUser);
-      const rawRole = parsedUser.role || parsedUser.roleName || 'PARKING_STAFF';
-
-      return {
-        name:
-          parsedUser.fullName ||
-          parsedUser.name ||
-          parsedUser.email ||
-          'Parking User',
-        role: formatRole(rawRole),
-        rawRole
-      };
-    } catch (error) {
-      console.error('Không thể đọc dữ liệu user từ localStorage:', error);
-
-      return {
-        name: 'Parking User',
-        role: 'Staff',
-        rawRole: 'PARKING_STAFF'
-      };
-    }
+    setCurrentUser(nextUser);
+    currentUserRef.current = nextUser;
   };
 
-  const loadUserInformation = async () => {
+  const shouldSyncUserFromServer = () => {
+    const lastSyncedAt = Number(localStorage.getItem(USER_SYNCED_AT_KEY) || 0);
+
+    if (!lastSyncedAt) return true;
+
+    return Date.now() - lastSyncedAt > USER_SYNC_INTERVAL_MS;
+  };
+
+  const loadUserInformation = async ({ force = false } = {}) => {
     if (isLoggingOutRef.current || clearExpiredLogoutGuard()) {
+      return;
+    }
+
+    const fallbackUser = getCurrentUserFromStorage();
+    syncUserState(fallbackUser);
+
+    if (!force && !shouldSyncUserFromServer()) {
       return;
     }
 
@@ -145,28 +174,29 @@ function Header() {
           data.fullName ||
           data.name ||
           data.email ||
+          fallbackUser.name ||
           'Parking User',
         role: formatRole(rawRole),
         rawRole
       };
 
       localStorage.setItem(
-        'user',
+        USER_CACHE_KEY,
         JSON.stringify({
           userId: data.userId,
+          id: data.userId,
           fullName: data.fullName,
+          name: data.name,
           email: data.email,
           role: rawRole
         })
       );
 
-      setCurrentUser(nextUser);
-      currentUserRef.current = nextUser;
-    } catch (error) {
-      const fallbackUser = getCurrentUserFromStorage();
+      localStorage.setItem(USER_SYNCED_AT_KEY, String(Date.now()));
 
-      setCurrentUser(fallbackUser);
-      currentUserRef.current = fallbackUser;
+      syncUserState(nextUser);
+    } catch (error) {
+      syncUserState(fallbackUser);
     }
   };
 
@@ -256,6 +286,12 @@ function Header() {
   }, [theme]);
 
   useEffect(() => {
+    if (hasMountedRef.current) {
+      return undefined;
+    }
+
+    hasMountedRef.current = true;
+
     const handleStorageChange = (event) => {
       if (event.key === THEME_STORAGE_KEY) {
         const nextTheme = event.newValue === 'light' ? 'light' : 'dark';
@@ -263,12 +299,14 @@ function Header() {
         return;
       }
 
-      if (clearExpiredLogoutGuard()) {
+      if (event.key === USER_CACHE_KEY) {
+        syncUserState(getCurrentUserFromStorage());
         return;
       }
 
-      loadUserInformation();
-      loadNotificationsFromStorage();
+      if (event.key === NOTIFICATION_STORAGE_KEY) {
+        loadNotificationsFromStorage();
+      }
     };
 
     const handlePageNotification = (event) => {
@@ -276,6 +314,7 @@ function Header() {
     };
 
     applyThemeToBody(getInitialTheme());
+    syncUserState(getCurrentUserFromStorage());
     loadUserInformation();
     loadNotificationsFromStorage();
 
@@ -365,7 +404,8 @@ function Header() {
     } finally {
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
+      localStorage.removeItem(USER_CACHE_KEY);
+      localStorage.removeItem(USER_SYNCED_AT_KEY);
       sessionStorage.clear();
 
       window.location.replace('/login');
@@ -377,22 +417,46 @@ function Header() {
     localStorage.removeItem(NOTIFICATION_STORAGE_KEY);
   };
 
+  const avatarLetter = currentUser.name
+    ? currentUser.name.charAt(0).toUpperCase()
+    : 'P';
+
   return (
-    <div
-      className="app-header"
+    <header
+      className="dashboard-header stable-dashboard-header"
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: 'var(--bg-column-left)',
-        padding: '0.75rem 1.5rem',
-        border: '1px solid var(--border-color)',
-        position: 'relative',
-        width: '100%',
-        boxSizing: 'border-box'
+        boxSizing: 'border-box',
+        minHeight: '70px',
+        flexShrink: 0,
+        animation: 'none',
+        transition: 'none'
       }}
     >
-      <div style={{ position: 'relative', width: '320px' }}>
+      <style>{`
+        .stable-dashboard-header,
+        .stable-dashboard-header *,
+        .stable-dashboard-header svg,
+        .stable-dashboard-header button,
+        .stable-dashboard-header input {
+          animation: none !important;
+        }
+
+        .stable-dashboard-header {
+          transform: translateZ(0);
+          backface-visibility: hidden;
+          will-change: auto;
+        }
+
+        .stable-header-icon-button,
+        .stable-header-user,
+        .stable-header-avatar,
+        .stable-header-user-name,
+        .stable-header-user-role {
+          transition: none !important;
+        }
+      `}</style>
+
+      <div style={{ position: 'relative', width: '320px', flexShrink: 0 }}>
         <Search
           size={16}
           style={{
@@ -426,11 +490,13 @@ function Header() {
           display: 'flex',
           alignItems: 'center',
           gap: '1.25rem',
-          position: 'relative'
+          position: 'relative',
+          flexShrink: 0
         }}
       >
         <button
           type="button"
+          className="stable-header-icon-button"
           onClick={handleToggleTheme}
           style={{
             background: 'none',
@@ -461,6 +527,7 @@ function Header() {
         >
           <button
             type="button"
+            className="stable-header-icon-button"
             onClick={handleBellClick}
             style={{
               background: 'none',
@@ -496,7 +563,6 @@ function Header() {
             )}
           </button>
 
-          {/* 🔥 CÂN CHỈNH DROPDOWN: Hạ top xuống 52px để khớp với chiều cao Header 70px mới */}
           {activeToast && (
             <div
               style={{
@@ -554,7 +620,6 @@ function Header() {
             </div>
           )}
 
-          {/* 🔥 CÂN CHỈNH DROPDOWN: Hạ top xuống 52px */}
           {isOpenDropdown && (
             <div
               style={{
@@ -690,6 +755,7 @@ function Header() {
         >
           <button
             type="button"
+            className="stable-header-icon-button"
             onClick={() => setIsOpenSettings((prev) => !prev)}
             style={{
               background: 'none',
@@ -709,7 +775,6 @@ function Header() {
             />
           </button>
 
-          {/* 🔥 CÂN CHỈNH DROPDOWN: Hạ top xuống 52px */}
           {isOpenSettings && (
             <div
               style={{
@@ -756,27 +821,40 @@ function Header() {
           }}
         />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{ textAlign: 'right' }}>
+        <div
+          className="stable-header-user"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            minWidth: '150px',
+            justifyContent: 'flex-end'
+          }}
+        >
+          <div style={{ textAlign: 'right', minWidth: '100px' }}>
             <h4
+              className="stable-header-user-name"
               style={{
                 margin: 0,
                 fontSize: '0.88rem',
                 fontWeight: '700',
                 color: 'var(--text-main)',
-                letterSpacing: '0.3px'
+                letterSpacing: '0.3px',
+                whiteSpace: 'nowrap'
               }}
             >
               {currentUser.name}
             </h4>
 
             <span
+              className="stable-header-user-role"
               style={{
                 fontSize: '0.7rem',
                 color: 'var(--text-muted)',
                 fontWeight: '600',
                 display: 'block',
-                marginTop: '1px'
+                marginTop: '1px',
+                whiteSpace: 'nowrap'
               }}
             >
               {currentUser.role}
@@ -784,6 +862,7 @@ function Header() {
           </div>
 
           <div
+            className="stable-header-avatar"
             style={{
               width: '32px',
               height: '32px',
@@ -794,15 +873,16 @@ function Header() {
               alignItems: 'center',
               justifyContent: 'center',
               fontWeight: '700',
-              fontSize: '0.85rem'
+              fontSize: '0.85rem',
+              flexShrink: 0
             }}
           >
-            {currentUser.name.charAt(0).toUpperCase()}
+            {avatarLetter}
           </div>
         </div>
       </div>
-    </div>
+    </header>
   );
 }
 
-export default Header;
+export default memo(Header);

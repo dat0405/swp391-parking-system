@@ -36,6 +36,35 @@ public class PricingPolicyController {
         return mapToResponse(pricingPolicy);
     }
 
+    /*
+     * API mới cho Booking FE.
+     *
+     * Example:
+     * GET /api/pricing-policies/active/vehicle-type/1
+     * GET /api/pricing-policies/active/vehicle-type/2
+     *
+     * Dùng để lấy giá ACTIVE hiện tại theo loại xe.
+     */
+    @GetMapping("/active/vehicle-type/{vehicleTypeId}")
+    public PricingPolicyResponse getActivePricingPolicyByVehicleType(
+            @PathVariable Integer vehicleTypeId
+    ) {
+        PricingPolicy pricingPolicy = pricingPolicyRepository
+                .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByUpdatedAtDesc(
+                        vehicleTypeId,
+                        PricingPolicy.STATUS_ACTIVE
+                )
+                .or(() -> pricingPolicyRepository
+                        .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByIdDesc(
+                                vehicleTypeId,
+                                PricingPolicy.STATUS_ACTIVE
+                        )
+                )
+                .orElseThrow(() -> new RuntimeException("Active pricing policy not found for this vehicle type"));
+
+        return mapToResponse(pricingPolicy);
+    }
+
     @PostMapping
     public PricingPolicyResponse createPricingPolicy(@RequestBody PricingPolicyRequest request) {
         validatePricingPolicyRequest(request);
@@ -45,10 +74,10 @@ public class PricingPolicyController {
 
         String status = normalizeStatus(request.getStatus());
 
-        if ("ACTIVE".equals(status)
-                && pricingPolicyRepository.existsByVehicleType_IdAndStatus(
+        if (PricingPolicy.STATUS_ACTIVE.equals(status)
+                && pricingPolicyRepository.existsByVehicleType_IdAndStatusIgnoreCase(
                 request.getVehicleTypeId(),
-                "ACTIVE"
+                PricingPolicy.STATUS_ACTIVE
         )) {
             throw new RuntimeException("This vehicle type already has an active pricing policy");
         }
@@ -85,9 +114,12 @@ public class PricingPolicyController {
 
         String status = normalizeStatus(request.getStatus());
 
-        if ("ACTIVE".equals(status)) {
+        if (PricingPolicy.STATUS_ACTIVE.equals(status)) {
             pricingPolicyRepository
-                    .findFirstByVehicleType_IdAndStatus(request.getVehicleTypeId(), "ACTIVE")
+                    .findFirstByVehicleType_IdAndStatusIgnoreCase(
+                            request.getVehicleTypeId(),
+                            PricingPolicy.STATUS_ACTIVE
+                    )
                     .ifPresent(existingPolicy -> {
                         if (!existingPolicy.getId().equals(id)) {
                             throw new RuntimeException("This vehicle type already has another active pricing policy");
@@ -107,6 +139,10 @@ public class PricingPolicyController {
 
         PricingPolicy savedPricingPolicy = pricingPolicyRepository.save(pricingPolicy);
 
+        /*
+         * Sau này mình sẽ gắn notification ở đây:
+         * "Pricing policy updated"
+         */
         return mapToResponse(savedPricingPolicy);
     }
 
@@ -120,11 +156,14 @@ public class PricingPolicyController {
 
         String status = normalizeStatus(request.getStatus());
 
-        if ("ACTIVE".equals(status)) {
+        if (PricingPolicy.STATUS_ACTIVE.equals(status)) {
             Integer vehicleTypeId = pricingPolicy.getVehicleType().getId();
 
             pricingPolicyRepository
-                    .findFirstByVehicleType_IdAndStatus(vehicleTypeId, "ACTIVE")
+                    .findFirstByVehicleType_IdAndStatusIgnoreCase(
+                            vehicleTypeId,
+                            PricingPolicy.STATUS_ACTIVE
+                    )
                     .ifPresent(existingPolicy -> {
                         if (!existingPolicy.getId().equals(id)) {
                             throw new RuntimeException("This vehicle type already has another active pricing policy");
@@ -144,7 +183,7 @@ public class PricingPolicyController {
         PricingPolicy pricingPolicy = pricingPolicyRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Pricing policy not found"));
 
-        pricingPolicy.setStatus("INACTIVE");
+        pricingPolicy.setStatus(PricingPolicy.STATUS_INACTIVE);
         pricingPolicyRepository.save(pricingPolicy);
 
         return "Pricing policy has been disabled successfully";
@@ -207,6 +246,10 @@ public class PricingPolicyController {
             }
         }
 
+        /*
+         * Sau này mình sẽ gắn notification ở đây:
+         * "Pricing policy for vehicle type has been updated"
+         */
         return pricingPolicyRepository.saveAll(pricingPolicies)
                 .stream()
                 .map(this::mapToResponse)
@@ -242,13 +285,13 @@ public class PricingPolicyController {
 
     private String normalizeStatus(String status) {
         if (status == null || status.isBlank()) {
-            return "ACTIVE";
+            return PricingPolicy.STATUS_ACTIVE;
         }
 
         String normalizedStatus = status.trim().toUpperCase();
 
-        if (!"ACTIVE".equals(normalizedStatus)
-                && !"INACTIVE".equals(normalizedStatus)) {
+        if (!PricingPolicy.STATUS_ACTIVE.equals(normalizedStatus)
+                && !PricingPolicy.STATUS_INACTIVE.equals(normalizedStatus)) {
             throw new RuntimeException("Invalid pricing policy status");
         }
 

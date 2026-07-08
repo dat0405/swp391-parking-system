@@ -14,6 +14,8 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
 
     Optional<Booking> findByVehicleIdAndSlotId(Integer vehicleId, Integer slotId);
 
+    Optional<Booking> findByPaymentOrderCode(Long paymentOrderCode);
+
     List<Booking> findAllByOrderByBookingTimeDesc();
 
     List<Booking> findByUserIdOrderByBookingTimeDesc(Integer userId);
@@ -70,7 +72,8 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
     @Modifying
     @Query("""
             UPDATE Booking b
-            SET b.status = 'EXPIRED'
+            SET b.status = 'EXPIRED',
+                b.paymentStatus = 'EXPIRED'
             WHERE b.status = 'PENDING_PAYMENT'
               AND b.paymentExpiredAt IS NOT NULL
               AND b.paymentExpiredAt <= :now

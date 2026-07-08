@@ -43,6 +43,13 @@ const rangeToApiValue = {
   Month: "MONTH"
 };
 
+const reportColors = {
+  blue: "#3b82f6",
+  green: "#10b981",
+  red: "#ef4444",
+  yellow: "#f59e0b"
+};
+
 const formatCurrency = (value) => {
   return `${Number(value || 0).toLocaleString("vi-VN")} VND`;
 };
@@ -89,7 +96,8 @@ const getStatusMeta = (status) => {
   if (value === "CONFIRMED" || value === "COMPLETED" || value === "PAID") {
     return {
       label: value,
-      color: "#10b981",
+      color: reportColors.green,
+      colorClass: "report-progress-fill-green",
       icon: CheckCircle2
     };
   }
@@ -97,7 +105,8 @@ const getStatusMeta = (status) => {
   if (value === "PENDING" || value === "RESERVED" || value === "ACTIVE") {
     return {
       label: value,
-      color: "#f59e0b",
+      color: reportColors.yellow,
+      colorClass: "report-progress-fill-yellow",
       icon: Clock
     };
   }
@@ -105,14 +114,16 @@ const getStatusMeta = (status) => {
   if (value === "CANCELLED" || value === "CANCELED") {
     return {
       label: value,
-      color: "#ef4444",
+      color: reportColors.red,
+      colorClass: "report-progress-fill-red",
       icon: XCircle
     };
   }
 
   return {
     label: value || "UNKNOWN",
-    color: "#3b82f6",
+    color: reportColors.blue,
+    colorClass: "report-progress-fill-blue",
     icon: CheckCircle2
   };
 };
@@ -131,7 +142,10 @@ const normalizeVehicleDistribution = (rows = []) => {
       count: total,
       percent,
       icon: isMotorbike ? Bike : Car,
-      color: isMotorbike ? "#10b981" : "#3b82f6"
+      color: isMotorbike ? reportColors.green : reportColors.blue,
+      colorClass: isMotorbike
+        ? "report-progress-fill-green"
+        : "report-progress-fill-blue"
     };
   });
 };
@@ -150,6 +164,7 @@ const normalizeReservationBreakdown = (rows = []) => {
       value,
       percent,
       color: meta.color,
+      colorClass: meta.colorClass,
       icon: meta.icon
     };
   });
@@ -169,22 +184,37 @@ const styles = {
     border: "1px solid var(--border-color)",
     color: "var(--text-main)",
     boxShadow: "var(--shadow-card)"
-  },
-  mutedText: {
-    color: "var(--text-muted)"
-  },
-  mainText: {
-    color: "var(--text-main)"
-  },
-  softBorder: {
-    borderColor: "var(--border-color)"
-  },
-  inputLike: {
-    background: "var(--bg-input)",
-    border: "1px solid var(--border-color)",
-    color: "var(--text-main)"
   }
 };
+
+const clampPercent = (value) => {
+  const number = Number(value || 0);
+
+  if (number < 0) return 0;
+  if (number > 100) return 100;
+
+  return number;
+};
+
+function ProgressBar({ percent, colorClass, height = 9 }) {
+  const safePercent = clampPercent(percent);
+
+  return (
+    <div
+      className="report-progress-track"
+      style={{
+        height: `${height}px`
+      }}
+    >
+      <div
+        className={`report-progress-fill ${colorClass}`}
+        style={{
+          width: `${safePercent}%`
+        }}
+      />
+    </div>
+  );
+}
 
 const Reports = () => {
   const [timeRange, setTimeRange] = useState("Week");
@@ -355,6 +385,114 @@ const Reports = () => {
       >
         <Header />
 
+        <style>
+          {`
+            .report-progress-track {
+              width: 100% !important;
+              background-color: #cbd5e1 !important;
+              border: 1px solid #94a3b8 !important;
+              border-radius: 999px !important;
+              overflow: hidden !important;
+              position: relative !important;
+              box-sizing: border-box !important;
+              pointer-events: none !important;
+              user-select: none !important;
+            }
+
+            .report-progress-fill {
+              height: 100% !important;
+              display: block !important;
+              border-radius: 999px !important;
+              opacity: 1 !important;
+              visibility: visible !important;
+              min-width: 4px !important;
+              pointer-events: none !important;
+              transform: translateZ(0) !important;
+              backface-visibility: hidden !important;
+            }
+
+            .report-progress-fill-blue {
+              background-color: #3b82f6 !important;
+            }
+
+            .report-progress-fill-green {
+              background-color: #10b981 !important;
+            }
+
+            .report-progress-fill-red {
+              background-color: #ef4444 !important;
+            }
+
+            .report-progress-fill-yellow {
+              background-color: #f59e0b !important;
+            }
+
+            .report-revenue-bar {
+              background-color: #3b82f6 !important;
+              opacity: 1 !important;
+              visibility: visible !important;
+              transform: translateZ(0) !important;
+              backface-visibility: hidden !important;
+            }
+
+            .report-chart-grid {
+              background-color: transparent !important;
+              background-image:
+                linear-gradient(
+                  to top,
+                  transparent 0%,
+                  transparent 24%,
+                  rgba(100, 116, 139, 0.38) 24.7%,
+                  rgba(100, 116, 139, 0.38) 25.3%,
+                  transparent 25.8%,
+                  transparent 49%,
+                  rgba(100, 116, 139, 0.38) 49.7%,
+                  rgba(100, 116, 139, 0.38) 50.3%,
+                  transparent 50.8%,
+                  transparent 74%,
+                  rgba(100, 116, 139, 0.38) 74.7%,
+                  rgba(100, 116, 139, 0.38) 75.3%,
+                  transparent 75.8%,
+                  transparent 100%
+                ) !important;
+              border-top: 1px solid rgba(100, 116, 139, 0.45) !important;
+              border-bottom: 1px solid rgba(100, 116, 139, 0.45) !important;
+            }
+
+            [data-theme="dark"] .report-chart-grid,
+            .dark .report-chart-grid,
+            body.dark .report-chart-grid {
+              background-image:
+                linear-gradient(
+                  to top,
+                  transparent 0%,
+                  transparent 24%,
+                  rgba(148, 163, 184, 0.22) 24.7%,
+                  rgba(148, 163, 184, 0.22) 25.3%,
+                  transparent 25.8%,
+                  transparent 49%,
+                  rgba(148, 163, 184, 0.22) 49.7%,
+                  rgba(148, 163, 184, 0.22) 50.3%,
+                  transparent 50.8%,
+                  transparent 74%,
+                  rgba(148, 163, 184, 0.22) 74.7%,
+                  rgba(148, 163, 184, 0.22) 75.3%,
+                  transparent 75.8%,
+                  transparent 100%
+                ) !important;
+              border-top: 1px solid rgba(148, 163, 184, 0.35) !important;
+              border-bottom: 1px solid rgba(148, 163, 184, 0.35) !important;
+            }
+
+            [data-theme="dark"] .report-progress-track,
+            .dark .report-progress-track,
+            body.dark .report-progress-track {
+              background-color: #1e293b !important;
+              border-color: rgba(148, 163, 184, 0.35) !important;
+            }
+          `}
+        </style>
+
         <div
           style={{
             display: "flex",
@@ -483,9 +621,9 @@ const Reports = () => {
         {errorMessage && (
           <div
             style={{
-              background: "var(--danger-red-soft)",
-              border: "1px solid var(--danger-red)",
-              color: "var(--danger-red)",
+              background: "rgba(239, 68, 68, 0.12)",
+              border: "1px solid #ef4444",
+              color: "#ef4444",
               padding: "0.85rem 1rem",
               borderRadius: "0.75rem",
               marginBottom: "1.5rem",
@@ -579,9 +717,10 @@ const Reports = () => {
                     width: "48px",
                     height: "48px",
                     flexShrink: 0,
-                    background: "var(--bg-card-soft)",
+                    background: "rgba(59, 130, 246, 0.12)",
+                    border: "1px solid rgba(59, 130, 246, 0.18)",
                     borderRadius: "0.75rem",
-                    color: "var(--text-muted)",
+                    color: "var(--primary-blue)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center"
@@ -650,7 +789,7 @@ const Reports = () => {
               >
                 <span
                   style={{
-                    color: "var(--primary-blue)",
+                    color: reportColors.blue,
                     display: "flex",
                     alignItems: "center",
                     gap: "0.35rem"
@@ -671,6 +810,7 @@ const Reports = () => {
               }}
             >
               <div
+                className="report-chart-grid"
                 style={{
                   position: "relative",
                   display: "grid",
@@ -680,9 +820,6 @@ const Reports = () => {
                   )}, minmax(0, 1fr))`,
                   alignItems: "end",
                   gap: "1rem",
-                  borderBottom: "1px solid var(--border-color)",
-                  background:
-                    "linear-gradient(to top, transparent 24%, var(--border-soft) 25%, transparent 26%, transparent 49%, var(--border-soft) 50%, transparent 51%, transparent 74%, var(--border-soft) 75%, transparent 76%)",
                   padding: "1rem 0.5rem 0 0.5rem",
                   minHeight: "230px"
                 }}
@@ -719,13 +856,13 @@ const Reports = () => {
                         }}
                       >
                         <div
+                          className="report-revenue-bar"
                           title={`${item.label}: ${formatCurrency(
                             item.revenue
                           )} (${item.paymentCount} payments)`}
                           style={{
                             width: "22px",
                             height: `${currentHeight}%`,
-                            background: "var(--primary-blue)",
                             borderRadius: "999px 999px 0 0",
                             boxShadow: "0 0 16px rgba(59, 130, 246, 0.35)"
                           }}
@@ -792,7 +929,7 @@ const Reports = () => {
                       style={{
                         color: "var(--text-muted)",
                         textAlign: "left",
-                        background: "var(--bg-table-header)"
+                        background: "rgba(148, 163, 184, 0.14)"
                       }}
                     >
                       <th style={{ padding: "0.5rem 0.75rem 0.5rem 0" }}>
@@ -927,24 +1064,11 @@ const Reports = () => {
                         {formatNumber(vehicle.count)} slots
                       </div>
 
-                      <div
-                        style={{
-                          width: "100%",
-                          height: "9px",
-                          background: "var(--bg-card-soft)",
-                          borderRadius: "999px",
-                          overflow: "hidden"
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: `${vehicle.percent}%`,
-                            height: "100%",
-                            background: vehicle.color,
-                            borderRadius: "999px"
-                          }}
-                        />
-                      </div>
+                      <ProgressBar
+                        percent={vehicle.percent}
+                        colorClass={vehicle.colorClass}
+                        height={9}
+                      />
                     </div>
                   );
                 })
@@ -1021,24 +1145,11 @@ const Reports = () => {
                           </span>
                         </div>
 
-                        <div
-                          style={{
-                            width: "100%",
-                            height: "6px",
-                            background: "var(--bg-card-soft)",
-                            borderRadius: "999px",
-                            overflow: "hidden"
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: `${item.percent}%`,
-                              height: "100%",
-                              background: item.color,
-                              borderRadius: "999px"
-                            }}
-                          />
-                        </div>
+                        <ProgressBar
+                          percent={item.percent}
+                          colorClass={item.colorClass}
+                          height={6}
+                        />
                       </div>
                     );
                   })
@@ -1156,7 +1267,7 @@ const Reports = () => {
                     borderBottom: "1px solid var(--border-color)",
                     color: "var(--text-muted)",
                     fontSize: "0.85rem",
-                    background: "var(--bg-table-header)"
+                    background: "rgba(148, 163, 184, 0.14)"
                   }}
                 >
                   <th style={{ padding: "1rem 1.5rem" }}>TICKET</th>
@@ -1288,7 +1399,7 @@ const Reports = () => {
             <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
               <button
                 style={{
-                  background: "var(--bg-card-soft)",
+                  background: "rgba(148, 163, 184, 0.14)",
                   border: "1px solid var(--border-color)",
                   color: "var(--text-muted)",
                   padding: "0.4rem 0.6rem",
@@ -1316,7 +1427,7 @@ const Reports = () => {
 
               <button
                 style={{
-                  background: "var(--bg-card-soft)",
+                  background: "rgba(148, 163, 184, 0.14)",
                   border: "1px solid var(--border-color)",
                   color: "var(--text-muted)",
                   padding: "0.4rem 0.6rem",
@@ -1369,7 +1480,7 @@ function SimpleBreakdownTable({ title, headers, rows, emptyText }) {
               style={{
                 color: "var(--text-muted)",
                 textAlign: "left",
-                background: "var(--bg-table-header)"
+                background: "rgba(148, 163, 184, 0.14)"
               }}
             >
               {headers.map((header) => (

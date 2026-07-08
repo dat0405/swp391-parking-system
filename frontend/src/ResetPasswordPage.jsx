@@ -167,12 +167,24 @@ function ResetPasswordPage() {
               alignItems: "center",
             }}
           >
-            <span style={{ fontWeight: "800", fontSize: "0.9rem", color: "#fff" }}>
+            <span
+              style={{
+                fontWeight: "800",
+                fontSize: "0.9rem",
+                color: "#fff",
+              }}
+            >
               P
             </span>
           </div>
 
-          <span style={{ fontWeight: "600", fontSize: "0.95rem", color: "#f8fafc" }}>
+          <span
+            style={{
+              fontWeight: "600",
+              fontSize: "0.95rem",
+              color: "#f8fafc",
+            }}
+          >
             ParkSystem Pro
           </span>
         </div>

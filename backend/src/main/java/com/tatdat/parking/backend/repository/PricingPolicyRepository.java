@@ -10,14 +10,27 @@ public interface PricingPolicyRepository extends JpaRepository<PricingPolicy, In
 
     List<PricingPolicy> findByVehicleType_Id(Integer vehicleTypeId);
 
-    List<PricingPolicy> findByStatus(String status);
+    List<PricingPolicy> findByStatusIgnoreCase(String status);
 
     List<PricingPolicy> findAllByOrderByIdDesc();
 
-    Optional<PricingPolicy> findFirstByVehicleType_IdAndStatus(
+    Optional<PricingPolicy> findFirstByVehicleType_IdAndStatusIgnoreCase(
             Integer vehicleTypeId,
             String status
     );
 
-    boolean existsByVehicleType_IdAndStatus(Integer vehicleTypeId, String status);
+    Optional<PricingPolicy> findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByUpdatedAtDesc(
+            Integer vehicleTypeId,
+            String status
+    );
+
+    Optional<PricingPolicy> findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByIdDesc(
+            Integer vehicleTypeId,
+            String status
+    );
+
+    boolean existsByVehicleType_IdAndStatusIgnoreCase(
+            Integer vehicleTypeId,
+            String status
+    );
 }

@@ -15,6 +15,9 @@ import java.time.LocalDateTime;
 @Builder
 public class PricingPolicy {
 
+    public static final String STATUS_ACTIVE = "ACTIVE";
+    public static final String STATUS_INACTIVE = "INACTIVE";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
@@ -23,22 +26,22 @@ public class PricingPolicy {
     @JoinColumn(name = "vehicle_type_id", nullable = false)
     private VehicleType vehicleType;
 
-    @Column(name = "base_price", nullable = false)
+    @Column(name = "base_price", nullable = false, precision = 18, scale = 2)
     private BigDecimal basePrice;
 
-    @Column(name = "price_per_hour", nullable = false)
+    @Column(name = "price_per_hour", nullable = false, precision = 18, scale = 2)
     private BigDecimal pricePerHour;
 
-    @Column(name = "overtime_fee")
+    @Column(name = "overtime_fee", precision = 18, scale = 2)
     private BigDecimal overtimeFee;
 
-    @Column(name = "status", length = 20)
+    @Column(name = "status", length = 20, nullable = false)
     private String status;
 
-    @Column(name = "created_at")
+    @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     @PrePersist
@@ -49,7 +52,10 @@ public class PricingPolicy {
             createdAt = now;
         }
 
-        updatedAt = now;
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
+
         applyDefaultValues();
     }
 
@@ -73,7 +79,13 @@ public class PricingPolicy {
         }
 
         if (status == null || status.isBlank()) {
-            status = "ACTIVE";
+            status = STATUS_ACTIVE;
         }
+
+        status = status.trim().toUpperCase();
+    }
+
+    public boolean isActive() {
+        return STATUS_ACTIVE.equalsIgnoreCase(status);
     }
 }

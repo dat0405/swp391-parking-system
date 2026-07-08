@@ -40,6 +40,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return true;
         }
 
+        /*
+         * PayOS endpoints must bypass JWT filter.
+         *
+         * Reason:
+         * PayOS webhook request comes from PayOS server,
+         * not from your logged-in frontend user.
+         * Therefore it will not have Authorization: Bearer <token>.
+         */
+        if (path.startsWith("/api/payments/payos")) {
+            return true;
+        }
+
+        /*
+         * /api/auth/me must still pass through JWT filter,
+         * because this endpoint returns the current logged-in user.
+         */
         if (path.equals("/api/auth/me")) {
             return false;
         }

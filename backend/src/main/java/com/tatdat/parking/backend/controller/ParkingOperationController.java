@@ -210,7 +210,16 @@ public class ParkingOperationController {
         Integer vehicleTypeId = session.getVehicle().getVehicleType().getId();
 
         PricingPolicy pricingPolicy = pricingPolicyRepository
-                .findFirstByVehicleType_IdAndStatus(vehicleTypeId, "ACTIVE")
+                .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByUpdatedAtDesc(
+                        vehicleTypeId,
+                        PricingPolicy.STATUS_ACTIVE
+                )
+                .or(() -> pricingPolicyRepository
+                        .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByIdDesc(
+                                vehicleTypeId,
+                                PricingPolicy.STATUS_ACTIVE
+                        )
+                )
                 .orElseThrow(() -> new RuntimeException("Active pricing policy not found"));
 
         BigDecimal pricePerHour = pricingPolicy.getPricePerHour();

@@ -42,6 +42,8 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
         Map<String, Object> summary = new LinkedHashMap<>();
 
         summary.put("totalRevenue", getTotalRevenue(startDate, endDate));
+        summary.put("checkoutRevenue", getCheckoutRevenue(startDate, endDate));
+        summary.put("bookingRevenue", getBookingPayOSRevenue(startDate, endDate));
         summary.put("totalSessions", getTotalSessions(startDate, endDate));
         summary.put("avgOccupancy", getAverageOccupancy());
         summary.put("totalReservations", getTotalBookings(startDate, endDate));
@@ -50,6 +52,13 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
     }
 
     private BigDecimal getTotalRevenue(LocalDateTime startDate, LocalDateTime endDate) {
+        BigDecimal checkoutRevenue = getCheckoutRevenue(startDate, endDate);
+        BigDecimal bookingRevenue = getBookingPayOSRevenue(startDate, endDate);
+
+        return checkoutRevenue.add(bookingRevenue);
+    }
+
+    private BigDecimal getCheckoutRevenue(LocalDateTime startDate, LocalDateTime endDate) {
         if (tableNotExists("payments")) {
             return BigDecimal.ZERO;
         }
@@ -114,6 +123,40 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
                 sql.toString(),
                 Object.class,
                 params.toArray()
+        );
+
+        return toBigDecimal(result);
+    }
+
+    private BigDecimal getBookingPayOSRevenue(LocalDateTime startDate, LocalDateTime endDate) {
+        if (tableNotExists("bookings")) {
+            return BigDecimal.ZERO;
+        }
+
+        Set<String> columns = getTableColumns("bookings");
+
+        if (!columns.contains("payment_amount")
+                || !columns.contains("payment_status")
+                || !columns.contains("paid_at")
+                || !columns.contains("status")) {
+            return BigDecimal.ZERO;
+        }
+
+        String sql = """
+                SELECT COALESCE(SUM(payment_amount), 0)
+                FROM bookings
+                WHERE UPPER(status) = 'CONFIRMED'
+                  AND UPPER(payment_status) = 'PAID'
+                  AND paid_at IS NOT NULL
+                  AND paid_at >= ?
+                  AND paid_at <= ?
+                """;
+
+        Object result = jdbcTemplate.queryForObject(
+                sql,
+                Object.class,
+                Timestamp.valueOf(startDate),
+                Timestamp.valueOf(endDate)
         );
 
         return toBigDecimal(result);
@@ -208,6 +251,33 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
             LocalDateTime startDate,
             LocalDateTime endDate
     ) {
+        Map<String, Map<String, Object>> chartMap = new LinkedHashMap<>();
+
+        List<Map<String, Object>> checkoutRows = buildCheckoutRevenueChart(range, startDate, endDate);
+        List<Map<String, Object>> bookingRows = buildBookingPayOSRevenueChart(range, startDate, endDate);
+
+        mergeRevenueRows(chartMap, checkoutRows, "checkoutRevenue", "checkoutPaymentCount");
+        mergeRevenueRows(chartMap, bookingRows, "bookingRevenue", "bookingPaymentCount");
+
+        for (Map<String, Object> row : chartMap.values()) {
+            BigDecimal checkoutRevenue = toBigDecimal(row.get("checkoutRevenue"));
+            BigDecimal bookingRevenue = toBigDecimal(row.get("bookingRevenue"));
+
+            long checkoutPaymentCount = toLong(row.get("checkoutPaymentCount"));
+            long bookingPaymentCount = toLong(row.get("bookingPaymentCount"));
+
+            row.put("revenue", checkoutRevenue.add(bookingRevenue));
+            row.put("paymentCount", checkoutPaymentCount + bookingPaymentCount);
+        }
+
+        return new ArrayList<>(chartMap.values());
+    }
+
+    private List<Map<String, Object>> buildCheckoutRevenueChart(
+            String range,
+            LocalDateTime startDate,
+            LocalDateTime endDate
+    ) {
         if (tableNotExists("payments")) {
             return List.of();
         }
@@ -273,6 +343,75 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
         sql.append("ORDER BY ").append(orderExpression);
 
         return jdbcTemplate.queryForList(sql.toString(), params.toArray());
+    }
+
+    private List<Map<String, Object>> buildBookingPayOSRevenueChart(
+            String range,
+            LocalDateTime startDate,
+            LocalDateTime endDate
+    ) {
+        if (tableNotExists("bookings")) {
+            return List.of();
+        }
+
+        Set<String> columns = getTableColumns("bookings");
+
+        if (!columns.contains("payment_amount")
+                || !columns.contains("payment_status")
+                || !columns.contains("paid_at")
+                || !columns.contains("status")) {
+            return List.of();
+        }
+
+        String groupExpression = getChartGroupExpression(range, "paid_at");
+        String orderExpression = getChartOrderExpression(range, "paid_at");
+
+        String sql = """
+                SELECT
+                    %s AS label,
+                    COALESCE(SUM(payment_amount), 0) AS revenue,
+                    COUNT(*) AS paymentCount
+                FROM bookings
+                WHERE UPPER(status) = 'CONFIRMED'
+                  AND UPPER(payment_status) = 'PAID'
+                  AND paid_at IS NOT NULL
+                  AND paid_at >= ?
+                  AND paid_at <= ?
+                GROUP BY %s
+                ORDER BY %s
+                """.formatted(groupExpression, groupExpression, orderExpression);
+
+        return jdbcTemplate.queryForList(
+                sql,
+                Timestamp.valueOf(startDate),
+                Timestamp.valueOf(endDate)
+        );
+    }
+
+    private void mergeRevenueRows(
+            Map<String, Map<String, Object>> chartMap,
+            List<Map<String, Object>> rows,
+            String revenueKey,
+            String countKey
+    ) {
+        for (Map<String, Object> sourceRow : rows) {
+            String label = String.valueOf(sourceRow.get("label"));
+
+            Map<String, Object> targetRow = chartMap.computeIfAbsent(label, key -> {
+                Map<String, Object> newRow = new LinkedHashMap<>();
+                newRow.put("label", sourceRow.get("label"));
+                newRow.put("revenue", BigDecimal.ZERO);
+                newRow.put("paymentCount", 0L);
+                newRow.put("checkoutRevenue", BigDecimal.ZERO);
+                newRow.put("checkoutPaymentCount", 0L);
+                newRow.put("bookingRevenue", BigDecimal.ZERO);
+                newRow.put("bookingPaymentCount", 0L);
+                return newRow;
+            });
+
+            targetRow.put(revenueKey, toBigDecimal(sourceRow.get("revenue")));
+            targetRow.put(countKey, toLong(sourceRow.get("paymentCount")));
+        }
     }
 
     private List<Map<String, Object>> buildVehicleDistribution() {

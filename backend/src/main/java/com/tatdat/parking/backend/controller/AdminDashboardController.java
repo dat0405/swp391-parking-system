@@ -46,11 +46,18 @@ public class AdminDashboardController {
         LocalDateTime startOfDay = today.atStartOfDay();
         LocalDateTime endOfDay = today.plusDays(1).atStartOfDay();
 
-        BigDecimal todayRevenue = paymentRepository.sumTodayRevenue(startOfDay, endOfDay);
+        BigDecimal checkoutRevenue = paymentRepository.sumTodayRevenue(startOfDay, endOfDay);
+        BigDecimal bookingRevenue = paymentRepository.sumTodayBookingRevenue(startOfDay, endOfDay);
 
-        if (todayRevenue == null) {
-            todayRevenue = BigDecimal.ZERO;
+        if (checkoutRevenue == null) {
+            checkoutRevenue = BigDecimal.ZERO;
         }
+
+        if (bookingRevenue == null) {
+            bookingRevenue = BigDecimal.ZERO;
+        }
+
+        BigDecimal todayRevenue = checkoutRevenue.add(bookingRevenue);
 
         return AdminDashboardResponse.builder()
                 .totalUsers(userRepository.count())

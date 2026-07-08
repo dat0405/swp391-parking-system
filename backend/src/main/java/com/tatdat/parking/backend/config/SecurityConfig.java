@@ -43,6 +43,17 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
+                        /*
+                         * PayOS endpoints must be public.
+                         *
+                         * Reason:
+                         * PayOS webhook is called from PayOS server.
+                         * It does not send your JWT token.
+                         *
+                         * This rule must be placed BEFORE /api/payments/**.
+                         */
+                        .requestMatchers("/api/payments/payos/**").permitAll()
+
                         .requestMatchers("/api/auth/me").authenticated()
 
                         .requestMatchers(
@@ -159,6 +170,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/bookings/**")
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
+                        /*
+                         * Other payment APIs still require login.
+                         *
+                         * Note:
+                         * /api/payments/payos/** has already been permitted above.
+                         */
                         .requestMatchers("/api/payments/**")
                         .hasAnyRole("DRIVER", "PARKING_STAFF", "PARKING_MANAGER", "SYSTEM_ADMIN")
 
