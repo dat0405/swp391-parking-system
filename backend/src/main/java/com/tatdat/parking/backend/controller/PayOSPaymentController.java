@@ -1,8 +1,11 @@
 package com.tatdat.parking.backend.controller;
 
+import com.tatdat.parking.backend.dto.CreateCheckoutPayOSPaymentRequest;
 import com.tatdat.parking.backend.dto.CreatePayOSPaymentResponse;
+import com.tatdat.parking.backend.dto.PayOSPaymentStatusResponse;
 import com.tatdat.parking.backend.dto.PayOSWebhookRequest;
 import com.tatdat.parking.backend.service.PaymentService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -10,33 +13,10 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/payments/payos")
 @RequiredArgsConstructor
-@CrossOrigin(
-        origins = {
-                "http://localhost:5173",
-                "http://localhost:5174",
-                "http://localhost:3000"
-        },
-        allowedHeaders = "*",
-        methods = {
-                RequestMethod.GET,
-                RequestMethod.POST,
-                RequestMethod.PUT,
-                RequestMethod.PATCH,
-                RequestMethod.DELETE,
-                RequestMethod.OPTIONS
-        },
-        allowCredentials = "true"
-)
 public class PayOSPaymentController {
 
     private final PaymentService paymentService;
 
-    /*
-     * FE gọi API này sau khi tạo booking thành công.
-     *
-     * Example:
-     * POST /api/payments/payos/create/15
-     */
     @PostMapping("/create/{bookingId}")
     public ResponseEntity<CreatePayOSPaymentResponse> createPayOSPayment(
             @PathVariable Integer bookingId
@@ -46,12 +26,24 @@ public class PayOSPaymentController {
         );
     }
 
-    /*
-     * PayOS gọi API này sau khi user thanh toán.
-     *
-     * Webhook URL khi test local bằng ngrok:
-     * https://xxxxx.ngrok-free.app/api/payments/payos/webhook
-     */
+    @PostMapping("/create-checkout")
+    public ResponseEntity<CreatePayOSPaymentResponse> createCheckoutPayOSPayment(
+            @Valid @RequestBody CreateCheckoutPayOSPaymentRequest request
+    ) throws Exception {
+        return ResponseEntity.ok(
+                paymentService.createCheckoutPayOSPayment(request)
+        );
+    }
+
+    @GetMapping("/checkout-status/{orderCode}")
+    public ResponseEntity<PayOSPaymentStatusResponse> getCheckoutPaymentStatus(
+            @PathVariable Long orderCode
+    ) throws Exception {
+        return ResponseEntity.ok(
+                paymentService.getPayOSPaymentStatus(orderCode)
+        );
+    }
+
     @PostMapping("/webhook")
     public ResponseEntity<String> handlePayOSWebhook(
             @RequestBody PayOSWebhookRequest request

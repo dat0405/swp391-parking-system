@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useGoogleLogin } from '@react-oauth/google';
 import { User, Lock, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axiosClient from './api/axiosClient';
@@ -47,36 +46,38 @@ function LoginPage() {
     }, 4000);
   };
 
-  // 🔥 GIỮ NGUYÊN SƠ ĐỒ ĐIỀU HƯỚNG CHUẨN XÁC CỦA MÀY
   const getRedirectPathByRole = (role) => {
-    const cleanRole = String(role).toUpperCase();
+    const cleanRole = String(role || '').toUpperCase();
+
     if (cleanRole === 'SYSTEM_ADMIN' || cleanRole === 'PARKING_MANAGER') return '/dashboard';
     if (cleanRole === 'PARKING_STAFF') return '/check-in-out';
     if (cleanRole === 'DRIVER' || cleanRole === 'USER') return '/user-ui';
 
-    return '/user-ui'; 
+    return '/user-ui';
   };
 
-  const saveAuthDataIfExists = (data) => {
-    const accessToken = data?.accessToken || data?.token || data?.jwt;
-    const refreshToken = data?.refreshToken;
-
-    if (accessToken) {
-      localStorage.setItem('token', accessToken);
-    }
-
-    if (refreshToken) {
-      localStorage.setItem('refreshToken', refreshToken);
-    }
+  const clearOldTokenStorage = () => {
+    /*
+     * Cookie-only auth:
+     * access_token and refresh_token are stored by the backend as HttpOnly cookies.
+     * These removals only clean old localStorage tokens from previous versions.
+     */
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user_role');
+    localStorage.removeItem('headerUserSyncedAt');
   };
 
-  // 🔥 HÀM TỐI ƯU: Chạy chung cho cả 2 kiểu Login, chứa bộ quét quyền tối tân của mày
   const loadCurrentUserAndRedirect = async (emailFallback = '') => {
+    /*
+     * After /auth/login succeeds, the browser already has HttpOnly cookies.
+     * /auth/me will use those cookies automatically through axiosClient.withCredentials.
+     */
     const meResponse = await axiosClient.get('/auth/me');
     const data = meResponse.data || {};
 
-    // 🔥 BỘ QUÉT QUYẾT SẠCH CẤU TRÚC ROLE CỦA MÀY
-    let finalRole = 'DRIVER'; 
+    let finalRole = 'DRIVER';
+
     if (data.role && typeof data.role === 'object') {
       finalRole = data.role.roleName || data.role.name || data.role.authority || 'DRIVER';
     } else if (data.role && typeof data.role === 'string') {
@@ -94,16 +95,19 @@ function LoginPage() {
       role: finalRole.toUpperCase()
     };
 
+    /*
+     * Only non-sensitive display/session metadata is stored in localStorage.
+     * Do not store accessToken or refreshToken here.
+     */
     localStorage.setItem('user', JSON.stringify(userObj));
-    localStorage.setItem('user_role', userObj.role); // Đồng bộ quyền ra biến riêng cho mày xài
+    localStorage.setItem('user_role', userObj.role);
 
     showToast('Login successful! Redirecting...', 'success');
 
     setTimeout(() => {
       setIsLoading(false);
       setIsGoogleLoading(false);
-      // Điều hướng chuẩn bằng hàm của mày
-      navigate(getRedirectPathByRole(userObj.role));
+      navigate(getRedirectPathByRole(userObj.role), { replace: true });
     }, 800);
   };
 
@@ -114,16 +118,13 @@ function LoginPage() {
     const email = formData.email.trim().toLowerCase();
 
     try {
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user_role');
+      clearOldTokenStorage();
 
-      const loginResponse = await axiosClient.post('/auth/login', {
+      await axiosClient.post('/auth/login', {
         email,
         password: formData.password
       });
 
-      saveAuthDataIfExists(loginResponse.data);
       await loadCurrentUserAndRedirect(email);
     } catch (error) {
       console.error('Lỗi API login:', error);
@@ -135,48 +136,46 @@ function LoginPage() {
     }
   };
 
-  const googleLogin = useGoogleLogin({
-    flow: 'implicit',
-    scope: 'openid email profile',
-    onSuccess: async (tokenResponse) => {
-      const googleAccessToken = tokenResponse?.access_token;
-
-      if (!googleAccessToken) {
-        showToast('Google login failed. Please try again.', 'error');
-        return;
-      }
-
-      try {
-        setIsGoogleLoading(true);
-
-        localStorage.removeItem('token');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('user_role');
-
-        const googleResponse = await axiosClient.post('/auth/google-token', {
-          accessToken: googleAccessToken
-        });
-
-        saveAuthDataIfExists(googleResponse.data);
-        await loadCurrentUserAndRedirect();
-      } catch (error) {
-        console.error('Lỗi Google login:', error);
-        showToast(
-          error.response?.data?.message || error.response?.data || 'Google login failed.',
-          'error'
-        );
-        setIsGoogleLoading(false);
-      }
-    },
-    onError: () => {
-      showToast('Google login was cancelled or failed.', 'error');
-      setIsGoogleLoading(false);
-    }
-  });
-
   const handleGoogleButtonClick = () => {
     if (isLoading || isGoogleLoading) return;
-    googleLogin();
+
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+    if (!clientId) {
+      showToast('Missing Google Client ID configuration.', 'error');
+      return;
+    }
+
+    setIsGoogleLoading(true);
+
+    /*
+     * Google redirect/auth-code flow:
+     * - No Google popup
+     * - No window.closed COOP warning
+     * - Google redirects back to /auth/google/callback?code=...
+     *
+     * This URI must exactly match Google Cloud Console:
+     * Authorized redirect URIs.
+     */
+    const redirectUri = `${window.location.origin}/auth/google/callback`;
+
+    const state =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    sessionStorage.setItem('google_oauth_state', state);
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid email profile',
+      prompt: 'select_account',
+      state
+    });
+
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   };
 
   const isPageLoading = isLoading || isGoogleLoading;
@@ -266,7 +265,10 @@ function LoginPage() {
                 <input type="checkbox" style={{ accentColor: '#3b82f6' }} disabled={isPageLoading} />
                 Remember me
               </label>
-              <span style={{ color: '#3b82f6', cursor: isPageLoading ? 'not-allowed' : 'pointer', fontWeight: '500' }} onClick={() => !isPageLoading && navigate('/forgot-password')}>
+              <span
+                style={{ color: '#3b82f6', cursor: isPageLoading ? 'not-allowed' : 'pointer', fontWeight: '500' }}
+                onClick={() => !isPageLoading && navigate('/forgot-password')}
+              >
                 Forgot password?
               </span>
             </div>
@@ -340,7 +342,7 @@ function LoginPage() {
               <path fill="#FBBC05" d="M3.95 10.7c-.18-.54-.28-1.11-.28-1.7s.1-1.16.28-1.7V4.97H.96C.35 6.18 0 7.55 0 9s.35 2.82.96 4.03l2.99-2.33z" />
               <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.43 1.34l2.57-2.57C13.46.9 11.43 0 9 0 5.48 0 2.44 2.04.96 4.97L3.95 7.3C4.66 5.17 6.65 3.58 9 3.58z" />
             </svg>
-            <span>{isGoogleLoading ? 'Signing in...' : 'Continue with Google'}</span>
+            <span>{isGoogleLoading ? 'Redirecting to Google...' : 'Continue with Google'}</span>
           </button>
 
           <div style={{ fontSize: '0.85rem', color: '#94a3b8', textAlign: 'center' }}>

@@ -15,6 +15,10 @@ export const parkingSessionApi = {
     return axiosClient.post("/parking-operations/check-out", data);
   },
 
+  createCheckoutPayOSPayment(data) {
+    return axiosClient.post("/payments/payos/create-checkout", data);
+  },
+
   getActiveSessions() {
     return axiosClient.get("/parking-operations/active");
   },

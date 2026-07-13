@@ -131,6 +131,20 @@ const getFloorId = (slot) => {
   );
 };
 
+const getFacilityId = (slot) => {
+  return (
+    slot.zone?.floor?.facility?.id ||
+    slot.zone?.floor?.facilityId ||
+    slot.floor?.facility?.id ||
+    slot.floor?.facilityId ||
+    slot.parkingFloor?.facility?.id ||
+    slot.parkingFloor?.facilityId ||
+    slot.facilityId ||
+    slot.parkingFacilityId ||
+    null
+  );
+};
+
 const getVehicleTypeId = (slot) => {
   return slot.vehicleType?.id || slot.vehicleTypeId || slot.typeId || null;
 };
@@ -153,20 +167,6 @@ const getVehicleType = (slot) => {
 
 const normalizeFloorName = (floorName) => {
   return String(floorName || "Unknown").trim();
-};
-
-const isGroundFloor = (floorName) => {
-  const value = normalizeFloorName(floorName).toUpperCase();
-
-  return value === "G" || value === "GROUND" || value === "FLOOR G";
-};
-
-const getAllowedTypeByFloor = (floorName) => {
-  if (isGroundFloor(floorName)) {
-    return "motorbike";
-  }
-
-  return "car";
 };
 
 const getFloorSortValue = (floorName) => {
@@ -251,6 +251,7 @@ const mapApiSlotToViewSlot = (slot) => {
     displayCode: slotCode,
     floor: getFloorCode(slot),
     floorId: getFloorId(slot),
+    facilityId: getFacilityId(slot),
     type: getVehicleType(slot),
     vehicleTypeId: getVehicleTypeId(slot),
     vehicleTypeName: getVehicleTypeName(slot),
@@ -270,14 +271,39 @@ const mapApiSlotToViewSlot = (slot) => {
   };
 };
 
+const normalizeRole = (role) => {
+  if (!role) return "";
+
+  return String(role)
+    .trim()
+    .toUpperCase()
+    .replace(/^ROLE_/, "");
+};
+
 const getCurrentRole = () => {
   try {
     const savedUser = localStorage.getItem("user");
     const parsedUser = savedUser ? JSON.parse(savedUser) : {};
 
-    return parsedUser.role || parsedUser.roleName || "";
+    if (typeof parsedUser.role === "string") {
+      return normalizeRole(parsedUser.role);
+    }
+
+    if (typeof parsedUser.roleName === "string") {
+      return normalizeRole(parsedUser.roleName);
+    }
+
+    if (parsedUser.role && typeof parsedUser.role.roleName === "string") {
+      return normalizeRole(parsedUser.role.roleName);
+    }
+
+    if (parsedUser.role && typeof parsedUser.role.name === "string") {
+      return normalizeRole(parsedUser.role.name);
+    }
+
+    return normalizeRole(localStorage.getItem("user_role"));
   } catch (error) {
-    return "";
+    return normalizeRole(localStorage.getItem("user_role"));
   }
 };
 
@@ -328,20 +354,29 @@ const ParkingManagement = () => {
   const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
   const [slotAction, setSlotAction] = useState("ADD");
   const [selectedModalFloorId, setSelectedModalFloorId] = useState("");
-  const [selectedModalVehicleTypeId, setSelectedModalVehicleTypeId] = useState("");
-  const [slotQuantity, setSlotQuantity] = useState(1);
+
+  const [carSlotQuantity, setCarSlotQuantity] = useState(0);
+  const [motorbikeSlotQuantity, setMotorbikeSlotQuantity] = useState(0);
+
+  const [createFloorName, setCreateFloorName] = useState("");
+  const [createCarSlotQuantity, setCreateCarSlotQuantity] = useState(0);
+  const [createMotorbikeSlotQuantity, setCreateMotorbikeSlotQuantity] =
+    useState(0);
+
   const [slotModalLoading, setSlotModalLoading] = useState(false);
   const [slotModalError, setSlotModalError] = useState("");
   const [slotModalSuccess, setSlotModalSuccess] = useState("");
 
   const currentRole = getCurrentRole();
-  const normalizedRole = String(currentRole || "").toUpperCase();
+  const normalizedRole = currentRole;
 
   const canManageSlots = [
     "SYSTEM_ADMIN",
     "PARKING_MANAGER",
     "PARKING_STAFF"
   ].includes(normalizedRole);
+
+  const isReadOnlyViewer = !canManageSlots;
 
   useEffect(() => {
     selectedFloorRef.current = selectedFloor;
@@ -350,15 +385,6 @@ const ParkingManagement = () => {
   const buildNormalizedDisplaySlots = (slots) => {
     const mappedSlots = slots
       .map(mapApiSlotToViewSlot)
-      .filter((slot) => {
-        const allowedType = getAllowedTypeByFloor(slot.floor);
-
-        if (slot.floor === "Unknown") {
-          return true;
-        }
-
-        return slot.type === allowedType;
-      })
       .sort((slotA, slotB) => {
         const floorCompare =
           getFloorSortValue(slotA.floor) - getFloorSortValue(slotB.floor);
@@ -442,8 +468,7 @@ const ParkingManagement = () => {
           id: slot.floor,
           floorId: slot.floorId,
           name: getDisplayFloorName(slot.floor),
-          rawName: slot.floor,
-          type: getAllowedTypeByFloor(slot.floor)
+          rawName: slot.floor
         });
       }
     });
@@ -464,7 +489,7 @@ const ParkingManagement = () => {
           id: slot.floorId,
           name: getDisplayFloorName(slot.floor),
           rawName: slot.floor,
-          allowedType: getAllowedTypeByFloor(slot.floor)
+          facilityId: slot.facilityId
         });
       }
     });
@@ -563,14 +588,7 @@ const ParkingManagement = () => {
   };
 
   const getFloorButtonName = (floor) => {
-    const typeLabel =
-      floor.type === "motorbike"
-        ? "Motorbike"
-        : floor.type === "car"
-          ? "Car"
-          : "Unknown";
-
-    return `${floor.name} (${typeLabel})`;
+    return floor.name;
   };
 
   const getStatusCountForCurrentFloor = (status) => {
@@ -581,62 +599,161 @@ const ParkingManagement = () => {
     return floorSlots.filter((slot) => slot.status === status).length;
   };
 
-  const openSlotModal = () => {
-    setSlotAction("ADD");
-    setSlotModalError("");
-    setSlotModalSuccess("");
-    setSlotQuantity(1);
-
-    const currentFloor = floors.find((floor) => floor.id === selectedFloor);
-    const defaultFloorId = currentFloor?.floorId || modalFloorOptions[0]?.id || "";
-    const defaultAllowedType =
-      currentFloor?.type || modalFloorOptions[0]?.allowedType || "car";
-
-    const defaultVehicleType =
-      modalVehicleTypeOptions.find(
-        (item) => item.normalizedType === defaultAllowedType
-      ) || modalVehicleTypeOptions[0];
-
-    setSelectedModalFloorId(defaultFloorId ? String(defaultFloorId) : "");
-    setSelectedModalVehicleTypeId(
-      defaultVehicleType?.id ? String(defaultVehicleType.id) : ""
-    );
-    setIsSlotModalOpen(true);
-  };
-
-  const validateModalSelection = () => {
+  const getDefaultFacilityId = () => {
     const selectedFloorOption = modalFloorOptions.find(
       (floor) => String(floor.id) === String(selectedModalFloorId)
     );
 
-    const selectedVehicleTypeOption = modalVehicleTypeOptions.find(
-      (vehicleType) => String(vehicleType.id) === String(selectedModalVehicleTypeId)
+    return (
+      selectedFloorOption?.facilityId ||
+      modalFloorOptions.find((floor) => floor.facilityId)?.facilityId ||
+      slotsData.find((slot) => slot.facilityId)?.facilityId ||
+      1
     );
+  };
 
-    if (!selectedFloorOption || !selectedVehicleTypeOption) {
-      return "Please select floor and vehicle type.";
-    }
+  const getVehicleTypeOptionByKind = (kind) => {
+    return modalVehicleTypeOptions.find((vehicleType) => {
+      const normalizedType = String(vehicleType.normalizedType || "").toLowerCase();
+      const name = String(vehicleType.name || "").toLowerCase();
 
-    if (Number(slotQuantity) <= 0) {
-      return "Quantity must be greater than 0.";
-    }
-
-    if (Number(slotQuantity) > 500) {
-      return "Quantity cannot be greater than 500.";
-    }
-
-    if (selectedFloorOption.allowedType !== selectedVehicleTypeOption.normalizedType) {
-      if (selectedFloorOption.allowedType === "motorbike") {
-        return "Floor G is only for motorbike slots.";
+      if (kind === "car") {
+        return (
+          normalizedType === "car" ||
+          name.includes("car") ||
+          name.includes("ô tô") ||
+          name.includes("oto")
+        );
       }
 
-      return "This floor is only for car slots.";
+      return (
+        normalizedType === "motorbike" ||
+        name.includes("motor") ||
+        name.includes("bike") ||
+        name.includes("xe máy")
+      );
+    });
+  };
+
+  const normalizeQuantityNumber = (value) => {
+    const numberValue = Number(value);
+
+    if (Number.isNaN(numberValue) || numberValue < 0) {
+      return 0;
+    }
+
+    return Math.floor(numberValue);
+  };
+
+  const validateDualQuantity = (carQuantity, motorbikeQuantity) => {
+    const normalizedCarQuantity = normalizeQuantityNumber(carQuantity);
+    const normalizedMotorbikeQuantity = normalizeQuantityNumber(motorbikeQuantity);
+
+    if (normalizedCarQuantity === 0 && normalizedMotorbikeQuantity === 0) {
+      return "Please enter Car slots or Motorbike slots greater than 0.";
+    }
+
+    if (normalizedCarQuantity > 500 || normalizedMotorbikeQuantity > 500) {
+      return "Each quantity cannot be greater than 500.";
     }
 
     return "";
   };
 
+  const submitSlotQuantityRequests = async ({
+    floorId,
+    carQuantity,
+    motorbikeQuantity,
+    action
+  }) => {
+    const carVehicleType = getVehicleTypeOptionByKind("car");
+    const motorbikeVehicleType = getVehicleTypeOptionByKind("motorbike");
+
+    const requests = [];
+
+    if (normalizeQuantityNumber(carQuantity) > 0) {
+      if (!carVehicleType?.id) {
+        throw new Error("Car vehicle type was not found in database.");
+      }
+
+      requests.push({
+        floorId: Number(floorId),
+        vehicleTypeId: Number(carVehicleType.id),
+        quantity: normalizeQuantityNumber(carQuantity)
+      });
+    }
+
+    if (normalizeQuantityNumber(motorbikeQuantity) > 0) {
+      if (!motorbikeVehicleType?.id) {
+        throw new Error("Motorbike vehicle type was not found in database.");
+      }
+
+      requests.push({
+        floorId: Number(floorId),
+        vehicleTypeId: Number(motorbikeVehicleType.id),
+        quantity: normalizeQuantityNumber(motorbikeQuantity)
+      });
+    }
+
+    for (const payload of requests) {
+      if (action === "ADD") {
+        await axiosClient.post("/parking-slots/bulk-create", payload);
+      } else {
+        await axiosClient.post("/parking-slots/bulk-delete", payload);
+      }
+    }
+  };
+
+  const openSlotModal = () => {
+    if (!canManageSlots) return;
+
+    setSlotAction("ADD");
+    setSlotModalError("");
+    setSlotModalSuccess("");
+
+    setCarSlotQuantity(0);
+    setMotorbikeSlotQuantity(0);
+    setCreateFloorName("");
+    setCreateCarSlotQuantity(0);
+    setCreateMotorbikeSlotQuantity(0);
+
+    const currentFloor = floors.find((floor) => floor.id === selectedFloor);
+    const defaultFloorId = currentFloor?.floorId || modalFloorOptions[0]?.id || "";
+
+    setSelectedModalFloorId(defaultFloorId ? String(defaultFloorId) : "");
+    setIsSlotModalOpen(true);
+  };
+
+  const validateModalSelection = () => {
+    if (slotAction === "CREATE_FLOOR") {
+      if (!createFloorName.trim()) {
+        return "Floor name is required.";
+      }
+
+      return validateDualQuantity(
+        createCarSlotQuantity,
+        createMotorbikeSlotQuantity
+      );
+    }
+
+    const selectedFloorOption = modalFloorOptions.find(
+      (floor) => String(floor.id) === String(selectedModalFloorId)
+    );
+
+    if (!selectedFloorOption) {
+      return "Please select floor.";
+    }
+
+    if (slotAction === "DELETE_FLOOR") {
+      return "";
+    }
+
+    return validateDualQuantity(carSlotQuantity, motorbikeSlotQuantity);
+  };
+
   const handleSubmitSlotManagement = async () => {
+    if (!canManageSlots) return;
+
     try {
       setSlotModalLoading(true);
       setSlotModalError("");
@@ -649,25 +766,40 @@ const ParkingManagement = () => {
         return;
       }
 
-      const payload = {
-        floorId: Number(selectedModalFloorId),
-        vehicleTypeId: Number(selectedModalVehicleTypeId),
-        quantity: Number(slotQuantity)
-      };
-
-      let response;
-
-      if (slotAction === "ADD") {
-        response = await axiosClient.post("/parking-slots/bulk-create", payload);
-      } else {
-        response = await axiosClient.delete("/parking-slots/bulk-delete", {
-          data: payload
+      if (slotAction === "CREATE_FLOOR") {
+        const createFloorResponse = await axiosClient.post("/parking-floors", {
+          facilityId: getDefaultFacilityId(),
+          floorName: createFloorName.trim()
         });
-      }
 
-      setSlotModalSuccess(
-        response.data?.message || "Parking slots updated successfully."
-      );
+        const createdFloor = createFloorResponse.data;
+
+        await submitSlotQuantityRequests({
+          floorId: createdFloor.id,
+          carQuantity: createCarSlotQuantity,
+          motorbikeQuantity: createMotorbikeSlotQuantity,
+          action: "ADD"
+        });
+
+        setSlotModalSuccess("Floor created successfully.");
+      } else if (slotAction === "DELETE_FLOOR") {
+        await axiosClient.delete(`/parking-floors/${selectedModalFloorId}`);
+
+        setSlotModalSuccess("Parking floor deleted successfully.");
+      } else {
+        await submitSlotQuantityRequests({
+          floorId: selectedModalFloorId,
+          carQuantity: carSlotQuantity,
+          motorbikeQuantity: motorbikeSlotQuantity,
+          action: slotAction
+        });
+
+        setSlotModalSuccess(
+          slotAction === "ADD"
+            ? "Parking slots added successfully."
+            : "Parking slots deleted successfully."
+        );
+      }
 
       await loadParkingSlots();
 
@@ -682,6 +814,7 @@ const ParkingManagement = () => {
         error.response?.data?.message ||
           error.response?.data?.error ||
           error.response?.data ||
+          error.message ||
           "Failed to update parking slots."
       );
     } finally {
@@ -718,7 +851,7 @@ const ParkingManagement = () => {
   };
 
   const handleUpdateSlotStatus = async (statusType) => {
-    if (!editingSlot) return;
+    if (!canManageSlots || !editingSlot) return;
 
     try {
       setSlotStatusLoading(true);
@@ -796,8 +929,8 @@ const ParkingManagement = () => {
       return (
         <div
           key={`${slot.id}-${slot.slotCode}`}
-          onClick={() => openIncidentModal(slot)}
-          title={canManageSlots ? "Click to configure this slot" : ""}
+          onClick={canManageSlots ? () => openIncidentModal(slot) : undefined}
+          title={canManageSlots ? "Click to configure this slot" : "View-only slot status"}
           className="feature-card-glass"
           style={{
             border: `1px solid ${statusColor}`,
@@ -924,7 +1057,6 @@ const ParkingManagement = () => {
     <div className="dashboard-layout">
       <Sidebar />
 
-      {/* 🔥 SỬA LỖI 1: Xóa thuộc tính background: theme.page cứng nhắc để lộ ảnh nền bãi xe phía sau */}
       <main
         className="main-content"
         style={{
@@ -947,11 +1079,12 @@ const ParkingManagement = () => {
           </h1>
 
           <p style={{ color: theme.muted, margin: "0.5rem 0" }}>
-            Live parking slot data from database.
+            {isReadOnlyViewer
+              ? "View current parking slot availability and status."
+              : "Live parking slot data from database."}
           </p>
         </div>
 
-        {/* Áp dụng kính mờ thống nhất cho dàn thẻ thống kê số liệu */}
         <div
           className="stats-bar"
           style={{
@@ -1044,15 +1177,7 @@ const ParkingManagement = () => {
           </div>
         )}
 
-        {/* 🔥 SỬA LỖI 2: ĐẬP TAN KHỐI TRẮNG KHỔNG LỒ
-            Xóa bỏ hoàn toàn cái box-shadow quái dị che khuất chữ. 
-            Thay thế bằng một thanh điều hướng dạng kính mờ mỏng nhẹ, sang trọng, bo góc 100% chuẩn bài */}
-        <div
-  style={{
-    position: "relative",
-    marginBottom: "1.5rem"
-  }}
->
+        <div style={{ position: "relative", marginBottom: "1.5rem" }}>
           <div
             className="feature-card-glass"
             style={{
@@ -1161,8 +1286,7 @@ const ParkingManagement = () => {
                     color: theme.text,
                     padding: "0.45rem",
                     borderRadius: "0.5rem",
-                    cursor:
-                      currentPage === totalPages ? "not-allowed" : "pointer",
+                    cursor: currentPage === totalPages ? "not-allowed" : "pointer",
                     opacity: currentPage === totalPages ? 0.5 : 1
                   }}
                 >
@@ -1221,12 +1345,7 @@ const ParkingManagement = () => {
           </div>
         </div>
 
-        <div
-          style={{
-            minHeight: "180px",
-            transition: "none"
-          }}
-        >
+        <div style={{ minHeight: "180px", transition: "none" }}>
           {loading && !hasLoadedOnce ? (
             <div
               className="feature-card-glass"
@@ -1270,7 +1389,7 @@ const ParkingManagement = () => {
         </div>
       </main>
 
-      {editingSlot && (
+      {canManageSlots && editingSlot && (
         <IncidentModal
           editingSlot={editingSlot}
           manualLicensePlate={manualLicensePlate}
@@ -1282,7 +1401,7 @@ const ParkingManagement = () => {
         />
       )}
 
-      {isSlotModalOpen && (
+      {canManageSlots && isSlotModalOpen && (
         <ManageSlotModal
           slotAction={slotAction}
           setSlotAction={setSlotAction}
@@ -1291,12 +1410,17 @@ const ParkingManagement = () => {
           slotModalSuccess={slotModalSuccess}
           selectedModalFloorId={selectedModalFloorId}
           setSelectedModalFloorId={setSelectedModalFloorId}
-          selectedModalVehicleTypeId={selectedModalVehicleTypeId}
-          setSelectedModalVehicleTypeId={setSelectedModalVehicleTypeId}
-          slotQuantity={slotQuantity}
-          setSlotQuantity={setSlotQuantity}
+          carSlotQuantity={carSlotQuantity}
+          setCarSlotQuantity={setCarSlotQuantity}
+          motorbikeSlotQuantity={motorbikeSlotQuantity}
+          setMotorbikeSlotQuantity={setMotorbikeSlotQuantity}
+          createFloorName={createFloorName}
+          setCreateFloorName={setCreateFloorName}
+          createCarSlotQuantity={createCarSlotQuantity}
+          setCreateCarSlotQuantity={setCreateCarSlotQuantity}
+          createMotorbikeSlotQuantity={createMotorbikeSlotQuantity}
+          setCreateMotorbikeSlotQuantity={setCreateMotorbikeSlotQuantity}
           modalFloorOptions={modalFloorOptions}
-          modalVehicleTypeOptions={modalVehicleTypeOptions}
           setIsSlotModalOpen={setIsSlotModalOpen}
           setSlotModalError={setSlotModalError}
           setSlotModalSuccess={setSlotModalSuccess}
@@ -1489,17 +1613,30 @@ function ManageSlotModal({
   slotModalSuccess,
   selectedModalFloorId,
   setSelectedModalFloorId,
-  selectedModalVehicleTypeId,
-  setSelectedModalVehicleTypeId,
-  slotQuantity,
-  setSlotQuantity,
+  carSlotQuantity,
+  setCarSlotQuantity,
+  motorbikeSlotQuantity,
+  setMotorbikeSlotQuantity,
+  createFloorName,
+  setCreateFloorName,
+  createCarSlotQuantity,
+  setCreateCarSlotQuantity,
+  createMotorbikeSlotQuantity,
+  setCreateMotorbikeSlotQuantity,
   modalFloorOptions,
-  modalVehicleTypeOptions,
   setIsSlotModalOpen,
   setSlotModalError,
   setSlotModalSuccess,
   handleSubmitSlotManagement
 }) {
+  const isCreateFloor = slotAction === "CREATE_FLOOR";
+  const isDeleteFloor = slotAction === "DELETE_FLOOR";
+
+  const resetMessage = () => {
+    setSlotModalError("");
+    setSlotModalSuccess("");
+  };
+
   return (
     <div
       style={{
@@ -1516,7 +1653,7 @@ function ManageSlotModal({
       <div
         style={{
           width: "100%",
-          maxWidth: "520px",
+          maxWidth: "620px",
           background: theme.card,
           border: `1px solid ${theme.border}`,
           borderRadius: "1rem",
@@ -1538,7 +1675,7 @@ function ManageSlotModal({
               Manage parking slots
             </h3>
             <p style={{ margin: "0.35rem 0 0", color: theme.muted }}>
-              Add or delete available slots safely.
+              Add slots, delete slots, create floors, or delete unused floors.
             </p>
           </div>
 
@@ -1566,102 +1703,194 @@ function ManageSlotModal({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "repeat(4, 1fr)",
             background: theme.cardSoft,
             padding: "0.25rem",
             borderRadius: "0.75rem",
             marginBottom: "1rem"
           }}
         >
-          <button
-            type="button"
-            onClick={() => {
-              setSlotAction("ADD");
-              setSlotModalError("");
-              setSlotModalSuccess("");
-            }}
-            style={{
-              border: "none",
-              borderRadius: "0.6rem",
-              padding: "0.75rem",
-              background: slotAction === "ADD" ? "#2563eb" : "transparent",
-              color: slotAction === "ADD" ? "#ffffff" : theme.text,
-              cursor: "pointer",
-              fontWeight: 700
-            }}
-          >
-            Add slots
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSlotAction("DELETE");
-              setSlotModalError("");
-              setSlotModalSuccess("");
-            }}
-            style={{
-              border: "none",
-              borderRadius: "0.6rem",
-              padding: "0.75rem",
-              background: slotAction === "DELETE" ? "#dc2626" : "transparent",
-              color: slotAction === "DELETE" ? "#ffffff" : theme.text,
-              cursor: "pointer",
-              fontWeight: 700
-            }}
-          >
-            Delete slots
-          </button>
+          {[
+            { key: "ADD", label: "Add slots", color: "#2563eb" },
+            { key: "DELETE", label: "Delete slots", color: "#dc2626" },
+            { key: "CREATE_FLOOR", label: "Create floor", color: "#16a34a" },
+            { key: "DELETE_FLOOR", label: "Delete floor", color: "#b91c1c" }
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => {
+                setSlotAction(tab.key);
+                resetMessage();
+              }}
+              style={{
+                border: "none",
+                borderRadius: "0.6rem",
+                padding: "0.75rem",
+                background: slotAction === tab.key ? tab.color : "transparent",
+                color: slotAction === tab.key ? "#ffffff" : theme.text,
+                cursor: "pointer",
+                fontWeight: 700
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        <div style={{ display: "grid", gap: "1rem" }}>
-          <ModalField label="Floor">
-            <select
-              value={selectedModalFloorId}
-              onChange={(event) => setSelectedModalFloorId(event.target.value)}
-              disabled={slotModalLoading}
-              style={inputStyle}
-            >
-              <option value="">Select floor</option>
-              {modalFloorOptions.map((floor) => (
-                <option key={floor.id} value={floor.id}>
-                  {floor.name}
-                </option>
-              ))}
-            </select>
-          </ModalField>
+        {isCreateFloor ? (
+          <div style={{ display: "grid", gap: "1rem" }}>
+            <ModalField label="Floor name">
+              <input
+                type="text"
+                value={createFloorName}
+                onChange={(event) => setCreateFloorName(event.target.value)}
+                disabled={slotModalLoading}
+                placeholder="Example: Floor 3"
+                style={inputStyle}
+              />
+            </ModalField>
 
-          <ModalField label="Vehicle type">
-            <select
-              value={selectedModalVehicleTypeId}
-              onChange={(event) =>
-                setSelectedModalVehicleTypeId(event.target.value)
-              }
-              disabled={slotModalLoading}
-              style={inputStyle}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "1rem"
+              }}
             >
-              <option value="">Select vehicle type</option>
-              {modalVehicleTypeOptions.map((vehicleType) => (
-                <option key={vehicleType.id} value={vehicleType.id}>
-                  {vehicleType.name}
-                </option>
-              ))}
-            </select>
-          </ModalField>
+              <ModalField label="Initial Car slots">
+                <input
+                  type="number"
+                  min="0"
+                  max="500"
+                  value={createCarSlotQuantity}
+                  onChange={(event) => setCreateCarSlotQuantity(event.target.value)}
+                  disabled={slotModalLoading}
+                  placeholder="0"
+                  style={inputStyle}
+                />
+              </ModalField>
 
-          <ModalField label="Quantity">
-            <input
-              type="number"
-              min="1"
-              max="500"
-              value={slotQuantity}
-              onChange={(event) => setSlotQuantity(event.target.value)}
-              disabled={slotModalLoading}
-              placeholder="Enter quantity"
-              style={inputStyle}
-            />
-          </ModalField>
-        </div>
+              <ModalField label="Initial Motorbike slots">
+                <input
+                  type="number"
+                  min="0"
+                  max="500"
+                  value={createMotorbikeSlotQuantity}
+                  onChange={(event) =>
+                    setCreateMotorbikeSlotQuantity(event.target.value)
+                  }
+                  disabled={slotModalLoading}
+                  placeholder="0"
+                  style={inputStyle}
+                />
+              </ModalField>
+            </div>
+          </div>
+        ) : isDeleteFloor ? (
+          <div style={{ display: "grid", gap: "1rem" }}>
+            <ModalField label="Floor">
+              <select
+                value={selectedModalFloorId}
+                onChange={(event) => setSelectedModalFloorId(event.target.value)}
+                disabled={slotModalLoading}
+                style={inputStyle}
+              >
+                <option value="">Select floor</option>
+                {modalFloorOptions.map((floor) => (
+                  <option key={floor.id} value={floor.id}>
+                    {floor.name}
+                  </option>
+                ))}
+              </select>
+            </ModalField>
+
+            <div
+              style={{
+                padding: "0.85rem",
+                borderRadius: "0.75rem",
+                background: theme.redSoft,
+                border: `1px solid ${theme.red}`,
+                color: theme.red,
+                fontSize: "0.85rem",
+                fontWeight: 800,
+                lineHeight: 1.45
+              }}
+            >
+              Warning: This will delete the selected floor and all deletable slots
+              inside it. Backend should block deletion if the floor has occupied,
+              reserved, maintenance slots, or parking session history.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: "1rem" }}>
+            <ModalField label="Floor">
+              <select
+                value={selectedModalFloorId}
+                onChange={(event) => setSelectedModalFloorId(event.target.value)}
+                disabled={slotModalLoading}
+                style={inputStyle}
+              >
+                <option value="">Select floor</option>
+                {modalFloorOptions.map((floor) => (
+                  <option key={floor.id} value={floor.id}>
+                    {floor.name}
+                  </option>
+                ))}
+              </select>
+            </ModalField>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "1rem"
+              }}
+            >
+              <ModalField label="Car slots">
+                <input
+                  type="number"
+                  min="0"
+                  max="500"
+                  value={carSlotQuantity}
+                  onChange={(event) => setCarSlotQuantity(event.target.value)}
+                  disabled={slotModalLoading}
+                  placeholder="0"
+                  style={inputStyle}
+                />
+              </ModalField>
+
+              <ModalField label="Motorbike slots">
+                <input
+                  type="number"
+                  min="0"
+                  max="500"
+                  value={motorbikeSlotQuantity}
+                  onChange={(event) =>
+                    setMotorbikeSlotQuantity(event.target.value)
+                  }
+                  disabled={slotModalLoading}
+                  placeholder="0"
+                  style={inputStyle}
+                />
+              </ModalField>
+            </div>
+
+            <div
+              style={{
+                padding: "0.75rem",
+                borderRadius: "0.65rem",
+                background: theme.cardSoft,
+                border: `1px solid ${theme.borderSoft}`,
+                color: theme.muted,
+                fontSize: "0.82rem",
+                fontWeight: 700
+              }}
+            >
+              Enter 0 for the vehicle type you do not want to update.
+            </div>
+          </div>
+        )}
 
         {slotModalError && (
           <div
@@ -1732,7 +1961,12 @@ function ManageSlotModal({
               padding: "0 1rem",
               borderRadius: "0.65rem",
               border: "none",
-              background: slotAction === "DELETE" ? "#dc2626" : "#2563eb",
+              background:
+                slotAction === "DELETE" || slotAction === "DELETE_FLOOR"
+                  ? "#dc2626"
+                  : slotAction === "CREATE_FLOOR"
+                    ? "#16a34a"
+                    : "#2563eb",
               color: "#ffffff",
               cursor: slotModalLoading ? "not-allowed" : "pointer",
               fontWeight: 700
@@ -1740,9 +1974,13 @@ function ManageSlotModal({
           >
             {slotModalLoading
               ? "Processing..."
-              : slotAction === "ADD"
-                ? "Add slots"
-                : "Delete slots"}
+              : slotAction === "DELETE"
+                ? "Delete slots"
+                : slotAction === "CREATE_FLOOR"
+                  ? "Create floor"
+                  : slotAction === "DELETE_FLOOR"
+                    ? "Delete floor"
+                    : "Add slots"}
           </button>
         </div>
       </div>

@@ -22,7 +22,7 @@ public class ParkingSession {
     @Column(name = "ticket_id", length = 20, unique = true)
     private String ticketId;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "vehicle_id", nullable = false)
     @JsonIgnoreProperties({
             "user",
@@ -32,7 +32,7 @@ public class ParkingSession {
     })
     private Vehicle vehicle;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "slot_id", nullable = false)
     @JsonIgnoreProperties({
             "zone",
@@ -41,6 +41,26 @@ public class ParkingSession {
             "handler"
     })
     private ParkingSlot slot;
+
+    /*
+     * Liên kết ParkingSession với Booking.
+     *
+     * Nếu xe check-in theo booking:
+     * booking != null
+     *
+     * Nếu xe vãng lai check-in thường:
+     * booking = null
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "booking_id")
+    @JsonIgnoreProperties({
+            "user",
+            "vehicle",
+            "slot",
+            "hibernateLazyInitializer",
+            "handler"
+    })
+    private Booking booking;
 
     @Column(name = "check_in_time")
     private LocalDateTime checkInTime;

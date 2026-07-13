@@ -137,16 +137,19 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
 
         if (!columns.contains("payment_amount")
                 || !columns.contains("payment_status")
-                || !columns.contains("paid_at")
-                || !columns.contains("status")) {
+                || !columns.contains("paid_at")) {
             return BigDecimal.ZERO;
         }
 
+        /*
+         * Booking revenue must depend on payment_status, not booking status.
+         * A paid booking can later move CONFIRMED -> CHECKED_IN -> COMPLETED,
+         * but its revenue must remain counted.
+         */
         String sql = """
                 SELECT COALESCE(SUM(payment_amount), 0)
                 FROM bookings
-                WHERE UPPER(status) = 'CONFIRMED'
-                  AND UPPER(payment_status) = 'PAID'
+                WHERE UPPER(payment_status) = 'PAID'
                   AND paid_at IS NOT NULL
                   AND paid_at >= ?
                   AND paid_at <= ?
@@ -358,8 +361,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
 
         if (!columns.contains("payment_amount")
                 || !columns.contains("payment_status")
-                || !columns.contains("paid_at")
-                || !columns.contains("status")) {
+                || !columns.contains("paid_at")) {
             return List.of();
         }
 
@@ -372,8 +374,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
                     COALESCE(SUM(payment_amount), 0) AS revenue,
                     COUNT(*) AS paymentCount
                 FROM bookings
-                WHERE UPPER(status) = 'CONFIRMED'
-                  AND UPPER(payment_status) = 'PAID'
+                WHERE UPPER(payment_status) = 'PAID'
                   AND paid_at IS NOT NULL
                   AND paid_at >= ?
                   AND paid_at <= ?

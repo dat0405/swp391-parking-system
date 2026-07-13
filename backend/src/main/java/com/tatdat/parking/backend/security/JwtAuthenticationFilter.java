@@ -33,33 +33,41 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final UserRepository userRepository;
 
     @Override
-    protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
+    protected boolean shouldNotFilter(
+            @NonNull HttpServletRequest request
+    ) {
         String path = request.getServletPath();
 
+        /*
+         * Bỏ qua CORS preflight.
+         */
         if (HttpMethod.OPTIONS.matches(request.getMethod())) {
             return true;
         }
 
         /*
-         * PayOS endpoints must bypass JWT filter.
+         * Chỉ webhook PayOS được bỏ qua JWT.
          *
-         * Reason:
-         * PayOS webhook request comes from PayOS server,
-         * not from your logged-in frontend user.
-         * Therefore it will not have Authorization: Bearer <token>.
+         * PayOS gọi endpoint này từ server của PayOS nên không có
+         * access_token cookie của người dùng.
+         *
+         * Không được dùng startsWith("/api/payments/payos"),
+         * vì API tạo QR cần xác thực người dùng.
          */
-        if (path.startsWith("/api/payments/payos")) {
+        if (path.equals("/api/payments/payos/webhook")) {
             return true;
         }
 
         /*
-         * /api/auth/me must still pass through JWT filter,
-         * because this endpoint returns the current logged-in user.
+         * Endpoint lấy thông tin người dùng hiện tại phải đi qua JWT filter.
          */
         if (path.equals("/api/auth/me")) {
             return false;
         }
 
+        /*
+         * Các API xác thực public không cần JWT.
+         */
         return path.startsWith("/api/auth/")
                 || path.startsWith("/api/test/")
                 || path.startsWith("/v3/api-docs")
@@ -76,6 +84,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = resolveToken(request);
 
+        /*
+         * Không có token thì tiếp tục filter chain.
+         * SecurityConfig sẽ quyết định endpoint đó public hay cần đăng nhập.
+         */
         if (token == null || token.isBlank()) {
             filterChain.doFilter(request, response);
             return;
@@ -84,64 +96,130 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String email = jwtService.extractEmail(token);
 
-            if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                User user = userRepository.findByEmail(email).orElse(null);
+            if (email != null
+                    && SecurityContextHolder
+                    .getContext()
+                    .getAuthentication() == null) {
+
+                User user = userRepository
+                        .findByEmail(email)
+                        .orElse(null);
 
                 if (user == null) {
                     SecurityContextHolder.clearContext();
-                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "User not found");
+
+                    response.sendError(
+                            HttpServletResponse.SC_UNAUTHORIZED,
+                            "User not found"
+                    );
+
                     return;
                 }
 
                 if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
                     SecurityContextHolder.clearContext();
-                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "User account is not active");
+
+                    response.sendError(
+                            HttpServletResponse.SC_UNAUTHORIZED,
+                            "User account is not active"
+                    );
+
                     return;
                 }
 
                 if (!jwtService.isTokenValid(token, user)) {
                     SecurityContextHolder.clearContext();
-                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid access token");
+
+                    response.sendError(
+                            HttpServletResponse.SC_UNAUTHORIZED,
+                            "Invalid access token"
+                    );
+
                     return;
                 }
 
-                String roleName = user.getRole().getRoleName();
+                if (user.getRole() == null
+                        || user.getRole().getRoleName() == null) {
+
+                    SecurityContextHolder.clearContext();
+
+                    response.sendError(
+                            HttpServletResponse.SC_UNAUTHORIZED,
+                            "User role not found"
+                    );
+
+                    return;
+                }
+
+                String roleName = user
+                        .getRole()
+                        .getRoleName()
+                        .trim()
+                        .toUpperCase();
 
                 UsernamePasswordAuthenticationToken authenticationToken =
                         new UsernamePasswordAuthenticationToken(
                                 user.getEmail(),
                                 null,
-                                List.of(new SimpleGrantedAuthority("ROLE_" + roleName))
+                                List.of(
+                                        new SimpleGrantedAuthority(
+                                                "ROLE_" + roleName
+                                        )
+                                )
                         );
 
                 authenticationToken.setDetails(
-                        new WebAuthenticationDetailsSource().buildDetails(request)
+                        new WebAuthenticationDetailsSource()
+                                .buildDetails(request)
                 );
 
-                SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                SecurityContextHolder
+                        .getContext()
+                        .setAuthentication(authenticationToken);
             }
 
             filterChain.doFilter(request, response);
+
         } catch (ExpiredJwtException exception) {
             SecurityContextHolder.clearContext();
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Access token expired");
+
+            response.sendError(
+                    HttpServletResponse.SC_UNAUTHORIZED,
+                    "Access token expired"
+            );
+
         } catch (JwtException | IllegalArgumentException exception) {
             SecurityContextHolder.clearContext();
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid access token");
+
+            response.sendError(
+                    HttpServletResponse.SC_UNAUTHORIZED,
+                    "Invalid access token"
+            );
         }
     }
 
-    private String resolveToken(HttpServletRequest request) {
-        String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+    private String resolveToken(
+            HttpServletRequest request
+    ) {
+        String authHeader =
+                request.getHeader(HttpHeaders.AUTHORIZATION);
 
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+        if (authHeader != null
+                && authHeader.startsWith("Bearer ")) {
+
             return authHeader.substring(7);
         }
 
-        return getCookieValue(request, ACCESS_TOKEN_COOKIE);
+        return getCookieValue(
+                request,
+                ACCESS_TOKEN_COOKIE
+        );
     }
 
-    private String getCookieValue(HttpServletRequest request, String cookieName) {
+    private String getCookieValue(
+            HttpServletRequest request,
+            String cookieName
+    ) {
         Cookie[] cookies = request.getCookies();
 
         if (cookies == null || cookies.length == 0) {

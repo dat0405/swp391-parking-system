@@ -1,7 +1,12 @@
 export const normalizeVehicleType = (type) => {
   const value = String(type || "").trim().toLowerCase();
 
-  if (value.includes("bike") || value.includes("motor")) {
+  if (
+    value.includes("bike") ||
+    value.includes("motor") ||
+    value.includes("xe máy") ||
+    value.includes("motorbike")
+  ) {
     return "motorbike";
   }
 
@@ -53,15 +58,24 @@ export const formatMotorbikePlate = (value) => {
   let series = "";
   let numbers = "";
 
-  if (rest.length <= 3) {
+  /*
+   * Motorbike plate examples:
+   * 25-B1-258.88  -> raw: 25B125888
+   * 29-K6-447.43  -> raw: 29K644743
+   * 59-AA-123.56  -> raw: 59AA12356
+   *
+   * Structure:
+   * province: 2 digits
+   * series: 2 chars usually, such as B1, K6, AA
+   * numbers: 5 digits, displayed as 258.88
+   */
+  if (rest.length <= 2) {
     series = rest;
+    numbers = "";
   } else {
-    series = rest.slice(0, Math.max(rest.length - 5, 0));
-    numbers = rest.slice(-5);
+    series = rest.slice(0, 2);
+    numbers = rest.slice(2, 7).replace(/\D/g, "");
   }
-
-  series = series.slice(0, 3);
-  numbers = numbers.slice(0, 5);
 
   let result = "";
 
@@ -75,7 +89,7 @@ export const formatMotorbikePlate = (value) => {
   }
 
   if (numbers.length > 0) {
-    result += " ";
+    result += "-";
     result += numbers.slice(0, 3);
   }
 
@@ -100,7 +114,7 @@ export const getPlatePlaceholder = (type) => {
     return "e.g., 30F-256.58";
   }
 
-  return "e.g., 29-K6 447.43 / 59-AA 123.56";
+  return "e.g., 25-B1-258.88 / 59-AA-123.56";
 };
 
 export const getPlateHint = (type) => {
@@ -108,14 +122,14 @@ export const getPlateHint = (type) => {
     return "Car format: 30F-256.58";
   }
 
-  return "Motorbike format: 29-K6 447.43 or 59-AA 123.56";
+  return "Motorbike format: 25-B1-258.88 or 59-AA-123.56";
 };
 
 export const validateVietnamPlate = (plate, type) => {
   const value = String(plate || "").trim().toUpperCase();
 
   const carRegex = /^\d{2}[A-Z]-\d{3}\.\d{2}$/;
-  const motorbikeRegex = /^\d{2}-[A-Z]{1,2}\d?\s\d{3}\.\d{2}$/;
+  const motorbikeRegex = /^\d{2}-[A-Z0-9]{2}-\d{3}\.\d{2}$/;
 
   if (normalizeVehicleType(type) === "car") {
     return carRegex.test(value);
@@ -126,14 +140,32 @@ export const validateVietnamPlate = (plate, type) => {
 
 export const formatPlateForSearch = (value) => {
   const raw = String(value || "").toUpperCase();
+  const cleaned = cleanPlateInput(raw);
 
-  if (raw.includes(" ")) {
+  /*
+   * Motorbike examples after clean:
+   * 25B125888
+   * 29K644743
+   * 59AA12356
+   *
+   * Car example after clean:
+   * 30F25658
+   *
+   * Because car and motorbike can look similar when cleaned,
+   * keep this function compatible with both:
+   * - if raw text already contains "-" after province and series, respect motorbike format
+   * - if raw text contains a space, treat as old motorbike format
+   * - otherwise fallback to car format for old search behavior
+   */
+  if (/^\d{2}-[A-Z0-9]{2}[-\s]/.test(raw) || raw.includes(" ")) {
     return formatMotorbikePlate(raw);
   }
 
-  const cleaned = cleanPlateInput(raw);
+  if (/^\d{2}[A-Z]{2}\d{5}$/.test(cleaned)) {
+    return formatMotorbikePlate(cleaned);
+  }
 
-  if (/^\d{2}[A-Z]\d/.test(cleaned) || /^\d{2}[A-Z]{2}/.test(cleaned)) {
+  if (/^\d{2}[A-Z]\d\d{5}$/.test(cleaned)) {
     return formatMotorbikePlate(cleaned);
   }
 

@@ -13,7 +13,9 @@ import {
   X,
   ChevronDown,
   Zap,
-  ShieldCheck
+  ShieldCheck,
+  Ban,
+  LoaderCircle
 } from "lucide-react";
 
 import Sidebar from "../dashboard/Sidebar";
@@ -182,23 +184,28 @@ const getDisplayPrefixByFloor = (floorName) => {
 };
 
 const buildSlotDisplayMap = (slots) => {
+  /*
+   * Build display slot codes exactly like the Parking Floor screen.
+   *
+   * Important:
+   * Do not filter by vehicle type here.
+   * A floor can contain both Car and Motorbike slots.
+   * If we filter motorbike slots out of Floor 1, the dropdown falls back
+   * to raw database codes such as "1-BIKE-001".
+   *
+   * Example Floor 1:
+   * A-01 ... A-60 = Car slots
+   * A-61 ... A-70 = Motorbike slots
+   */
   const mappedSlots = slots
     .map((slot) => ({
-      id: slot.id,
+      id: Number(slot.id),
       slotCode: getSlotCode(slot),
       floor: getFloorCode(slot),
       type: getVehicleType(slot),
       raw: slot
     }))
-    .filter((slot) => {
-      const allowedType = getAllowedTypeByFloor(slot.floor);
-
-      if (slot.floor === "Unknown") {
-        return true;
-      }
-
-      return slot.type === allowedType;
-    })
+    .filter((slot) => !Number.isNaN(slot.id))
     .sort((slotA, slotB) => {
       const floorCompare =
         getFloorSortValue(slotA.floor) - getFloorSortValue(slotB.floor);
@@ -236,15 +243,30 @@ const getDisplayVehicleType = (type) => {
   return type || "Unknown";
 };
 
+const getDisplaySlotNumber = (displayCode) => {
+  const match = String(displayCode || "").match(/\d+/);
+
+  if (!match) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  return Number(match[0]);
+};
+
+
 const mapApiSlotToOption = (slot, slotDisplayMap = new Map()) => {
   const normalizedType = getVehicleType(slot);
   const slotId = Number(slot.id);
+  const floor = getFloorCode(slot);
+  const displayCode = slotDisplayMap.get(slotId) || getSlotCode(slot);
 
   return {
     id: slot.id,
     slotCode: getSlotCode(slot),
-    displayCode: slotDisplayMap.get(slotId) || getSlotCode(slot),
-    floor: getFloorCode(slot),
+    displayCode,
+    displayNumber: getDisplaySlotNumber(displayCode),
+    floor,
+    floorSort: getFloorSortValue(floor),
     type: normalizedType,
     typeLabel: getDisplayVehicleType(normalizedType),
     status: String(slot.status || "AVAILABLE").toUpperCase(),
@@ -334,18 +356,56 @@ const formatVnd = (value) => {
   return `${Number(value || 0).toLocaleString("vi-VN")} VNĐ`;
 };
 
+const formatApiDateTime = (value) => {
+  if (!value) return "-";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour12: false
+  });
+};
+
+const formatCountdown = (totalSeconds) => {
+  const safeSeconds = Math.max(0, Number(totalSeconds || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+    2,
+    "0"
+  )}`;
+};
+
 function Booking() {
   const navigate = useNavigate();
   const location = useLocation();
   const slotDropdownRef = useRef(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [successModal, setSuccessModal] = useState({ show: false, data: null });
   const [paymentNotice, setPaymentNotice] = useState({
     show: false,
     type: "",
     message: ""
   });
+
+  const [bookingPaymentStatus, setBookingPaymentStatus] = useState("IDLE");
+  const [bookingPaymentMessage, setBookingPaymentMessage] = useState("");
+
+  const [pendingBooking, setPendingBooking] = useState(null);
+  const [pendingLoading, setPendingLoading] = useState(true);
+  const [pendingRemainingSeconds, setPendingRemainingSeconds] = useState(0);
+  const [isCancellingPendingCard, setIsCancellingPendingCard] =
+    useState(false);
 
   const unwrapApiData = (response) => {
     return response?.data || response;
@@ -363,8 +423,13 @@ function Booking() {
     );
   };
 
-  const getPaymentQrImageSrc = (qrCode, checkoutUrl) => {
-    const qrValue = qrCode || checkoutUrl || "";
+  const getPaymentQrImageSrc = (qrCode) => {
+    /*
+     * PayOS returns qrCode as the direct VietQR payment payload.
+     * We render that payload directly in this modal.
+     * Do not use checkoutUrl to generate QR, because that only opens PayOS page.
+     */
+    const qrValue = qrCode || "";
 
     if (!qrValue) {
       return "";
@@ -380,7 +445,7 @@ function Booking() {
       return normalizedQrValue;
     }
 
-    return `https://api.qrserver.com/v1/create-qr-code/?size=165x165&data=${encodeURIComponent(
+    return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
       normalizedQrValue
     )}&dark=000000&bgcolor=ffffff`;
   };
@@ -415,6 +480,23 @@ function Booking() {
     endTime: initialTimeState.endTime
   });
 
+  const resetBookingForm = () => {
+    const nextTimeState = getInitialTimeState();
+
+    setFormData({
+      vehicleTypeId: "1",
+      vehicleType: "CAR",
+      slotId: "",
+      licensePlate: "",
+      startDate: nextTimeState.startDate,
+      startTime: nextTimeState.startTime,
+      endDate: nextTimeState.endDate,
+      endTime: nextTimeState.endTime
+    });
+
+    setIsSlotDropdownOpen(false);
+  };
+
   const [availableSlots, setAvailableSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState("");
@@ -444,6 +526,99 @@ function Booking() {
 
   const currentUser = getSavedUser();
   const currentUserId = currentUser?.userId || currentUser?.id;
+
+  const getRemainingSeconds = (paymentExpiredAt) => {
+    if (!paymentExpiredAt) return 0;
+
+    const expirationTime = new Date(paymentExpiredAt).getTime();
+
+    if (Number.isNaN(expirationTime)) {
+      return 0;
+    }
+
+    return Math.max(
+      0,
+      Math.ceil((expirationTime - Date.now()) / 1000)
+    );
+  };
+
+  const buildPendingModalData = (booking) => {
+    const duration =
+      booking?.durationMinutes ||
+      Math.max(
+        0,
+        Math.round(
+          (new Date(booking?.endTime).getTime() -
+            new Date(booking?.startTime).getTime()) /
+            60000
+        )
+      );
+
+    return {
+      bookingId: booking?.id,
+      bookingStatus: booking?.status || "PENDING_PAYMENT",
+      paymentStatus: booking?.paymentStatus || "PENDING",
+      licensePlate: booking?.licensePlate || "-",
+      slotId: booking?.slotId,
+      slotDisplayCode: booking?.slotCode || `Slot ID ${booking?.slotId || "-"}`,
+      vehicleType: normalizeVehicleType(
+        booking?.vehicleTypeName
+      ).toUpperCase(),
+      durationText: formatDurationText(duration),
+      amount: booking?.paymentAmount || 0,
+      currency: booking?.paymentCurrency || "VND",
+      orderCode: booking?.paymentOrderCode || null,
+      paymentLinkId: booking?.paymentLinkId || "",
+      checkoutUrl: booking?.checkoutUrl || "",
+      qrCode: booking?.qrCode || "",
+      qrImageSrc: getPaymentQrImageSrc(booking?.qrCode),
+      paymentExpiredAt: booking?.paymentExpiredAt,
+      displayStartTime: formatApiDateTime(booking?.startTime),
+      displayEndTime: formatApiDateTime(booking?.endTime),
+      pricePerHour: 0
+    };
+  };
+
+  const loadPendingPayment = async () => {
+    if (!currentUserId) {
+      setPendingBooking(null);
+      setPendingLoading(false);
+      return;
+    }
+
+    try {
+      setPendingLoading(true);
+
+      const response = await axiosClient.get(
+        "/bookings/my-pending-payment"
+      );
+
+      const booking = unwrapApiData(response);
+
+      if (!booking || !booking.id) {
+        setPendingBooking(null);
+        setPendingRemainingSeconds(0);
+        return;
+      }
+
+      setPendingBooking(booking);
+      setPendingRemainingSeconds(
+        getRemainingSeconds(booking.paymentExpiredAt)
+      );
+    } catch (error) {
+      if (error.response?.status !== 204) {
+        console.error(
+          "Failed to load pending payment booking:",
+          error
+        );
+      }
+
+      setPendingBooking(null);
+      setPendingRemainingSeconds(0);
+    } finally {
+      setPendingLoading(false);
+    }
+  };
 
   const selectedSlot = useMemo(() => {
     return availableSlots.find(
@@ -620,6 +795,19 @@ function Booking() {
         .map((slot) => mapApiSlotToOption(slot, slotDisplayMap))
         .filter((slot) => slot.status === "AVAILABLE")
         .sort((slotA, slotB) => {
+          const floorCompare = Number(slotA.floorSort) - Number(slotB.floorSort);
+
+          if (floorCompare !== 0) {
+            return floorCompare;
+          }
+
+          const numberCompare =
+            Number(slotA.displayNumber) - Number(slotB.displayNumber);
+
+          if (numberCompare !== 0) {
+            return numberCompare;
+          }
+
           const codeCompare = slotA.displayCode.localeCompare(
             slotB.displayCode,
             undefined,
@@ -653,6 +841,45 @@ function Booking() {
       setSlotsLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadPendingPayment();
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!pendingBooking?.paymentExpiredAt) {
+      setPendingRemainingSeconds(0);
+      return undefined;
+    }
+
+    const updateCountdown = () => {
+      const remaining = getRemainingSeconds(
+        pendingBooking.paymentExpiredAt
+      );
+
+      setPendingRemainingSeconds(remaining);
+
+      if (remaining <= 0) {
+        window.setTimeout(async () => {
+          await loadPendingPayment();
+          await loadAvailableSlots(formData.vehicleTypeId);
+        }, 6000);
+      }
+    };
+
+    updateCountdown();
+
+    const intervalId = window.setInterval(
+      updateCountdown,
+      1000
+    );
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    pendingBooking?.id,
+    pendingBooking?.paymentExpiredAt,
+    formData.vehicleTypeId
+  ]);
 
   useEffect(() => {
     loadAvailableSlots(formData.vehicleTypeId);
@@ -729,20 +956,50 @@ function Booking() {
       return;
     }
 
-    if (paymentResult === "success") {
-      checkBookingPaymentResult(bookingId);
-    }
+    const processPaymentReturn = async () => {
+      if (paymentResult === "success") {
+        await checkBookingPaymentResult(bookingId);
+      }
 
-    if (paymentResult === "cancel") {
-      setPaymentNotice({
-        show: true,
-        type: "cancel",
-        message: "Bạn đã hủy thanh toán PayOS. Booking vẫn chưa được xác nhận."
-      });
-      setSuccessModal({ show: false, data: null });
-    }
+      if (paymentResult === "cancel") {
+        try {
+          await axiosClient.put(
+            `/bookings/my-history/${bookingId}/cancel`
+          );
 
-    navigate("/user-ui", { replace: true });
+          setPaymentNotice({
+            show: true,
+            type: "cancel",
+            message: "Bạn đã hủy thanh toán và booking đã được hủy."
+          });
+        } catch (error) {
+          console.error("Failed to cancel returned PayOS booking:", error);
+
+          setPaymentNotice({
+            show: true,
+            type: "error",
+            message:
+              "Thanh toán đã được hủy nhưng hệ thống chưa thể hủy booking. Vui lòng thử lại trong Booking History."
+          });
+        }
+
+        setSuccessModal({ show: false, data: null });
+        setPendingBooking(null);
+        setPendingRemainingSeconds(0);
+        setBookingPaymentStatus("IDLE");
+        setBookingPaymentMessage("");
+        resetBookingForm();
+        await loadAvailableSlots(formData.vehicleTypeId);
+      }
+
+      /*
+       * Chỉ xóa query PayOS khỏi URL.
+       * Người dùng vẫn ở nguyên màn hình New Booking.
+       */
+      navigate("/user-ui", { replace: true });
+    };
+
+    processPaymentReturn();
   }, [location.search]);
 
   const getBookingStatusValue = (booking) => {
@@ -765,24 +1022,98 @@ function Booking() {
     ).toUpperCase();
   };
 
+  const isBookingPaymentSuccess = (booking) => {
+    const bookingStatus = getBookingStatusValue(booking);
+    const paymentStatus = getPaymentStatusValue(booking);
+
+    return bookingStatus === "CONFIRMED" || paymentStatus === "PAID";
+  };
+
+  const markBookingPaymentSuccess = async (booking) => {
+    const paidSlotId = successModal.data?.slotId;
+
+    setBookingPaymentStatus("PAID");
+    setBookingPaymentMessage("Đã thanh toán thành công");
+    setPendingBooking(null);
+    setPendingRemainingSeconds(0);
+
+    setPaymentNotice({
+      show: true,
+      type: "success",
+      message:
+        "Đã thanh toán thành công. Booking đã được xác nhận và slot đã được giữ chỗ."
+    });
+
+    setSuccessModal((prev) => {
+      if (!prev.show || !prev.data) {
+        return prev;
+      }
+
+      return {
+        show: true,
+        data: {
+          ...prev.data,
+          bookingStatus: getBookingStatusValue(booking) || "CONFIRMED",
+          paymentStatus: getPaymentStatusValue(booking) || "PAID"
+        }
+      };
+    });
+
+    await loadAvailableSlots(formData.vehicleTypeId);
+
+    /*
+     * Ẩn ngay slot vừa thanh toán khỏi danh sách chọn trên giao diện.
+     * Backend vẫn phải là nguồn dữ liệu chính để Parking Floor hiển thị RESERVED.
+     */
+    if (paidSlotId) {
+      setAvailableSlots((prev) =>
+        prev.filter(
+          (slot) => String(slot.id) !== String(paidSlotId)
+        )
+      );
+    }
+
+    /*
+     * Giữ người dùng ở trang New Booking.
+     * Sau khi hiển thị trạng thái thành công một lúc, đóng QR và reset form.
+     */
+    window.setTimeout(() => {
+      setSuccessModal({ show: false, data: null });
+      setPendingBooking(null);
+      setPendingRemainingSeconds(0);
+      setBookingPaymentStatus("IDLE");
+      setBookingPaymentMessage("");
+      resetBookingForm();
+    }, 1500);
+  };
+
   const checkBookingPaymentResult = async (bookingId) => {
     if (!bookingId) return;
 
     try {
-      const response = await axiosClient.get(`/bookings/${bookingId}`);
+      const response = await axiosClient.get(
+        `/bookings/my-history/${bookingId}`
+      );
       const booking = unwrapApiData(response);
 
       const bookingStatus = getBookingStatusValue(booking);
       const paymentStatus = getPaymentStatusValue(booking);
 
       if (bookingStatus === "CONFIRMED" || paymentStatus === "PAID") {
+        setBookingPaymentStatus("PAID");
+        setBookingPaymentMessage("Đã thanh toán thành công");
+        setPendingBooking(null);
+        setPendingRemainingSeconds(0);
+
         setPaymentNotice({
           show: true,
           type: "success",
-          message: "Thanh toán thành công. Booking của bạn đã được xác nhận."
+          message:
+            "Đã thanh toán thành công. Booking đã được xác nhận và slot đã được giữ chỗ."
         });
 
         setSuccessModal({ show: false, data: null });
+        resetBookingForm();
         await loadAvailableSlots(formData.vehicleTypeId);
         return;
       }
@@ -802,10 +1133,64 @@ function Booking() {
         show: true,
         type: "error",
         message:
-          "Không thể kiểm tra trạng thái thanh toán. Vui lòng vào Reservations để kiểm tra lại."
+          "Không thể kiểm tra trạng thái thanh toán. Vui lòng vào Booking History để kiểm tra lại."
       });
     }
   };
+
+  useEffect(() => {
+    const bookingId = successModal.data?.bookingId;
+
+    if (
+      !successModal.show ||
+      !bookingId ||
+      bookingPaymentStatus === "PAID"
+    ) {
+      return undefined;
+    }
+
+    let stopped = false;
+
+    const checkPayment = async () => {
+      try {
+        const response = await axiosClient.get(
+        `/bookings/my-history/${bookingId}`
+      );
+        const booking = unwrapApiData(response);
+
+        if (stopped) {
+          return;
+        }
+
+        if (isBookingPaymentSuccess(booking)) {
+          await markBookingPaymentSuccess(booking);
+          return;
+        }
+
+        setBookingPaymentStatus("PENDING");
+        setBookingPaymentMessage("Đang chờ khách quét QR và chuyển khoản...");
+      } catch (error) {
+        if (!stopped) {
+          setBookingPaymentStatus("PENDING");
+          setBookingPaymentMessage("Đang chờ xác nhận thanh toán từ PayOS...");
+        }
+      }
+    };
+
+    checkPayment();
+
+    const intervalId = window.setInterval(checkPayment, 3000);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    successModal.show,
+    successModal.data?.bookingId,
+    bookingPaymentStatus,
+    formData.vehicleTypeId
+  ]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -883,10 +1268,10 @@ function Booking() {
       );
 
       const paymentData = unwrapApiData(paymentResponse);
-      const paymentQrSrc = getPaymentQrImageSrc(
-        paymentData?.qrCode,
-        paymentData?.checkoutUrl
-      );
+      const paymentQrSrc = getPaymentQrImageSrc(paymentData?.qrCode);
+
+      setBookingPaymentStatus("PENDING");
+      setBookingPaymentMessage("Đang chờ khách quét QR và chuyển khoản...");
 
       setSuccessModal({
         show: true,
@@ -902,6 +1287,18 @@ function Booking() {
           slotDisplayCode:
             selectedSlot?.displayCode || `Slot ID ${formData.slotId}`,
           durationText: formatDurationText(durationMinutes),
+          displayStartTime: formatDisplayDateTime(
+            formData.startDate,
+            formData.startTime
+          ),
+          displayEndTime: formatDisplayDateTime(
+            formData.endDate,
+            formData.endTime
+          ),
+          paymentExpiredAt:
+            bookingData?.paymentExpiredAt ||
+            paymentData?.paymentExpiredAt ||
+            null,
           pricePerHour: currentRatePerHour,
           amount: paymentData?.amount || totalEstimated,
           currency: paymentData?.currency || "VND",
@@ -912,15 +1309,56 @@ function Booking() {
           qrImageSrc: paymentQrSrc
         }
       });
+
+      setPendingBooking({
+        ...bookingData,
+        ...paymentData,
+        id: bookingId,
+        bookingId,
+        slotId: Number(formData.slotId),
+        slotCode:
+          selectedSlot?.displayCode ||
+          bookingData?.slotCode ||
+          `Slot ID ${formData.slotId}`,
+        licensePlate: payload.licensePlate,
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+        status: "PENDING_PAYMENT",
+        paymentStatus: "PENDING",
+        paymentExpiredAt:
+          bookingData?.paymentExpiredAt ||
+          paymentData?.paymentExpiredAt ||
+          new Date(Date.now() + 10 * 60 * 1000).toISOString()
+      });
+
+      setPendingRemainingSeconds(
+        getRemainingSeconds(
+          bookingData?.paymentExpiredAt ||
+            paymentData?.paymentExpiredAt ||
+            new Date(Date.now() + 10 * 60 * 1000).toISOString()
+        )
+      );
     } catch (error) {
       console.error("Create booking or PayOS payment failed:", error);
 
-      alert(
-        error.response?.data?.message ||
-          error.response?.data ||
-          error.message ||
-          "Tạo booking hoặc tạo QR thanh toán thất bại."
-      );
+      if (error.response?.status === 409) {
+        await loadPendingPayment();
+
+        setPaymentNotice({
+          show: true,
+          type: "pending",
+          message:
+            error.response?.data?.message ||
+            "Bạn đang có một giao dịch chờ thanh toán. Giao dịch được hiển thị bên dưới."
+        });
+      } else {
+        alert(
+          error.response?.data?.message ||
+            error.response?.data ||
+            error.message ||
+            "Tạo booking hoặc tạo QR thanh toán thất bại."
+        );
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -928,7 +1366,188 @@ function Booking() {
 
   const closeSuccessModal = () => {
     setSuccessModal({ show: false, data: null });
-    navigate("/reservations");
+    setBookingPaymentStatus("IDLE");
+    setBookingPaymentMessage("");
+    setIsCancelling(false);
+    resetBookingForm();
+
+    /*
+     * Không navigate sang Reservations hoặc Booking History.
+     * Người dùng vẫn ở nguyên trang New Booking.
+     */
+  };
+
+  const handleCancelBooking = async () => {
+    const bookingId = successModal.data?.bookingId;
+
+    if (!bookingId || isCancelling) {
+      return;
+    }
+
+    const shouldCancel = window.confirm(
+      "Bạn có chắc muốn hủy booking này không? Mã QR thanh toán sẽ không còn được sử dụng."
+    );
+
+    if (!shouldCancel) {
+      return;
+    }
+
+    try {
+      setIsCancelling(true);
+      setBookingPaymentMessage("Đang hủy booking...");
+
+      await axiosClient.put(
+        `/bookings/my-history/${bookingId}/cancel`
+      );
+
+      setPaymentNotice({
+        show: true,
+        type: "cancel",
+        message: "Booking đã được hủy thành công."
+      });
+
+      setSuccessModal({ show: false, data: null });
+      setBookingPaymentStatus("IDLE");
+      setBookingPaymentMessage("");
+      resetBookingForm();
+
+      await loadAvailableSlots(formData.vehicleTypeId);
+    } catch (error) {
+      console.error("Cancel booking failed:", error);
+
+      const status = error.response?.status;
+
+      if (status === 401) {
+        setSuccessModal({ show: false, data: null });
+        setBookingPaymentStatus("IDLE");
+        setBookingPaymentMessage("");
+
+        setPaymentNotice({
+          show: true,
+          type: "error",
+          message:
+            "Phiên đăng nhập đã hết hạn. Hệ thống đang chuyển bạn về trang đăng nhập."
+        });
+      } else if (status === 403) {
+        setPaymentNotice({
+          show: true,
+          type: "error",
+          message:
+            "Tài khoản hiện tại không có quyền hủy booking này."
+        });
+
+        setBookingPaymentMessage(
+          "Không có quyền hủy booking."
+        );
+      } else if (status === 409) {
+        setPaymentNotice({
+          show: true,
+          type: "error",
+          message:
+            error.response?.data?.message ||
+            "Booking đã được thanh toán hoặc không còn có thể hủy."
+        });
+
+        setBookingPaymentMessage(
+          "Booking không còn có thể hủy."
+        );
+      } else {
+        setPaymentNotice({
+          show: true,
+          type: "error",
+          message:
+            error.response?.data?.message ||
+            error.response?.data ||
+            "Không thể hủy booking. Vui lòng thử lại."
+        });
+
+        setBookingPaymentMessage(
+          "Không thể hủy booking. Vui lòng thử lại."
+        );
+      }
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
+  const handleContinuePendingPayment = () => {
+    if (!pendingBooking) {
+      return;
+    }
+
+    setBookingPaymentStatus("PENDING");
+    setBookingPaymentMessage(
+      "Đang chờ khách quét QR và chuyển khoản..."
+    );
+
+    setSuccessModal({
+      show: true,
+      data: buildPendingModalData(pendingBooking)
+    });
+  };
+
+  const handleCancelPendingCard = async () => {
+    if (!pendingBooking?.id || isCancellingPendingCard) {
+      return;
+    }
+
+    const shouldCancel = window.confirm(
+      "Bạn có chắc muốn hủy giao dịch đang dang dở này không?"
+    );
+
+    if (!shouldCancel) {
+      return;
+    }
+
+    try {
+      setIsCancellingPendingCard(true);
+
+      await axiosClient.put(
+        `/bookings/my-history/${pendingBooking.id}/cancel`
+      );
+
+      setPendingBooking(null);
+      setPendingRemainingSeconds(0);
+
+      setPaymentNotice({
+        show: true,
+        type: "cancel",
+        message: "Giao dịch đang dang dở đã được hủy."
+      });
+
+      await loadAvailableSlots(formData.vehicleTypeId);
+    } catch (error) {
+      console.error(
+        "Cancel pending payment card failed:",
+        error
+      );
+
+      setPaymentNotice({
+        show: true,
+        type: "error",
+        message:
+          error.response?.data?.message ||
+          error.response?.data ||
+          "Không thể hủy giao dịch đang dang dở."
+      });
+
+      await loadPendingPayment();
+    } finally {
+      setIsCancellingPendingCard(false);
+    }
+  };
+
+  const handleModalClose = () => {
+    if (bookingPaymentStatus === "PAID") {
+      closeSuccessModal();
+      return;
+    }
+
+    /*
+     * Khi booking chưa thanh toán, đóng modal cũng phải đi qua
+     * quy trình hủy để không tạo booking PENDING bị bỏ quên.
+     */
+    handleCancelBooking();
   };
 
   return (
@@ -1466,6 +2085,110 @@ function Booking() {
               font-size: 1rem;
             }
 
+            .pending-payment-card {
+              margin-top: 1.5rem;
+              background: var(--bg-card);
+              border: 1px solid rgba(245, 158, 11, 0.45);
+              border-radius: 0.85rem;
+              padding: 1.25rem 1.5rem;
+              box-shadow: var(--shadow-card);
+            }
+
+            .pending-payment-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              gap: 1rem;
+              margin-bottom: 1rem;
+              flex-wrap: wrap;
+            }
+
+            .pending-payment-title {
+              margin: 0;
+              color: var(--text-main);
+              font-size: 1rem;
+              font-weight: 800;
+            }
+
+            .pending-payment-subtitle {
+              margin: 0.35rem 0 0;
+              color: var(--text-muted);
+              font-size: 0.8rem;
+              line-height: 1.45;
+            }
+
+            .pending-payment-countdown {
+              min-width: 104px;
+              text-align: center;
+              padding: 0.55rem 0.8rem;
+              border-radius: 0.65rem;
+              background: rgba(245, 158, 11, 0.12);
+              border: 1px solid rgba(245, 158, 11, 0.32);
+              color: #f59e0b;
+              font-size: 1.05rem;
+              font-weight: 900;
+              letter-spacing: 0.06em;
+            }
+
+            .pending-payment-grid {
+              display: grid;
+              grid-template-columns: repeat(5, minmax(0, 1fr));
+              gap: 0.75rem;
+            }
+
+            .pending-payment-item {
+              background: var(--bg-card-soft);
+              border: 1px solid var(--border-color);
+              border-radius: 0.65rem;
+              padding: 0.8rem;
+              min-width: 0;
+            }
+
+            .pending-payment-item-label {
+              display: block;
+              color: var(--text-muted);
+              font-size: 0.67rem;
+              font-weight: 800;
+              text-transform: uppercase;
+              margin-bottom: 0.35rem;
+            }
+
+            .pending-payment-item-value {
+              color: var(--text-main);
+              font-size: 0.84rem;
+              font-weight: 800;
+              overflow-wrap: anywhere;
+            }
+
+            .pending-payment-actions {
+              display: flex;
+              justify-content: flex-end;
+              gap: 0.75rem;
+              margin-top: 1rem;
+              flex-wrap: wrap;
+            }
+
+            .pending-payment-button {
+              min-height: 40px;
+              padding: 0 1rem;
+              border-radius: 0.6rem;
+              font-size: 0.82rem;
+              font-weight: 800;
+              cursor: pointer;
+            }
+
+            .pending-payment-continue {
+              border: none;
+              background: var(--primary-blue);
+              color: #ffffff;
+            }
+
+            .pending-payment-cancel {
+              border: 1px solid rgba(239, 68, 68, 0.4);
+              background: rgba(239, 68, 68, 0.1);
+              color: var(--danger-red);
+            }
+
             /* =======================================================
                CSS QUẢN LÝ ĐẢO MÀU MODAL THEO LIGHT/DARK MODE (TỰ ĐỘNG)
                ======================================================= */
@@ -1500,6 +2223,12 @@ function Booking() {
               border: 1px solid var(--border-color) !important; 
             }
 
+            @keyframes spin {
+              to {
+                transform: rotate(360deg);
+              }
+            }
+
             @media (max-width: 1024px) {
               .booking-grid-layout {
                 grid-template-columns: 1fr;
@@ -1508,17 +2237,30 @@ function Booking() {
               .summary-sidebar-panel {
                 position: static;
               }
+
+              .pending-payment-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+              }
             }
 
             @media (max-width: 768px) {
               .booking-inner-form,
-              .vehicle-selector-grid {
+              .vehicle-selector-grid,
+              .pending-payment-grid {
                 grid-template-columns: 1fr;
               }
 
               .time-section-header {
                 flex-direction: column;
                 align-items: flex-start;
+              }
+
+              .pending-payment-actions {
+                flex-direction: column;
+              }
+
+              .pending-payment-button {
+                width: 100%;
               }
             }
           `}</style>
@@ -1650,7 +2392,10 @@ function Booking() {
                                     onClick={() => handleSelectSlot(slot)}
                                   >
                                     <span className="custom-slot-option-code">{slot.displayCode}</span>
-                                    <span className="custom-slot-option-type">{slot.typeLabel}</span>
+                                    <span className="custom-slot-option-type">
+                                      {slot.typeLabel}
+                                      {slot.floor && slot.floor !== "Unknown" ? ` | ${slot.floor}` : ""}
+                                    </span>
                                   </button>
                                 );
                               })
@@ -1752,11 +2497,21 @@ function Booking() {
               <div className="summary-time-box">
                 <div className="summary-time-row">
                   <span className="summary-label">From</span>
-                  <span className="summary-value">{formatDisplayDateTime(formData.startDate, formData.startTime)}</span>
+                  <span className="summary-value">
+                    {formatDisplayDateTime(
+                      formData.startDate,
+                      formData.startTime
+                    )}
+                  </span>
                 </div>
                 <div className="summary-time-row">
                   <span className="summary-label">To</span>
-                  <span className="summary-value">{formatDisplayDateTime(formData.endDate, formData.endTime)}</span>
+                  <span className="summary-value">
+                    {formatDisplayDateTime(
+                      formData.endDate,
+                      formData.endTime
+                    )}
+                  </span>
                 </div>
                 <div className="summary-time-row">
                   <span className="summary-label">Duration</span>
@@ -1793,6 +2548,142 @@ function Booking() {
               <p className="booking-note-text">After booking is created, the system will show the PayOS QR payment code.</p>
             </div>
           </div>
+
+          <div className="pending-payment-card">
+            <div className="pending-payment-header">
+              <div>
+                <h3 className="pending-payment-title">
+                  Giao dịch đang dang dở
+                </h3>
+                <p className="pending-payment-subtitle">
+                  Giao dịch chờ thanh toán được giữ trong 10 phút. Sau thời
+                  gian này, booking sẽ tự động chuyển sang Cancelled và
+                  payment sẽ chuyển sang Expired.
+                </p>
+              </div>
+
+              {pendingBooking && (
+                <div className="pending-payment-countdown">
+                  {formatCountdown(pendingRemainingSeconds)}
+                </div>
+              )}
+            </div>
+
+            {pendingLoading ? (
+              <div className="field-helper-text">
+                Đang kiểm tra giao dịch chờ thanh toán...
+              </div>
+            ) : !pendingBooking ? (
+              <div className="field-helper-text">
+                Hiện không có giao dịch đang dang dở.
+              </div>
+            ) : (
+              <>
+                <div className="pending-payment-grid">
+                  <div className="pending-payment-item">
+                    <span className="pending-payment-item-label">
+                      Booking
+                    </span>
+                    <span className="pending-payment-item-value">
+                      {pendingBooking.bookingCode ||
+                        `BK-${String(pendingBooking.id).padStart(6, "0")}`}
+                    </span>
+                  </div>
+
+                  <div className="pending-payment-item">
+                    <span className="pending-payment-item-label">
+                      Biển số
+                    </span>
+                    <span className="pending-payment-item-value">
+                      {pendingBooking.licensePlate || "-"}
+                    </span>
+                  </div>
+
+                  <div className="pending-payment-item">
+                    <span className="pending-payment-item-label">
+                      Slot
+                    </span>
+                    <span className="pending-payment-item-value">
+                      {pendingBooking.slotCode || "-"}
+                    </span>
+                  </div>
+
+                  <div className="pending-payment-item">
+                    <span className="pending-payment-item-label">
+                      Trạng thái
+                    </span>
+                    <span className="pending-payment-item-value">
+                      {pendingBooking.status} /{" "}
+                      {pendingBooking.paymentStatus}
+                    </span>
+                  </div>
+
+                  <div className="pending-payment-item">
+                    <span className="pending-payment-item-label">
+                      Số tiền
+                    </span>
+                    <span className="pending-payment-item-value">
+                      {formatVnd(pendingBooking.paymentAmount)}
+                    </span>
+                  </div>
+
+                  <div className="pending-payment-item">
+                    <span className="pending-payment-item-label">
+                      Bắt đầu
+                    </span>
+                    <span className="pending-payment-item-value">
+                      {formatApiDateTime(pendingBooking.startTime)}
+                    </span>
+                  </div>
+
+                  <div className="pending-payment-item">
+                    <span className="pending-payment-item-label">
+                      Kết thúc
+                    </span>
+                    <span className="pending-payment-item-value">
+                      {formatApiDateTime(pendingBooking.endTime)}
+                    </span>
+                  </div>
+
+                  <div className="pending-payment-item">
+                    <span className="pending-payment-item-label">
+                      Hết hạn thanh toán
+                    </span>
+                    <span className="pending-payment-item-value">
+                      {formatApiDateTime(
+                        pendingBooking.paymentExpiredAt
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pending-payment-actions">
+                  <button
+                    type="button"
+                    className="pending-payment-button pending-payment-cancel"
+                    onClick={handleCancelPendingCard}
+                    disabled={isCancellingPendingCard}
+                  >
+                    {isCancellingPendingCard
+                      ? "Đang hủy..."
+                      : "Hủy booking"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="pending-payment-button pending-payment-continue"
+                    onClick={handleContinuePendingPayment}
+                    disabled={
+                      pendingRemainingSeconds <= 0 ||
+                      !pendingBooking.qrCode
+                    }
+                  >
+                    Tiếp tục thanh toán
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* ==========================================
@@ -1827,7 +2718,7 @@ function Booking() {
             >
               {/* Close Button X */}
               <button
-                onClick={closeSuccessModal}
+                onClick={handleModalClose}
                 style={{
                   position: "absolute",
                   top: "1.25rem", right: "1.25rem",
@@ -1854,8 +2745,20 @@ function Booking() {
                     <span className="pm-text-license" style={{ fontSize: "1.8rem", fontWeight: "800", letterSpacing: "0.5px" }}>
                       {successModal.data.licensePlate}
                     </span>
-                    <span style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981", padding: "0.25rem 0.6rem", borderRadius: "0.375rem", fontSize: "0.72rem", fontWeight: "700" }}>
-                      {successModal.data.paymentStatus || "PENDING"}
+                    <span
+                      style={{
+                        background:
+                          bookingPaymentStatus === "PAID"
+                            ? "rgba(16, 185, 129, 0.15)"
+                            : "rgba(245, 158, 11, 0.15)",
+                        color: bookingPaymentStatus === "PAID" ? "#10b981" : "#f59e0b",
+                        padding: "0.25rem 0.6rem",
+                        borderRadius: "0.375rem",
+                        fontSize: "0.72rem",
+                        fontWeight: "700"
+                      }}
+                    >
+                      {bookingPaymentStatus === "PAID" ? "PAID" : successModal.data.paymentStatus || "PENDING"}
                     </span>
                   </div>
 
@@ -1868,13 +2771,21 @@ function Booking() {
                     <div>
                       <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>START TIME</div>
                       <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
-                        {formatDisplayDateTime(formData.startDate, formData.startTime)}
+                        {successModal.data?.displayStartTime ||
+                          formatDisplayDateTime(
+                            formData.startDate,
+                            formData.startTime
+                          )}
                       </div>
                     </div>
                     <div>
                       <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>END TIME</div>
                       <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
-                        {formatDisplayDateTime(formData.endDate, formData.endTime)}
+                        {successModal.data?.displayEndTime ||
+                          formatDisplayDateTime(
+                            formData.endDate,
+                            formData.endTime
+                          )}
                       </div>
                     </div>
                     <div>
@@ -1912,8 +2823,8 @@ function Booking() {
 
                 {/* RIGHT QR PAYMENT CODE PANEL */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <div className="pm-text-title" style={{ fontSize: "1.1rem", fontWeight: "600", marginBottom: "1rem" }}>
-                    Scan QR Code for Payment
+                  <div className="pm-text-title" style={{ fontSize: "1.1rem", fontWeight: "600", marginBottom: "1rem", textAlign: "center" }}>
+                    {bookingPaymentStatus === "PAID" ? "Đã thanh toán thành công" : "Scan QR Code for Payment"}
                   </div>
 
                   <div
@@ -1931,14 +2842,14 @@ function Booking() {
                           src={successModal.data.qrImageSrc}
                           alt="PayOS QR payment code"
                           style={{ display: "block" }}
-                          width={165}
-                          height={165}
+                          width={220}
+                          height={220}
                         />
                       ) : (
                         <div
                           style={{
-                            width: 165,
-                            height: 165,
+                            width: 220,
+                            height: 220,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -1964,7 +2875,57 @@ function Booking() {
                     </div>
                   )}
 
-                  {successModal.data.checkoutUrl && (
+                  {bookingPaymentStatus !== "PAID" &&
+                    successModal.data.paymentExpiredAt && (
+                      <div
+                        style={{
+                          marginTop: "0.65rem",
+                          color: "#f59e0b",
+                          fontSize: "0.78rem",
+                          fontWeight: 800
+                        }}
+                      >
+                        Còn lại:{" "}
+                        {formatCountdown(
+                          getRemainingSeconds(
+                            successModal.data.paymentExpiredAt
+                          )
+                        )}
+                      </div>
+                    )}
+
+                  <div
+                    style={{
+                      marginTop: "1rem",
+                      width: "100%",
+                      borderRadius: "0.75rem",
+                      padding: "0.85rem 1rem",
+                      background:
+                        bookingPaymentStatus === "PAID"
+                          ? "rgba(16, 185, 129, 0.14)"
+                          : "rgba(59, 130, 246, 0.12)",
+                      border:
+                        bookingPaymentStatus === "PAID"
+                          ? "1px solid rgba(16, 185, 129, 0.35)"
+                          : "1px solid rgba(96, 165, 250, 0.3)",
+                      color: bookingPaymentStatus === "PAID" ? "#10b981" : "#60a5fa",
+                      fontSize: "0.86rem",
+                      fontWeight: 800,
+                      textAlign: "center",
+                      lineHeight: 1.35
+                    }}
+                  >
+                    {bookingPaymentStatus === "PAID" ? (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem" }}>
+                        <CheckCircle2 size={18} />
+                        Đã thanh toán thành công
+                      </span>
+                    ) : (
+                      bookingPaymentMessage || "Đang chờ thanh toán..."
+                    )}
+                  </div>
+
+                  {false && successModal.data.checkoutUrl && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1995,6 +2956,70 @@ function Booking() {
                     <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: "#60a5fa", fontSize: "0.72rem", fontWeight: "600" }}>
                       <ShieldCheck size={13} fill="transparent" /> Secure Payment
                     </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "0.75rem",
+                      width: "100%",
+                      marginTop: "1.15rem"
+                    }}
+                  >
+                    {bookingPaymentStatus === "PAID" ? (
+                      <button
+                        type="button"
+                        onClick={closeSuccessModal}
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          borderRadius: "0.65rem",
+                          padding: "0.8rem 1rem",
+                          background: "#3b82f6",
+                          color: "#ffffff",
+                          fontSize: "0.86rem",
+                          fontWeight: 800,
+                          cursor: "pointer"
+                        }}
+                      >
+                        Trở lại New Booking
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleCancelBooking}
+                        disabled={isCancelling}
+                        style={{
+                          width: "100%",
+                          border: "1px solid rgba(239, 68, 68, 0.45)",
+                          borderRadius: "0.65rem",
+                          padding: "0.8rem 1rem",
+                          background: "rgba(239, 68, 68, 0.12)",
+                          color: "#ef4444",
+                          fontSize: "0.86rem",
+                          fontWeight: 800,
+                          cursor: isCancelling ? "not-allowed" : "pointer",
+                          opacity: isCancelling ? 0.65 : 1,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "0.5rem"
+                        }}
+                      >
+                        {isCancelling ? (
+                          <LoaderCircle
+                            size={17}
+                            style={{ animation: "spin 0.8s linear infinite" }}
+                          />
+                        ) : (
+                          <Ban size={17} />
+                        )}
+
+                        {isCancelling
+                          ? "Đang hủy Booking..."
+                          : "Hủy Booking"}
+                      </button>
+                    )}
                   </div>
                 </div>
 

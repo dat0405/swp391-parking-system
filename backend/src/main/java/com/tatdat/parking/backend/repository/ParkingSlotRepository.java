@@ -49,6 +49,16 @@ public interface ParkingSlotRepository extends JpaRepository<ParkingSlot, Intege
 
     long countByStatusIgnoreCase(String status);
 
+    long countByZone_Floor_Id(Integer floorId);
+
+    long countByZone_Floor_IdAndVehicleType_Id(Integer floorId, Integer vehicleTypeId);
+
+    long countByZone_Floor_IdAndVehicleType_IdAndStatusIgnoreCase(
+            Integer floorId,
+            Integer vehicleTypeId,
+            String status
+    );
+
     @Query("""
             SELECT new com.tatdat.parking.backend.dto.ParkingFloorStatsResponse(
                 f.id,
@@ -67,6 +77,41 @@ public interface ParkingSlotRepository extends JpaRepository<ParkingSlot, Intege
             """)
     List<ParkingFloorStatsResponse> getParkingFloorStats();
 
+    /*
+     * Dùng cho check-in khách vãng lai.
+     *
+     * Luồng mới:
+     * - Nhân viên không chọn floor nữa.
+     * - Backend tự tìm slot AVAILABLE đầu tiên theo vehicle type.
+     * - Tự bỏ qua RESERVED / OCCUPIED / MAINTENANCE vì chỉ lấy status AVAILABLE.
+     * - Sắp xếp từ tầng đầu tới tầng cuối.
+     */
+    @Query("""
+            SELECT s
+            FROM ParkingSlot s
+            WHERE s.vehicleType.id = :vehicleTypeId
+              AND UPPER(s.status) = 'AVAILABLE'
+            ORDER BY s.zone.floor.id ASC, s.id ASC
+            """)
+    List<ParkingSlot> findAvailableSlotsForAutoCheckIn(
+            @Param("vehicleTypeId") Integer vehicleTypeId
+    );
+
+    /*
+     * Dùng cho Booking.
+     *
+     * Lấy tất cả slot có thể đặt trước theo loại xe và khoảng thời gian.
+     *
+     * Điều kiện:
+     * - Đúng loại xe.
+     * - Không lấy slot OCCUPIED.
+     * - Không lấy slot MAINTENANCE.
+     * - Không lấy slot đã bị booking trùng thời gian.
+     *
+     * Lưu ý:
+     * RESERVED vẫn có thể xuất hiện ở bảng parking_slots,
+     * nhưng nếu RESERVED đó đến từ booking trùng thời gian thì query con sẽ loại ra.
+     */
     @Query("""
             SELECT s
             FROM ParkingSlot s
@@ -87,6 +132,11 @@ public interface ParkingSlotRepository extends JpaRepository<ParkingSlot, Intege
             @Param("endTime") LocalDateTime endTime
     );
 
+    /*
+     * Dùng nếu sau này vẫn muốn lọc booking theo tầng cụ thể.
+     * Hiện tại user flow mới không cần chọn floor,
+     * nhưng giữ lại để không làm vỡ code cũ.
+     */
     @Query("""
             SELECT s
             FROM ParkingSlot s
@@ -100,7 +150,7 @@ public interface ParkingSlotRepository extends JpaRepository<ParkingSlot, Intege
                     AND b.startTime < :endTime
                     AND b.endTime > :startTime
               )
-            ORDER BY s.id ASC
+            ORDER BY s.zone.floor.id ASC, s.id ASC
             """)
     List<ParkingSlot> findBookableSlotsByVehicleTypeAndFloor(
             @Param("vehicleTypeId") Integer vehicleTypeId,

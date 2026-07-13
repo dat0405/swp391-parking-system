@@ -34,6 +34,16 @@ public class BookingResponse {
 
     private String status;
 
+    private LocalDateTime paymentExpiredAt;
+    private LocalDateTime paidAt;
+    private LocalDateTime cancelledAt;
+
+    private Long paymentOrderCode;
+    private Integer paymentAmount;
+    private String paymentCurrency;
+    private String paymentStatus;
+    private String paymentDescription;
+
     public static BookingResponse fromEntity(Booking booking) {
         if (booking == null) {
             return null;
@@ -41,28 +51,26 @@ public class BookingResponse {
 
         return BookingResponse.builder()
                 .id(booking.getId())
-
                 .userId(booking.getUser() != null ? booking.getUser().getId() : null)
                 .customerName(booking.getUser() != null ? booking.getUser().getFullName() : null)
                 .customerEmail(booking.getUser() != null ? booking.getUser().getEmail() : null)
-
                 .vehicleId(booking.getVehicle() != null ? booking.getVehicle().getId() : null)
                 .licensePlate(booking.getVehicle() != null ? booking.getVehicle().getLicensePlate() : null)
                 .vehicleColor(booking.getVehicle() != null ? booking.getVehicle().getColor() : null)
                 .vehicleTypeId(
-                        booking.getVehicle() != null && booking.getVehicle().getVehicleType() != null
+                        booking.getVehicle() != null
+                                && booking.getVehicle().getVehicleType() != null
                                 ? booking.getVehicle().getVehicleType().getId()
                                 : null
                 )
                 .vehicleTypeName(
-                        booking.getVehicle() != null && booking.getVehicle().getVehicleType() != null
+                        booking.getVehicle() != null
+                                && booking.getVehicle().getVehicleType() != null
                                 ? booking.getVehicle().getVehicleType().getTypeName()
                                 : null
                 )
-
                 .slotId(booking.getSlot() != null ? booking.getSlot().getId() : null)
                 .slotCode(booking.getSlot() != null ? booking.getSlot().getSlotCode() : null)
-
                 .floorId(
                         booking.getSlot() != null
                                 && booking.getSlot().getZone() != null
@@ -77,11 +85,18 @@ public class BookingResponse {
                                 ? booking.getSlot().getZone().getFloor().getFloorName()
                                 : null
                 )
-
                 .bookingTime(booking.getBookingTime())
                 .startTime(booking.getStartTime())
                 .endTime(booking.getEndTime())
                 .status(booking.getStatus())
+                .paymentExpiredAt(booking.getPaymentExpiredAt())
+                .paidAt(booking.getPaidAt())
+                .cancelledAt(booking.getCancelledAt())
+                .paymentOrderCode(booking.getPaymentOrderCode())
+                .paymentAmount(booking.getPaymentAmount())
+                .paymentCurrency(booking.getPaymentCurrency())
+                .paymentStatus(booking.getPaymentStatus())
+                .paymentDescription(booking.getPaymentDescription())
                 .build();
     }
 }

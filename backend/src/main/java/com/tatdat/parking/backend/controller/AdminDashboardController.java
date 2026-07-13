@@ -8,12 +8,14 @@ import com.tatdat.parking.backend.repository.ParkingSlotRepository;
 import com.tatdat.parking.backend.repository.PaymentRepository;
 import com.tatdat.parking.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -30,6 +32,7 @@ public class AdminDashboardController {
     private final ParkingSlotRepository parkingSlotRepository;
     private final ParkingSessionRepository parkingSessionRepository;
     private final PaymentRepository paymentRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     @GetMapping("/dashboard")
     public AdminDashboardResponse getDashboard() {
@@ -46,16 +49,8 @@ public class AdminDashboardController {
         LocalDateTime startOfDay = today.atStartOfDay();
         LocalDateTime endOfDay = today.plusDays(1).atStartOfDay();
 
-        BigDecimal checkoutRevenue = paymentRepository.sumTodayRevenue(startOfDay, endOfDay);
-        BigDecimal bookingRevenue = paymentRepository.sumTodayBookingRevenue(startOfDay, endOfDay);
-
-        if (checkoutRevenue == null) {
-            checkoutRevenue = BigDecimal.ZERO;
-        }
-
-        if (bookingRevenue == null) {
-            bookingRevenue = BigDecimal.ZERO;
-        }
+        BigDecimal checkoutRevenue = getTodayCheckoutRevenue(startOfDay, endOfDay);
+        BigDecimal bookingRevenue = getTodayBookingRevenue(startOfDay, endOfDay);
 
         BigDecimal todayRevenue = checkoutRevenue.add(bookingRevenue);
 
@@ -91,6 +86,89 @@ public class AdminDashboardController {
         }
 
         return getDailyTrend();
+    }
+
+    private BigDecimal getTodayCheckoutRevenue(LocalDateTime startOfDay, LocalDateTime endOfDay) {
+        BigDecimal checkoutRevenue = paymentRepository.sumTodayRevenue(startOfDay, endOfDay);
+
+        return checkoutRevenue == null ? BigDecimal.ZERO : checkoutRevenue;
+    }
+
+    private BigDecimal getTodayBookingRevenue(LocalDateTime startOfDay, LocalDateTime endOfDay) {
+        /*
+         * Booking revenue must depend on payment_status, not booking status.
+         * A paid booking can move CONFIRMED -> CHECKED_IN -> COMPLETED.
+         * Revenue must still remain counted after checkout.
+         */
+        if (!tableExists("bookings")
+                || !columnExists("bookings", "payment_amount")
+                || !columnExists("bookings", "payment_status")
+                || !columnExists("bookings", "paid_at")) {
+            return BigDecimal.ZERO;
+        }
+
+        String sql = """
+                SELECT COALESCE(SUM(payment_amount), 0)
+                FROM bookings
+                WHERE UPPER(payment_status) = 'PAID'
+                  AND paid_at IS NOT NULL
+                  AND paid_at >= ?
+                  AND paid_at < ?
+                """;
+
+        Object result = jdbcTemplate.queryForObject(
+                sql,
+                Object.class,
+                Timestamp.valueOf(startOfDay),
+                Timestamp.valueOf(endOfDay)
+        );
+
+        return toBigDecimal(result);
+    }
+
+    private boolean tableExists(String tableName) {
+        String sql = """
+                SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_NAME = ?
+                """;
+
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, tableName);
+
+        return count != null && count > 0;
+    }
+
+    private boolean columnExists(String tableName, String columnName) {
+        String sql = """
+                SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = ?
+                  AND COLUMN_NAME = ?
+                """;
+
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, tableName, columnName);
+
+        return count != null && count > 0;
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+
+        if (value instanceof BigDecimal bigDecimal) {
+            return bigDecimal;
+        }
+
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (Exception exception) {
+            return BigDecimal.ZERO;
+        }
     }
 
     private List<DashboardTrendResponse> getDailyTrend() {

@@ -72,10 +72,6 @@ public class ParkingSlotController {
         return ResponseEntity.ok("Parking slot deleted successfully");
     }
 
-    /*
-     * Frontend hiện tại đang gọi PATCH /api/parking-slots/{id}/status.
-     * Bản này cho phép cả PUT và PATCH để tránh lỗi mismatch method.
-     */
     @RequestMapping(
             value = "/{id}/status",
             method = {
@@ -111,17 +107,6 @@ public class ParkingSlotController {
         );
     }
 
-    /*
-     * API mới cho Booking.
-     *
-     * Dùng API này để lấy slot còn trống theo đúng khung giờ user chọn.
-     *
-     * Example:
-     * GET /api/parking-slots/available-for-booking
-     *     ?vehicleTypeId=1
-     *     &startTime=2026-07-02T10:00:00
-     *     &endTime=2026-07-02T12:00:00
-     */
     @GetMapping("/available-for-booking")
     public ResponseEntity<List<ParkingSlot>> getAvailableSlotsForBooking(
             @RequestParam Integer vehicleTypeId,
@@ -171,7 +156,13 @@ public class ParkingSlotController {
                 .body(parkingSlotService.bulkCreateSlots(request));
     }
 
-    @DeleteMapping("/bulk-delete")
+    @RequestMapping(
+            value = "/bulk-delete",
+            method = {
+                    RequestMethod.POST,
+                    RequestMethod.DELETE
+            }
+    )
     public ResponseEntity<BulkDeleteParkingSlotResponse> bulkDeleteSlots(
             @RequestBody BulkDeleteParkingSlotRequest request
     ) {

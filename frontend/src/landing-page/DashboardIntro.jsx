@@ -32,7 +32,6 @@ export default function DashboardIntro() {
         
         <div className="nav-auth">
           <Link to="/login" className="btn-login">Login</Link>
-          <Link to="/login" className="btn-get-started">Get Started +</Link>
         </div>
       </nav>
 

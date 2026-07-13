@@ -86,16 +86,6 @@
 }
 .btn-login:hover { color: #ffffff !important; }
 
-.btn-get-started {
-  background-color: #2563eb !important;
-  color: #ffffff !important;
-  padding: 0.55rem 1.4rem !important;
-  border-radius: 9999px !important;
-  font-size: 0.85rem !important;
-  font-weight: 600 !important;
-}
-.btn-get-started:hover { background-color: #1d4ed8 !important; }
-
 /* ========================================================
    HERO BANNER COMPONENT
    ======================================================== */
@@ -146,33 +136,6 @@
   line-height: 1.6 !important;
   margin-bottom: 2.5rem !important;
 }
-
-.hero-cta-group {
-  display: flex !important;
-  gap: 1rem !important;
-}
-
-.btn-cta-primary {
-  background-color: #2563eb !important;
-  color: #ffffff !important;
-  padding: 0.9rem 1.8rem !important;
-  border-radius: 0.5rem !important;
-  font-weight: 600 !important;
-}
-.btn-cta-primary:hover { background-color: #1d4ed8 !important; }
-
-.btn-cta-secondary {
-  background-color: #0c1322 !important;
-  border: 1px solid #1e293b !important;
-  padding: 0.9rem 1.8rem !important;
-  border-radius: 0.5rem !important;
-  font-weight: 600 !important;
-  color: #94a3b8 !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 0.5rem !important;
-}
-.btn-cta-secondary:hover { border-color: #475569 !important; color: #ffffff !important; }
 
 /* CENTRAL HUB HERO INFOCARD */
 .central-hub-card {

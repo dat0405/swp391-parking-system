@@ -1,10 +1,14 @@
 package com.tatdat.parking.backend.dto;
 
-import lombok.Data;
+import lombok.*;
 
 import java.math.BigDecimal;
 
-@Data
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class PricingPolicyRequest {
 
     private Integer vehicleTypeId;
@@ -14,6 +18,8 @@ public class PricingPolicyRequest {
     private BigDecimal pricePerHour;
 
     private BigDecimal overtimeFee;
+
+    private BigDecimal overstayFee;
 
     private String status;
 }

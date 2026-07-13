@@ -1,6 +1,5 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
 import {
-  Search,
   Bell,
   Settings,
   Sun,
@@ -16,6 +15,7 @@ const LOGOUT_STARTED_AT_KEY = 'logoutStartedAt';
 const THEME_STORAGE_KEY = 'theme';
 const LOGOUT_GUARD_MS = 15000;
 const USER_CACHE_KEY = 'user';
+const USER_ROLE_KEY = 'user_role';
 const USER_SYNCED_AT_KEY = 'headerUserSyncedAt';
 const USER_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -61,6 +61,9 @@ const getCurrentUserFromStorage = () => {
     };
   } catch (error) {
     console.error('Không thể đọc dữ liệu user từ localStorage:', error);
+
+    localStorage.removeItem(USER_CACHE_KEY);
+    localStorage.removeItem(USER_ROLE_KEY);
 
     return {
       name: 'Parking User',
@@ -109,6 +112,22 @@ const clearExpiredLogoutGuard = () => {
   localStorage.removeItem(LOGOUT_STARTED_AT_KEY);
 
   return false;
+};
+
+const clearLocalAuthSession = () => {
+  /*
+   * Cookie-only auth:
+   * - access_token and refresh_token are HttpOnly cookies handled by backend.
+   * - localStorage only stores non-sensitive UI metadata.
+   * - token and refreshToken removals are cleanup for older app versions.
+   */
+  localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem(USER_CACHE_KEY);
+  localStorage.removeItem(USER_ROLE_KEY);
+  localStorage.removeItem(USER_SYNCED_AT_KEY);
+  localStorage.removeItem(LOGOUT_FLAG_KEY);
+  localStorage.removeItem(LOGOUT_STARTED_AT_KEY);
 };
 
 function Header() {
@@ -165,6 +184,10 @@ function Header() {
     }
 
     try {
+      /*
+       * /auth/me is authenticated by HttpOnly cookie.
+       * axiosClient has withCredentials=true, so no token is needed in localStorage.
+       */
       const response = await axiosClient.get('/auth/me');
       const data = response.data || {};
       const rawRole = data.role || data.roleName || 'PARKING_STAFF';
@@ -192,6 +215,7 @@ function Header() {
         })
       );
 
+      localStorage.setItem(USER_ROLE_KEY, String(rawRole).toUpperCase());
       localStorage.setItem(USER_SYNCED_AT_KEY, String(Date.now()));
 
       syncUserState(nextUser);
@@ -395,17 +419,17 @@ function Header() {
       }
 
       try {
-        await axiosClient.post('/auth/logout', {
-          refreshToken: localStorage.getItem('refreshToken')
-        });
+        /*
+         * Cookie-only logout:
+         * Do not send refreshToken from localStorage.
+         * Backend reads refresh_token from HttpOnly cookie and clears both cookies.
+         */
+        await axiosClient.post('/auth/logout');
       } catch (error) {
         console.error('Logout failed:', error);
       }
     } finally {
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem(USER_CACHE_KEY);
-      localStorage.removeItem(USER_SYNCED_AT_KEY);
+      clearLocalAuthSession();
       sessionStorage.clear();
 
       window.location.replace('/login');
@@ -429,7 +453,9 @@ function Header() {
         minHeight: '70px',
         flexShrink: 0,
         animation: 'none',
-        transition: 'none'
+        transition: 'none',
+        display: 'flex',
+        alignItems: 'center'
       }}
     >
       <style>{`
@@ -456,42 +482,14 @@ function Header() {
         }
       `}</style>
 
-      <div style={{ position: 'relative', width: '320px', flexShrink: 0 }}>
-        <Search
-          size={16}
-          style={{
-            position: 'absolute',
-            left: '12px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            color: 'var(--text-muted)'
-          }}
-        />
-
-        <input
-          type="text"
-          placeholder="Search plates, users, or floor ID..."
-          style={{
-            width: '100%',
-            padding: '0.5rem 1rem 0.5rem 2.5rem',
-            backgroundColor: 'var(--bg-input)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '0.375rem',
-            color: 'var(--text-main)',
-            fontSize: '0.85rem',
-            outline: 'none',
-            boxSizing: 'border-box'
-          }}
-        />
-      </div>
-
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '1.25rem',
           position: 'relative',
-          flexShrink: 0
+          flexShrink: 0,
+          marginLeft: 'auto'
         }}
       >
         <button

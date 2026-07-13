@@ -9,6 +9,7 @@ import com.tatdat.parking.backend.repository.ParkingSlotRepository;
 import com.tatdat.parking.backend.repository.PaymentRepository;
 import com.tatdat.parking.backend.service.ReportService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -22,20 +23,21 @@ public class ReportServiceImpl implements ReportService {
     private final PaymentRepository paymentRepository;
     private final ParkingSlotRepository parkingSlotRepository;
     private final ParkingSessionRepository parkingSessionRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     @Override
     public RevenueReportDTO getRevenueReport() {
-        BigDecimal revenue = paymentRepository.getTotalRevenue();
+        BigDecimal checkoutRevenue = getCheckoutRevenue();
+        BigDecimal bookingRevenue = getBookingRevenue();
 
-        if (revenue == null) {
-            revenue = BigDecimal.ZERO;
-        }
+        BigDecimal revenue = checkoutRevenue.add(bookingRevenue);
 
-        long totalTransactions = paymentRepository.countByPaymentStatus("PAID");
+        long checkoutTransactions = paymentRepository.countByPaymentStatus("PAID");
+        long bookingTransactions = getPaidBookingTransactionCount();
 
         return new RevenueReportDTO(
                 revenue,
-                totalTransactions
+                checkoutTransactions + bookingTransactions
         );
     }
 
@@ -100,5 +102,95 @@ public class ReportServiceImpl implements ReportService {
                 traffic.getTodayCheckIns(),
                 traffic.getTodayCheckOuts()
         );
+    }
+
+    private BigDecimal getCheckoutRevenue() {
+        BigDecimal revenue = paymentRepository.getTotalRevenue();
+
+        return revenue == null ? BigDecimal.ZERO : revenue;
+    }
+
+    private BigDecimal getBookingRevenue() {
+        if (!tableExists("bookings") || !columnExists("bookings", "payment_amount")) {
+            return BigDecimal.ZERO;
+        }
+
+        /*
+         * Booking revenue must depend on payment_status, not booking status.
+         * A paid booking can later become COMPLETED after checkout, but revenue
+         * must remain counted.
+         */
+        String sql = """
+                SELECT COALESCE(SUM(payment_amount), 0)
+                FROM bookings
+                WHERE UPPER(payment_status) = 'PAID'
+                  AND paid_at IS NOT NULL
+                """;
+
+        Object result = jdbcTemplate.queryForObject(sql, Object.class);
+
+        return toBigDecimal(result);
+    }
+
+    private long getPaidBookingTransactionCount() {
+        if (!tableExists("bookings")) {
+            return 0;
+        }
+
+        String sql = """
+                SELECT COUNT(*)
+                FROM bookings
+                WHERE UPPER(payment_status) = 'PAID'
+                  AND paid_at IS NOT NULL
+                """;
+
+        Long count = jdbcTemplate.queryForObject(sql, Long.class);
+
+        return count == null ? 0 : count;
+    }
+
+    private boolean tableExists(String tableName) {
+        String sql = """
+                SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_NAME = ?
+                """;
+
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, tableName);
+
+        return count != null && count > 0;
+    }
+
+    private boolean columnExists(String tableName, String columnName) {
+        String sql = """
+                SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = ?
+                  AND COLUMN_NAME = ?
+                """;
+
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, tableName, columnName);
+
+        return count != null && count > 0;
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+
+        if (value instanceof BigDecimal bigDecimal) {
+            return bigDecimal;
+        }
+
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (Exception exception) {
+            return BigDecimal.ZERO;
+        }
     }
 }

@@ -37,7 +37,7 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
 
     @Override
     public List<ParkingSlot> getAllSlots() {
-        return parkingSlotRepository.findAll();
+        return sortSlotsByFloorAndCode(parkingSlotRepository.findAll());
     }
 
     @Override
@@ -55,7 +55,6 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle type not found"));
 
         ParkingSlot slot = new ParkingSlot();
-
         slot.setZone(zone);
         slot.setVehicleType(vehicleType);
         slot.setSlotCode(normalizeSlotCode(request.getSlotCode()));
@@ -107,7 +106,9 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
 
     @Override
     public List<ParkingSlot> getAvailableSlots() {
-        return parkingSlotRepository.findByStatusIgnoreCase(SlotStatus.AVAILABLE.name());
+        return sortSlotsByFloorAndCode(
+                parkingSlotRepository.findByStatusIgnoreCase(SlotStatus.AVAILABLE.name())
+        );
     }
 
     @Override
@@ -117,9 +118,11 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
 
     @Override
     public List<ParkingSlot> getAvailableSlotsByVehicleType(Integer vehicleTypeId) {
-        return parkingSlotRepository.findByVehicleType_IdAndStatusIgnoreCase(
-                vehicleTypeId,
-                SlotStatus.AVAILABLE.name()
+        return sortSlotsByFloorAndCode(
+                parkingSlotRepository.findByVehicleType_IdAndStatusIgnoreCase(
+                        vehicleTypeId,
+                        SlotStatus.AVAILABLE.name()
+                )
         );
     }
 
@@ -132,10 +135,12 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
     ) {
         validateAvailableForBookingRequest(vehicleTypeId, null, startTime, endTime);
 
-        return parkingSlotRepository.findBookableSlotsByVehicleType(
-                vehicleTypeId,
-                startTime,
-                endTime
+        return sortSlotsByFloorAndCode(
+                parkingSlotRepository.findBookableSlotsByVehicleType(
+                        vehicleTypeId,
+                        startTime,
+                        endTime
+                )
         );
     }
 
@@ -149,11 +154,13 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
     ) {
         validateAvailableForBookingRequest(vehicleTypeId, floorId, startTime, endTime);
 
-        return parkingSlotRepository.findBookableSlotsByVehicleTypeAndFloor(
-                vehicleTypeId,
-                floorId,
-                startTime,
-                endTime
+        return sortSlotsByFloorAndCode(
+                parkingSlotRepository.findBookableSlotsByVehicleTypeAndFloor(
+                        vehicleTypeId,
+                        floorId,
+                        startTime,
+                        endTime
+                )
         );
     }
 
@@ -176,21 +183,7 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
     @Override
     @Transactional
     public BulkCreateParkingSlotResponse bulkCreateSlots(BulkCreateParkingSlotRequest request) {
-        if (request.getFloorId() == null) {
-            throw new RuntimeException("Floor is required");
-        }
-
-        if (request.getVehicleTypeId() == null) {
-            throw new RuntimeException("Vehicle type is required");
-        }
-
-        if (request.getQuantity() == null || request.getQuantity() <= 0) {
-            throw new RuntimeException("Quantity must be greater than 0");
-        }
-
-        if (request.getQuantity() > 500) {
-            throw new RuntimeException("Quantity is too large. Maximum is 500 slots per request");
-        }
+        validateBulkCreateRequest(request);
 
         ParkingFloor floor = parkingFloorRepository.findById(request.getFloorId())
                 .orElseThrow(() -> new ResourceNotFoundException("Parking floor not found"));
@@ -198,13 +191,21 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
         VehicleType vehicleType = vehicleTypeRepository.findById(request.getVehicleTypeId())
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle type not found"));
 
-        validateVehicleTypeForFloor(floor, vehicleType);
-
         ParkingZone zone = getOrCreateDefaultZone(floor);
 
-        String prefix = buildSlotPrefix(floor.getFloorName(), vehicleType.getTypeName());
+        /*
+         * Slot code must be consistent with the Parking Floor screen.
+         *
+         * Example:
+         * Floor 1:
+         *   A-01 ... A-60 = Car
+         *   A-61 ... A-70 = Motorbike
+         *
+         * Therefore the prefix depends on the floor, not on vehicle type.
+         */
+        String prefix = buildSlotPrefix(floor.getFloorName());
 
-        List<ParkingSlot> existingSlots = parkingSlotRepository.findAll()
+        List<ParkingSlot> existingSlots = parkingSlotRepository.findByZone_Floor_Id(floor.getId())
                 .stream()
                 .filter(slot -> slot.getSlotCode() != null)
                 .filter(slot -> slot.getSlotCode().toUpperCase().startsWith(prefix + "-"))
@@ -234,24 +235,15 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
                 .floorName(floor.getFloorName())
                 .vehicleTypeId(vehicleType.getId())
                 .vehicleTypeName(vehicleType.getTypeName())
-                .message("Created " + request.getQuantity() + " parking slots successfully")
+                .message("Created " + request.getQuantity() + " " + vehicleType.getTypeName()
+                        + " slots in " + floor.getFloorName() + " successfully")
                 .build();
     }
 
     @Override
     @Transactional
     public BulkDeleteParkingSlotResponse bulkDeleteSlots(BulkDeleteParkingSlotRequest request) {
-        if (request.getFloorId() == null) {
-            throw new RuntimeException("Floor is required");
-        }
-
-        if (request.getVehicleTypeId() == null) {
-            throw new RuntimeException("Vehicle type is required");
-        }
-
-        if (request.getQuantity() == null || request.getQuantity() <= 0) {
-            throw new RuntimeException("Quantity must be greater than 0");
-        }
+        validateBulkDeleteRequest(request);
 
         ParkingFloor floor = parkingFloorRepository.findById(request.getFloorId())
                 .orElseThrow(() -> new ResourceNotFoundException("Parking floor not found"));
@@ -261,8 +253,8 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
 
         List<ParkingSlot> availableSlots = parkingSlotRepository
                 .findByZone_Floor_IdAndVehicleType_IdAndStatusIgnoreCase(
-                        request.getFloorId(),
-                        request.getVehicleTypeId(),
+                        floor.getId(),
+                        vehicleType.getId(),
                         SlotStatus.AVAILABLE.name()
                 );
 
@@ -271,7 +263,6 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
                 .sorted((slotA, slotB) -> {
                     int numberA = extractLastNumber(slotA.getSlotCode());
                     int numberB = extractLastNumber(slotB.getSlotCode());
-
                     return Integer.compare(numberB, numberA);
                 })
                 .limit(request.getQuantity())
@@ -298,8 +289,53 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
                 .floorName(floor.getFloorName())
                 .vehicleTypeId(vehicleType.getId())
                 .vehicleTypeName(vehicleType.getTypeName())
-                .message("Deleted " + deletableSlots.size() + " parking slots successfully")
+                .message("Deleted " + deletableSlots.size() + " " + vehicleType.getTypeName()
+                        + " slots from " + floor.getFloorName() + " successfully")
                 .build();
+    }
+
+    private void validateBulkCreateRequest(BulkCreateParkingSlotRequest request) {
+        if (request == null) {
+            throw new RuntimeException("Request body is required");
+        }
+
+        if (request.getFloorId() == null) {
+            throw new RuntimeException("Floor is required");
+        }
+
+        if (request.getVehicleTypeId() == null) {
+            throw new RuntimeException("Vehicle type is required");
+        }
+
+        if (request.getQuantity() == null || request.getQuantity() <= 0) {
+            throw new RuntimeException("Quantity must be greater than 0");
+        }
+
+        if (request.getQuantity() > 500) {
+            throw new RuntimeException("Quantity is too large. Maximum is 500 slots per request");
+        }
+    }
+
+    private void validateBulkDeleteRequest(BulkDeleteParkingSlotRequest request) {
+        if (request == null) {
+            throw new RuntimeException("Request body is required");
+        }
+
+        if (request.getFloorId() == null) {
+            throw new RuntimeException("Floor is required");
+        }
+
+        if (request.getVehicleTypeId() == null) {
+            throw new RuntimeException("Vehicle type is required");
+        }
+
+        if (request.getQuantity() == null || request.getQuantity() <= 0) {
+            throw new RuntimeException("Quantity must be greater than 0");
+        }
+
+        if (request.getQuantity() > 500) {
+            throw new RuntimeException("Quantity is too large. Maximum is 500 slots per request");
+        }
     }
 
     private void validateAvailableForBookingRequest(
@@ -334,64 +370,99 @@ public class ParkingSlotServiceImpl implements ParkingSlotService {
     }
 
     private ParkingZone getOrCreateDefaultZone(ParkingFloor floor) {
-        List<ParkingZone> zones = parkingZoneRepository.findByFloorId(floor.getId());
-
-        if (!zones.isEmpty()) {
-            return zones.get(0);
-        }
-
-        ParkingZone zone = new ParkingZone();
-        zone.setFloor(floor);
-        zone.setZoneName("Zone " + floor.getFloorName());
-
-        return parkingZoneRepository.save(zone);
+        return parkingZoneRepository.findFirstByFloorIdOrderByIdAsc(floor.getId())
+                .orElseGet(() -> {
+                    ParkingZone zone = new ParkingZone();
+                    zone.setFloor(floor);
+                    zone.setZoneName("Default Zone");
+                    return parkingZoneRepository.save(zone);
+                });
     }
 
-    private void validateVehicleTypeForFloor(ParkingFloor floor, VehicleType vehicleType) {
-        String floorName = floor.getFloorName() == null
+    private String buildSlotPrefix(String floorName) {
+        String normalizedFloorName = floorName == null
                 ? ""
-                : floor.getFloorName().trim().toUpperCase();
+                : floorName.trim().toUpperCase();
 
-        String typeName = vehicleType.getTypeName() == null
-                ? ""
-                : vehicleType.getTypeName().trim().toLowerCase();
-
-        boolean isMotorbike = typeName.contains("motor") || typeName.contains("bike") || typeName.contains("xe");
-        boolean isCar = typeName.contains("car") || typeName.contains("oto") || typeName.contains("ô tô");
-
-        boolean isGroundFloor = floorName.equals("G")
-                || floorName.equals("FLOOR G")
-                || floorName.equals("GROUND");
-
-        if (isGroundFloor && !isMotorbike) {
-            throw new RuntimeException("Floor G is only for motorbike slots");
+        if (normalizedFloorName.equals("G")
+                || normalizedFloorName.equals("GROUND")
+                || normalizedFloorName.equals("FLOOR G")) {
+            return "G";
         }
 
-        if (!isGroundFloor && !isCar) {
-            throw new RuntimeException("This floor is only for car slots");
+        if (normalizedFloorName.equals("1")
+                || normalizedFloorName.equals("A")
+                || normalizedFloorName.equals("A1")
+                || normalizedFloorName.equals("F1")
+                || normalizedFloorName.equals("FLOOR 1")
+                || normalizedFloorName.equals("FLOOR A")
+                || normalizedFloorName.equals("FLOOR A1")) {
+            return "A";
         }
-    }
 
-    private String buildSlotPrefix(String floorName, String vehicleTypeName) {
-        String floorPart = floorName == null ? "" : floorName;
+        if (normalizedFloorName.equals("2")
+                || normalizedFloorName.equals("C")
+                || normalizedFloorName.equals("A2")
+                || normalizedFloorName.equals("F2")
+                || normalizedFloorName.equals("FLOOR 2")
+                || normalizedFloorName.equals("FLOOR C")
+                || normalizedFloorName.equals("FLOOR A2")) {
+            return "C";
+        }
 
-        floorPart = floorPart
-                .trim()
-                .toUpperCase()
+        String floorPart = normalizedFloorName
                 .replace("FLOOR", "")
                 .replaceAll("[^A-Z0-9]", "");
 
         if (floorPart.isBlank()) {
-            floorPart = "F";
+            return "S";
         }
 
-        String typePart = vehicleTypeName == null ? "" : vehicleTypeName.trim().toLowerCase();
+        return floorPart;
+    }
 
-        if (typePart.contains("motor") || typePart.contains("bike") || typePart.contains("xe")) {
-            return floorPart + "-BIKE";
+    private List<ParkingSlot> sortSlotsByFloorAndCode(List<ParkingSlot> slots) {
+        return slots.stream()
+                .sorted(this::compareSlotsByFloorAndCode)
+                .toList();
+    }
+
+    private int compareSlotsByFloorAndCode(ParkingSlot slotA, ParkingSlot slotB) {
+        int floorCompare = Integer.compare(
+                getFloorSortValue(slotA),
+                getFloorSortValue(slotB)
+        );
+
+        if (floorCompare != 0) {
+            return floorCompare;
         }
 
-        return floorPart + "-CAR";
+        int numberCompare = Integer.compare(
+                extractLastNumber(slotA == null ? null : slotA.getSlotCode()),
+                extractLastNumber(slotB == null ? null : slotB.getSlotCode())
+        );
+
+        if (numberCompare != 0) {
+            return numberCompare;
+        }
+
+        return safeString(slotA == null ? null : slotA.getSlotCode())
+                .compareToIgnoreCase(safeString(slotB == null ? null : slotB.getSlotCode()));
+    }
+
+    private int getFloorSortValue(ParkingSlot slot) {
+        if (slot == null
+                || slot.getZone() == null
+                || slot.getZone().getFloor() == null
+                || slot.getZone().getFloor().getId() == null) {
+            return Integer.MAX_VALUE;
+        }
+
+        return slot.getZone().getFloor().getId();
+    }
+
+    private String safeString(String value) {
+        return value == null ? "" : value;
     }
 
     private int extractLastNumber(String slotCode) {

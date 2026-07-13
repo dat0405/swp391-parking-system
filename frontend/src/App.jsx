@@ -7,6 +7,7 @@ import LoginPage from './LoginPage';
 import RegisterPage from './RegisterPage';
 import ForgotPasswordPage from './ForgotPasswordPage';
 import ResetPasswordPage from './ResetPasswordPage';
+import GoogleCallbackPage from './GoogleCallbackPage';
 
 import DashboardPage from './DashboardPage';
 import ParkingManagement from './parking-floors/ParkingManagement';
@@ -16,6 +17,7 @@ import UserManagementPage from './UserManagementPage/UserManagementPage';
 import Reports from './reports/Reports';
 import ReservationAdmin from './reservation-admin/ReservationAdmin';
 import Booking from './user-ui/Booking';
+import BookingHistoryPage from './booking-history/BookingHistoryPage';
 import bookingBg from './Pictures/booking.png';
 
 import { userApi } from './api/userApi';
@@ -25,6 +27,27 @@ const LOGOUT_FLAG_KEY = 'isLoggingOut';
 const LOGOUT_STARTED_AT_KEY = 'logoutStartedAt';
 const LOGOUT_GUARD_MS = 15000;
 
+const clearLocalSession = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('user');
+  localStorage.removeItem('user_role');
+  localStorage.removeItem('headerUserSyncedAt');
+  localStorage.removeItem(LOGOUT_FLAG_KEY);
+  localStorage.removeItem(LOGOUT_STARTED_AT_KEY);
+};
+
+const normalizeRole = (role) => {
+  if (!role) return null;
+
+  return String(role)
+    .trim()
+    .toUpperCase()
+    .replace(/^ROLE_/, '');
+};
+
 const getSavedUser = () => {
   const savedUser = localStorage.getItem('user');
 
@@ -33,7 +56,11 @@ const getSavedUser = () => {
   try {
     return JSON.parse(savedUser);
   } catch (error) {
-    console.error("🚨 [Chẩn đoán] Lỗi Parse JSON của key 'user' dưới localStorage:", error);
+    console.error(
+      "Cannot parse localStorage key 'user':",
+      error
+    );
+
     localStorage.removeItem('user');
     localStorage.removeItem('user_role');
     return null;
@@ -44,31 +71,44 @@ const extractRole = (user) => {
   if (!user) return null;
 
   if (user.role && typeof user.role === 'object') {
-    return (user.role.roleName || user.role.name || user.role.authority || '').toUpperCase();
+    return normalizeRole(
+      user.role.roleName ||
+        user.role.name ||
+        user.role.authority ||
+        ''
+    );
   }
 
   if (user.role && typeof user.role === 'string') {
-    return user.role.toUpperCase();
+    return normalizeRole(user.role);
   }
 
   if (user.roleName) {
-    return String(user.roleName).toUpperCase();
+    return normalizeRole(user.roleName);
   }
 
   if (user.authority) {
-    return String(user.authority).toUpperCase();
+    return normalizeRole(user.authority);
   }
 
-  return null;
+  return normalizeRole(
+    localStorage.getItem('user_role')
+  );
 };
 
 const isLogoutGuardActive = () => {
-  const isLoggingOut = localStorage.getItem(LOGOUT_FLAG_KEY) === 'true';
-  const logoutStartedAt = Number(localStorage.getItem(LOGOUT_STARTED_AT_KEY) || 0);
+  const isLoggingOut =
+    localStorage.getItem(LOGOUT_FLAG_KEY) === 'true';
+
+  const logoutStartedAt = Number(
+    localStorage.getItem(LOGOUT_STARTED_AT_KEY) || 0
+  );
 
   if (!isLoggingOut) return false;
 
-  const isStillFresh = logoutStartedAt > 0 && Date.now() - logoutStartedAt < LOGOUT_GUARD_MS;
+  const isStillFresh =
+    logoutStartedAt > 0 &&
+    Date.now() - logoutStartedAt < LOGOUT_GUARD_MS;
 
   if (isStillFresh) {
     return true;
@@ -84,20 +124,36 @@ const clearLogoutGuard = () => {
   localStorage.removeItem(LOGOUT_STARTED_AT_KEY);
 };
 
+const getDefaultPathByRole = (role) => {
+  const cleanRole = normalizeRole(role);
+
+  if (
+    cleanRole === 'DRIVER' ||
+    cleanRole === 'USER'
+  ) {
+    return '/user-ui';
+  }
+
+  return '/dashboard';
+};
+
 const AuthLayout = () => {
   const user = getSavedUser();
-  const token = localStorage.getItem('token');
   const userRole = extractRole(user);
 
-  if (user && token && userRole) {
-    console.log('ℹ️ [AuthLayout] Đã có Session hợp lệ, điều hướng vào phân khu riêng. Role:', userRole);
+  if (
+    user &&
+    userRole &&
+    !isLogoutGuardActive()
+  ) {
     clearLogoutGuard();
 
-    if (userRole === 'DRIVER' || userRole === 'USER') {
-      return <Navigate to="/user-ui" replace />;
-    }
-
-    return <Navigate to="/dashboard" replace />;
+    return (
+      <Navigate
+        to={getDefaultPathByRole(userRole)}
+        replace
+      />
+    );
   }
 
   return <Outlet />;
@@ -105,21 +161,17 @@ const AuthLayout = () => {
 
 const PrivateLayout = () => {
   const user = getSavedUser();
-  const token = localStorage.getItem('token');
 
-  if (!user || !token) {
-    console.error('🚨 [PrivateLayout Chặn] Thiếu dữ liệu đăng nhập, đẩy về /login:', {
-      'Có chuỗi user không?': !!user,
-      'Có token không?': !!token
-    });
-
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
   return (
     <div
       className="app-global-private-container"
-      style={{ backgroundImage: `url(${bookingBg})` }}
+      style={{
+        backgroundImage: `url(${bookingBg})`
+      }}
     >
       <div className="app-global-backdrop-mask">
         <Outlet />
@@ -128,35 +180,32 @@ const PrivateLayout = () => {
   );
 };
 
-const RoleProtectedRoute = ({ allowedRoles }) => {
+const RoleProtectedRoute = ({
+  allowedRoles
+}) => {
   const user = getSavedUser();
   const userRole = extractRole(user);
 
   if (!user || !userRole) {
-    console.error('🚨 [RoleProtectedRoute Chặn] Không bóc tách được Role của User:', user);
     return <Navigate to="/login" replace />;
   }
 
-  const cleanAllowedRoles = (allowedRoles || []).map((role) => String(role).toUpperCase());
+  const cleanAllowedRoles = (
+    allowedRoles || []
+  )
+    .map((role) => normalizeRole(role))
+    .filter(Boolean);
 
-  if (cleanAllowedRoles.includes('DRIVER') || cleanAllowedRoles.includes('USER')) {
-    if (!cleanAllowedRoles.includes('DRIVER')) cleanAllowedRoles.push('DRIVER');
-    if (!cleanAllowedRoles.includes('USER')) cleanAllowedRoles.push('USER');
-  }
-
-  const hasPermission = cleanAllowedRoles.includes(userRole);
+  const hasPermission =
+    cleanAllowedRoles.includes(userRole);
 
   if (!hasPermission) {
-    console.warn(
-      `⛔ [RoleProtectedRoute Từ chối] Quyền [${userRole}] không được phép vào đây. Danh sách hợp lệ:`,
-      cleanAllowedRoles
+    return (
+      <Navigate
+        to={getDefaultPathByRole(userRole)}
+        replace
+      />
     );
-
-    if (userRole === 'DRIVER' || userRole === 'USER') {
-      return <Navigate to="/user-ui" replace />;
-    }
-
-    return <Navigate to="/dashboard" replace />;
   }
 
   return <Outlet />;
@@ -168,11 +217,8 @@ function App() {
 
     const sendHeartbeat = async () => {
       const user = getSavedUser();
-      const token = localStorage.getItem('token');
 
-      if (!user || !token) return;
-
-      if (isLogoutGuardActive()) {
+      if (!user || isLogoutGuardActive()) {
         return;
       }
 
@@ -182,14 +228,9 @@ function App() {
         if (!isMounted) return;
 
         if (error.response?.status === 401) {
-          console.error('🚨 [Heartbeat Lỗi 401] Token hết hạn trên Server! Tiến hành sút user.');
-          localStorage.removeItem('user');
-          localStorage.removeItem('token');
-          localStorage.removeItem('refreshToken');
-          localStorage.removeItem('user_role');
-          clearLogoutGuard();
+          clearLocalSession();
           sessionStorage.clear();
-          window.location.href = '/login';
+          window.location.replace('/login');
           return;
         }
 
@@ -198,7 +239,11 @@ function App() {
     };
 
     sendHeartbeat();
-    const intervalId = setInterval(sendHeartbeat, 30000);
+
+    const intervalId = setInterval(
+      sendHeartbeat,
+      30000
+    );
 
     return () => {
       isMounted = false;
@@ -208,42 +253,164 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<DashboardIntro />} />
+      <Route
+        path="/"
+        element={<DashboardIntro />}
+      />
+
+      <Route
+        path="/auth/google/callback"
+        element={<GoogleCallbackPage />}
+      />
 
       <Route element={<AuthLayout />}>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route
+          path="/login"
+          element={<LoginPage />}
+        />
+
+        <Route
+          path="/register"
+          element={<RegisterPage />}
+        />
+
+        <Route
+          path="/forgot-password"
+          element={<ForgotPasswordPage />}
+        />
+
+        <Route
+          path="/reset-password"
+          element={<ResetPasswordPage />}
+        />
       </Route>
 
       <Route element={<PrivateLayout />}>
-        <Route element={<RoleProtectedRoute allowedRoles={ROUTE_PERMISSIONS.booking} />}>
-          <Route path="/user-ui" element={<Booking />} />
-          <Route path="/booking" element={<Booking />} />
+        <Route
+          element={
+            <RoleProtectedRoute
+              allowedRoles={
+                ROUTE_PERMISSIONS.booking
+              }
+            />
+          }
+        >
+          <Route
+            path="/user-ui"
+            element={<Booking />}
+          />
+
+          <Route
+            path="/booking"
+            element={<Booking />}
+          />
         </Route>
 
-        <Route element={<RoleProtectedRoute allowedRoles={ROUTE_PERMISSIONS.pricingPolicies} />}>
-          <Route path="/pricing-policies" element={<PricingPoliciesPage />} />
+        <Route
+          element={
+            <RoleProtectedRoute
+              allowedRoles={
+                ROUTE_PERMISSIONS.bookingHistory
+              }
+            />
+          }
+        >
+          <Route
+            path="/booking-history"
+            element={<BookingHistoryPage />}
+          />
         </Route>
 
-        <Route element={<RoleProtectedRoute allowedRoles={ROUTE_PERMISSIONS.operationalPages} />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/parking-floors" element={<ParkingManagement />} />
-          <Route path="/check-in-out" element={<CheckInOutPage />} />
-          <Route path="/reservations" element={<ReservationAdmin />} />
+        <Route
+          element={
+            <RoleProtectedRoute
+              allowedRoles={
+                ROUTE_PERMISSIONS.pricingPolicies
+              }
+            />
+          }
+        >
+          <Route
+            path="/pricing-policies"
+            element={<PricingPoliciesPage />}
+          />
         </Route>
 
-        <Route element={<RoleProtectedRoute allowedRoles={ROUTE_PERMISSIONS.reports} />}>
-          <Route path="/reports" element={<Reports />} />
+        <Route
+          element={
+            <RoleProtectedRoute
+              allowedRoles={
+                ROUTE_PERMISSIONS.parkingFloors
+              }
+            />
+          }
+        >
+          <Route
+            path="/parking-floors"
+            element={<ParkingManagement />}
+          />
         </Route>
 
-        <Route element={<RoleProtectedRoute allowedRoles={ROUTE_PERMISSIONS.userManagement} />}>
-          <Route path="/user-management" element={<UserManagementPage />} />
+        <Route
+          element={
+            <RoleProtectedRoute
+              allowedRoles={
+                ROUTE_PERMISSIONS.operationalPages
+              }
+            />
+          }
+        >
+          <Route
+            path="/dashboard"
+            element={<DashboardPage />}
+          />
+
+          <Route
+            path="/check-in-out"
+            element={<CheckInOutPage />}
+          />
+
+          <Route
+            path="/reservations"
+            element={<ReservationAdmin />}
+          />
+        </Route>
+
+        <Route
+          element={
+            <RoleProtectedRoute
+              allowedRoles={
+                ROUTE_PERMISSIONS.reports
+              }
+            />
+          }
+        >
+          <Route
+            path="/reports"
+            element={<Reports />}
+          />
+        </Route>
+
+        <Route
+          element={
+            <RoleProtectedRoute
+              allowedRoles={
+                ROUTE_PERMISSIONS.userManagement
+              }
+            />
+          }
+        >
+          <Route
+            path="/user-management"
+            element={<UserManagementPage />}
+          />
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route
+        path="*"
+        element={<Navigate to="/" replace />}
+      />
     </Routes>
   );
 }

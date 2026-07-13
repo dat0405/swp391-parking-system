@@ -15,6 +15,23 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/pricing-policies")
 @RequiredArgsConstructor
+@CrossOrigin(
+        origins = {
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:3000"
+        },
+        allowedHeaders = "*",
+        methods = {
+                RequestMethod.GET,
+                RequestMethod.POST,
+                RequestMethod.PUT,
+                RequestMethod.PATCH,
+                RequestMethod.DELETE,
+                RequestMethod.OPTIONS
+        },
+        allowCredentials = "true"
+)
 public class PricingPolicyController {
 
     private final PricingPolicyRepository pricingPolicyRepository;
@@ -36,15 +53,6 @@ public class PricingPolicyController {
         return mapToResponse(pricingPolicy);
     }
 
-    /*
-     * API mới cho Booking FE.
-     *
-     * Example:
-     * GET /api/pricing-policies/active/vehicle-type/1
-     * GET /api/pricing-policies/active/vehicle-type/2
-     *
-     * Dùng để lấy giá ACTIVE hiện tại theo loại xe.
-     */
     @GetMapping("/active/vehicle-type/{vehicleTypeId}")
     public PricingPolicyResponse getActivePricingPolicyByVehicleType(
             @PathVariable Integer vehicleTypeId
@@ -84,13 +92,10 @@ public class PricingPolicyController {
 
         PricingPolicy pricingPolicy = PricingPolicy.builder()
                 .vehicleType(vehicleType)
-                .basePrice(request.getBasePrice())
-                .pricePerHour(request.getPricePerHour())
-                .overtimeFee(
-                        request.getOvertimeFee() == null
-                                ? BigDecimal.ZERO
-                                : request.getOvertimeFee()
-                )
+                .basePrice(safeMoney(request.getBasePrice()))
+                .pricePerHour(safeMoney(request.getPricePerHour()))
+                .overtimeFee(safeMoney(request.getOvertimeFee()))
+                .overstayFee(safeMoney(request.getOverstayFee()))
                 .status(status)
                 .build();
 
@@ -128,21 +133,14 @@ public class PricingPolicyController {
         }
 
         pricingPolicy.setVehicleType(vehicleType);
-        pricingPolicy.setBasePrice(request.getBasePrice());
-        pricingPolicy.setPricePerHour(request.getPricePerHour());
-        pricingPolicy.setOvertimeFee(
-                request.getOvertimeFee() == null
-                        ? BigDecimal.ZERO
-                        : request.getOvertimeFee()
-        );
+        pricingPolicy.setBasePrice(safeMoney(request.getBasePrice()));
+        pricingPolicy.setPricePerHour(safeMoney(request.getPricePerHour()));
+        pricingPolicy.setOvertimeFee(safeMoney(request.getOvertimeFee()));
+        pricingPolicy.setOverstayFee(safeMoney(request.getOverstayFee()));
         pricingPolicy.setStatus(status);
 
         PricingPolicy savedPricingPolicy = pricingPolicyRepository.save(pricingPolicy);
 
-        /*
-         * Sau này mình sẽ gắn notification ở đây:
-         * "Pricing policy updated"
-         */
         return mapToResponse(savedPricingPolicy);
     }
 
@@ -204,26 +202,7 @@ public class PricingPolicyController {
             @PathVariable Integer vehicleTypeId,
             @RequestBody PricingPolicyRequest request
     ) {
-        if (request.getBasePrice() == null) {
-            throw new RuntimeException("Base price is required");
-        }
-
-        if (request.getPricePerHour() == null) {
-            throw new RuntimeException("Price per hour is required");
-        }
-
-        if (request.getBasePrice().compareTo(BigDecimal.ZERO) < 0) {
-            throw new RuntimeException("Base price cannot be negative");
-        }
-
-        if (request.getPricePerHour().compareTo(BigDecimal.ZERO) < 0) {
-            throw new RuntimeException("Price per hour cannot be negative");
-        }
-
-        if (request.getOvertimeFee() != null
-                && request.getOvertimeFee().compareTo(BigDecimal.ZERO) < 0) {
-            throw new RuntimeException("Overtime fee cannot be negative");
-        }
+        validatePricingPolicyAmounts(request);
 
         List<PricingPolicy> pricingPolicies =
                 pricingPolicyRepository.findByVehicleType_Id(vehicleTypeId);
@@ -233,23 +212,16 @@ public class PricingPolicyController {
         }
 
         for (PricingPolicy pricingPolicy : pricingPolicies) {
-            pricingPolicy.setBasePrice(request.getBasePrice());
-            pricingPolicy.setPricePerHour(request.getPricePerHour());
-            pricingPolicy.setOvertimeFee(
-                    request.getOvertimeFee() == null
-                            ? BigDecimal.ZERO
-                            : request.getOvertimeFee()
-            );
+            pricingPolicy.setBasePrice(safeMoney(request.getBasePrice()));
+            pricingPolicy.setPricePerHour(safeMoney(request.getPricePerHour()));
+            pricingPolicy.setOvertimeFee(safeMoney(request.getOvertimeFee()));
+            pricingPolicy.setOverstayFee(safeMoney(request.getOverstayFee()));
 
             if (request.getStatus() != null && !request.getStatus().isBlank()) {
                 pricingPolicy.setStatus(normalizeStatus(request.getStatus()));
             }
         }
 
-        /*
-         * Sau này mình sẽ gắn notification ở đây:
-         * "Pricing policy for vehicle type has been updated"
-         */
         return pricingPolicyRepository.saveAll(pricingPolicies)
                 .stream()
                 .map(this::mapToResponse)
@@ -257,8 +229,20 @@ public class PricingPolicyController {
     }
 
     private void validatePricingPolicyRequest(PricingPolicyRequest request) {
+        if (request == null) {
+            throw new RuntimeException("Pricing policy request is required");
+        }
+
         if (request.getVehicleTypeId() == null) {
             throw new RuntimeException("Vehicle type is required");
+        }
+
+        validatePricingPolicyAmounts(request);
+    }
+
+    private void validatePricingPolicyAmounts(PricingPolicyRequest request) {
+        if (request == null) {
+            throw new RuntimeException("Pricing policy request is required");
         }
 
         if (request.getBasePrice() == null) {
@@ -281,6 +265,19 @@ public class PricingPolicyController {
                 && request.getOvertimeFee().compareTo(BigDecimal.ZERO) < 0) {
             throw new RuntimeException("Overtime fee cannot be negative");
         }
+
+        if (request.getOverstayFee() != null
+                && request.getOverstayFee().compareTo(BigDecimal.ZERO) < 0) {
+            throw new RuntimeException("Overstay fee cannot be negative");
+        }
+    }
+
+    private BigDecimal safeMoney(BigDecimal value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+
+        return value;
     }
 
     private String normalizeStatus(String status) {
@@ -306,6 +303,7 @@ public class PricingPolicyController {
                 .basePrice(pricingPolicy.getBasePrice())
                 .pricePerHour(pricingPolicy.getPricePerHour())
                 .overtimeFee(pricingPolicy.getOvertimeFee())
+                .overstayFee(pricingPolicy.getOverstayFee())
                 .status(pricingPolicy.getStatus())
                 .createdAt(pricingPolicy.getCreatedAt())
                 .updatedAt(pricingPolicy.getUpdatedAt())

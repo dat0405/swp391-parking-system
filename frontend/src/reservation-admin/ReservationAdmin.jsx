@@ -348,6 +348,7 @@ const ReservationAdmin = () => {
     const value = String(status || "").trim().toUpperCase();
 
     if (value === "CANCELED") return "CANCELLED";
+    if (value === "PENDING") return "PENDING_PAYMENT";
 
     return value;
   };
@@ -376,6 +377,15 @@ const ReservationAdmin = () => {
       startTime: booking.startTime,
       endTime: booking.endTime,
       status,
+      paymentStatus: String(
+        booking.paymentStatus || "PENDING"
+      ).toUpperCase(),
+      paymentExpiredAt: booking.paymentExpiredAt || null,
+      paymentAmount: Number(booking.paymentAmount || 0),
+      paymentCurrency: booking.paymentCurrency || "VND",
+      paidAt: booking.paidAt || null,
+      cancelledAt: booking.cancelledAt || null,
+      paymentDescription: booking.paymentDescription || "",
       raw: booking
     };
   };
@@ -440,6 +450,13 @@ const ReservationAdmin = () => {
 
   useEffect(() => {
     loadReservations();
+
+    const intervalId = window.setInterval(
+      loadReservations,
+      5000
+    );
+
+    return () => window.clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -463,7 +480,9 @@ const ReservationAdmin = () => {
         item.rawSlotCode,
         item.floorName,
         item.vehicleTypeName,
-        item.status
+        item.status,
+        item.paymentStatus,
+        item.paymentDescription
       ]
         .filter(Boolean)
         .join(" ")
@@ -484,7 +503,10 @@ const ReservationAdmin = () => {
 
   const totalReservations = reservations.length;
   const activeReservations = reservations.filter(
-    (item) => item.status === "PENDING" || item.status === "CONFIRMED"
+    (item) =>
+      item.status === "PENDING_PAYMENT" ||
+      item.status === "CONFIRMED" ||
+      item.status === "CHECKED_IN"
   ).length;
   const completedReservations = reservations.filter(
     (item) => item.status === "COMPLETED"
@@ -546,15 +568,65 @@ const ReservationAdmin = () => {
   };
 
   const getStatusLabel = (status) => {
-    if (status === "PENDING") return "Pending";
+    if (status === "PENDING_PAYMENT") return "Pending Payment";
     if (status === "CONFIRMED") return "Confirmed";
+    if (status === "CHECKED_IN") return "Checked In";
     if (status === "COMPLETED") return "Completed";
     if (status === "CANCELLED") return "Cancelled";
+    if (status === "NO_SHOW") return "No Show";
+    if (status === "REFUNDED") return "Refunded";
+    if (status === "EXPIRED") return "Expired";
     return status || "Unknown";
   };
 
+  const getPaymentStatusLabel = (status) => {
+    const value = String(status || "").toUpperCase();
+
+    if (value === "PENDING") return "Pending";
+    if (value === "PAID") return "Paid";
+    if (value === "EXPIRED") return "Expired";
+    if (value === "CANCELLED") return "Cancelled";
+    if (value === "FAILED") return "Failed";
+
+    return value || "Unknown";
+  };
+
+  const getPaymentStatusStyle = (status) => {
+    const value = String(status || "").toUpperCase();
+
+    if (value === "PAID") {
+      return {
+        background: theme.greenSoft,
+        color: theme.green,
+        border: "1px solid rgba(16, 185, 129, 0.22)"
+      };
+    }
+
+    if (value === "PENDING") {
+      return {
+        background: "rgba(245, 158, 11, 0.12)",
+        color: theme.yellow,
+        border: "1px solid rgba(245, 158, 11, 0.22)"
+      };
+    }
+
+    if (value === "EXPIRED" || value === "FAILED") {
+      return {
+        background: theme.redSoft,
+        color: theme.red,
+        border: "1px solid rgba(239, 68, 68, 0.22)"
+      };
+    }
+
+    return {
+      background: "rgba(100, 116, 139, 0.12)",
+      color: theme.muted,
+      border: "1px solid rgba(100, 116, 139, 0.22)"
+    };
+  };
+
   const getStatusStyle = (status) => {
-    if (status === "PENDING") {
+    if (status === "PENDING_PAYMENT") {
       return {
         background: "rgba(147, 51, 234, 0.12)",
         color: "#a855f7",
@@ -605,7 +677,11 @@ const ReservationAdmin = () => {
       "Floor",
       "Start Time",
       "End Time",
-      "Status"
+      "Booking Status",
+      "Payment Status",
+      "Payment Amount",
+      "Payment Expired At",
+      "Cancelled At"
     ];
 
     const rows = filteredData.map((item) => [
@@ -619,7 +695,11 @@ const ReservationAdmin = () => {
       item.floorName,
       item.startTime || "",
       item.endTime || "",
-      getStatusLabel(item.status)
+      getStatusLabel(item.status),
+      getPaymentStatusLabel(item.paymentStatus),
+      item.paymentAmount || 0,
+      item.paymentExpiredAt || "",
+      item.cancelledAt || ""
     ]);
 
     const csvContent = [
@@ -920,10 +1000,13 @@ const ReservationAdmin = () => {
               }}
             >
               <option value="All">All statuses</option>
-              <option value="PENDING">Pending</option>
+              <option value="PENDING_PAYMENT">Pending Payment</option>
               <option value="CONFIRMED">Confirmed</option>
+              <option value="CHECKED_IN">Checked In</option>
               <option value="COMPLETED">Completed</option>
               <option value="CANCELLED">Cancelled</option>
+              <option value="NO_SHOW">No Show</option>
+              <option value="REFUNDED">Refunded</option>
             </select>
 
             <button
@@ -987,7 +1070,7 @@ const ReservationAdmin = () => {
             <table
               style={{
                 width: "100%",
-                minWidth: "980px",
+                minWidth: "1120px",
                 height: "100%",
                 borderCollapse: "collapse",
                 textAlign: "left",
@@ -1010,6 +1093,7 @@ const ReservationAdmin = () => {
                   <th style={{ padding: "1rem" }}>Slot</th>
                   <th style={{ padding: "1rem" }}>Schedule</th>
                   <th style={{ padding: "1rem" }}>Status</th>
+                  <th style={{ padding: "1rem" }}>Payment</th>
                   <th style={{ padding: "1rem", textAlign: "right" }}>
                     Actions
                   </th>
@@ -1020,7 +1104,7 @@ const ReservationAdmin = () => {
                 {isLoading ? (
                   <tr style={{ height: "320px" }}>
                     <td
-                      colSpan="7"
+                      colSpan="8"
                       style={{
                         padding: "2rem",
                         textAlign: "center",
@@ -1034,7 +1118,7 @@ const ReservationAdmin = () => {
                 ) : currentItems.length === 0 ? (
                   <tr style={{ height: "320px" }}>
                     <td
-                      colSpan="7"
+                      colSpan="8"
                       style={{
                         padding: "2rem",
                         textAlign: "center",
@@ -1051,7 +1135,10 @@ const ReservationAdmin = () => {
                       const badgeStyle = getStatusStyle(row.status);
                       const isFinalStatus =
                         row.status === "COMPLETED" ||
-                        row.status === "CANCELLED";
+                        row.status === "CANCELLED" ||
+                        row.status === "NO_SHOW" ||
+                        row.status === "REFUNDED" ||
+                        row.status === "EXPIRED";
 
                       return (
                         <tr
@@ -1204,6 +1291,37 @@ const ReservationAdmin = () => {
                             </span>
                           </td>
 
+                          <td style={{ padding: "1rem" }}>
+                            <div
+                              style={{
+                                display: "inline-flex",
+                                padding: "0.3rem 0.65rem",
+                                borderRadius: "0.45rem",
+                                fontSize: "0.75rem",
+                                fontWeight: 800,
+                                ...getPaymentStatusStyle(
+                                  row.paymentStatus
+                                )
+                              }}
+                            >
+                              {getPaymentStatusLabel(
+                                row.paymentStatus
+                              )}
+                            </div>
+
+                            {row.paymentStatus === "EXPIRED" && (
+                              <div
+                                style={{
+                                  marginTop: "0.35rem",
+                                  color: theme.muted,
+                                  fontSize: "0.7rem"
+                                }}
+                              >
+                                Payment timeout
+                              </div>
+                            )}
+                          </td>
+
                           <td style={{ padding: "1rem", textAlign: "right" }}>
                             <div
                               style={{
@@ -1231,24 +1349,6 @@ const ReservationAdmin = () => {
 
                               {!isFinalStatus && (
                                 <>
-                                  {row.status === "PENDING" && (
-                                    <button
-                                      title="Confirm reservation"
-                                      onClick={() =>
-                                        handleConfirmReservation(row)
-                                      }
-                                      style={{
-                                        background: "transparent",
-                                        border: "none",
-                                        color: theme.green,
-                                        cursor: "pointer",
-                                        padding: "4px"
-                                      }}
-                                    >
-                                      <CheckCircle2 size={16} />
-                                    </button>
-                                  )}
-
                                   <button
                                     title="Cancel reservation"
                                     onClick={() => setReservationToCancel(row)}
@@ -1285,7 +1385,7 @@ const ReservationAdmin = () => {
                               : `1px solid ${theme.border}`
                         }}
                       >
-                        <td colSpan="7" />
+                        <td colSpan="8" />
                       </tr>
                     ))}
                   </>
@@ -1391,7 +1491,12 @@ const ReservationAdmin = () => {
             handleConfirmReservation={handleConfirmReservation}
             getStatusStyle={getStatusStyle}
             getStatusLabel={getStatusLabel}
+            getPaymentStatusLabel={getPaymentStatusLabel}
+            getPaymentStatusStyle={getPaymentStatusStyle}
             formatDateTime={formatDateTime}
+            formatVnd={(value) =>
+              `${Number(value || 0).toLocaleString("vi-VN")} VNĐ`
+            }
           />
         )}
 
@@ -1414,7 +1519,10 @@ function ReservationDetailModal({
   handleConfirmReservation,
   getStatusStyle,
   getStatusLabel,
-  formatDateTime
+  getPaymentStatusLabel,
+  getPaymentStatusStyle,
+  formatDateTime,
+  formatVnd
 }) {
   return (
     <div
@@ -1527,7 +1635,10 @@ function ReservationDetailModal({
             </div>
 
             {(selectedReservationDetail.status === "CANCELLED" ||
-              selectedReservationDetail.status === "COMPLETED") && (
+              selectedReservationDetail.status === "COMPLETED" ||
+              selectedReservationDetail.status === "NO_SHOW" ||
+              selectedReservationDetail.status === "REFUNDED" ||
+              selectedReservationDetail.status === "EXPIRED") && (
               <div
                 style={{
                   maxWidth: "260px",
@@ -1561,7 +1672,37 @@ function ReservationDetailModal({
               ["Slot", selectedReservationDetail.slot],
               ["Floor", selectedReservationDetail.floorName || "-"],
               ["Start Time", formatDateTime(selectedReservationDetail.startTime)],
-              ["End Time", formatDateTime(selectedReservationDetail.endTime)]
+              ["End Time", formatDateTime(selectedReservationDetail.endTime)],
+              [
+                "Payment Status",
+                getPaymentStatusLabel(
+                  selectedReservationDetail.paymentStatus
+                )
+              ],
+              [
+                "Payment Amount",
+                formatVnd(selectedReservationDetail.paymentAmount)
+              ],
+              [
+                "Payment Expires",
+                formatDateTime(
+                  selectedReservationDetail.paymentExpiredAt
+                )
+              ],
+              [
+                "Paid At",
+                formatDateTime(selectedReservationDetail.paidAt)
+              ],
+              [
+                "Cancelled At",
+                formatDateTime(selectedReservationDetail.cancelledAt)
+              ],
+              [
+                "Payment Note",
+                selectedReservationDetail.paymentStatus === "EXPIRED"
+                  ? "Payment timeout after 10 minutes"
+                  : selectedReservationDetail.paymentDescription || "-"
+              ]
             ].map(([label, value]) => (
               <div
                 key={label}
@@ -1625,30 +1766,7 @@ function ReservationDetailModal({
               Close
             </button>
 
-            {selectedReservationDetail.status === "PENDING" && (
-              <button
-                type="button"
-                onClick={() => {
-                  const reservation = selectedReservationDetail;
-                  setSelectedReservationDetail(null);
-                  handleConfirmReservation(reservation);
-                }}
-                style={{
-                  height: "42px",
-                  padding: "0 1rem",
-                  borderRadius: "0.65rem",
-                  border: "none",
-                  background: theme.green,
-                  color: "#ffffff",
-                  cursor: "pointer",
-                  fontWeight: 700
-                }}
-              >
-                Confirm
-              </button>
-            )}
-
-            {(selectedReservationDetail.status === "PENDING" ||
+            {(selectedReservationDetail.status === "PENDING_PAYMENT" ||
               selectedReservationDetail.status === "CONFIRMED") && (
               <button
                 type="button"

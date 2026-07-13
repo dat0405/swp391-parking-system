@@ -3,6 +3,7 @@ package com.tatdat.parking.backend.controller;
 import com.tatdat.parking.backend.dto.AuthResponse;
 import com.tatdat.parking.backend.dto.ForgotPasswordRequest;
 import com.tatdat.parking.backend.dto.GoogleAccessTokenRequest;
+import com.tatdat.parking.backend.dto.GoogleCodeRequest;
 import com.tatdat.parking.backend.dto.LoginRequest;
 import com.tatdat.parking.backend.dto.LogoutRequest;
 import com.tatdat.parking.backend.dto.RefreshTokenRequest;
@@ -22,12 +23,16 @@ import com.tatdat.parking.backend.service.UserStatusEventService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
@@ -50,6 +55,30 @@ public class AuthController {
     private final RefreshTokenService refreshTokenService;
     private final PasswordResetService passwordResetService;
     private final UserStatusEventService userStatusEventService;
+
+    @Value("${google.client-id:}")
+    private String googleClientId;
+
+    @Value("${google.client-secret:}")
+    private String googleClientSecret;
+
+    @Value("${google.redirect-uri:}")
+    private String googleRedirectUri;
+
+    /*
+     * Local development:
+     *   app.cookie.secure=false
+     *   app.cookie.same-site=Lax
+     *
+     * Deploy HTTPS, frontend/backend khác domain:
+     *   app.cookie.secure=true
+     *   app.cookie.same-site=None
+     */
+    @Value("${app.cookie.secure:false}")
+    private boolean cookieSecure;
+
+    @Value("${app.cookie.same-site:Lax}")
+    private String cookieSameSite;
 
     @PostMapping("/register")
     public String register(@Valid @RequestBody RegisterRequest request) {
@@ -131,23 +160,15 @@ public class AuthController {
 
         validateUserCanAuthenticate(user);
 
-        LocalDateTime now = LocalDateTime.now();
-
-        user.setLastLoginAt(now);
-        user.setLastActiveAt(now);
-        user.setUpdatedAt(now);
-        userRepository.save(user);
-
-        publishUserStatus(user, true);
-
-        String accessToken = jwtService.generateAccessToken(user);
-        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
-
-        addAuthCookies(response, accessToken, refreshToken.getToken());
-
-        return buildAuthResponse(user, accessToken, refreshToken.getToken());
+        return completeSuccessfulLogin(user, response);
     }
 
+    /*
+     * OLD Google popup/implicit flow.
+     *
+     * Keep this endpoint for backward compatibility. The new redirect/code flow
+     * uses POST /api/auth/google-code below.
+     */
     @PostMapping("/google-token")
     public AuthResponse googleLoginWithAccessToken(
             @Valid @RequestBody GoogleAccessTokenRequest request,
@@ -167,51 +188,83 @@ public class AuthController {
 
             Map<String, Object> googleUser = googleResponse.getBody();
 
-            if (googleUser == null) {
-                throw new RuntimeException("Cannot get Google account information");
-            }
-
-            String email = (String) googleUser.get("email");
-            String name = (String) googleUser.get("name");
-            Object emailVerifiedValue = googleUser.get("email_verified");
-
-            if (email == null || email.isBlank()) {
-                throw new RuntimeException("Google account does not contain an email");
-            }
-
-            boolean emailVerified = Boolean.TRUE.equals(emailVerifiedValue)
-                    || "true".equalsIgnoreCase(String.valueOf(emailVerifiedValue));
-
-            if (!emailVerified) {
-                throw new RuntimeException("Google email is not verified");
-            }
-
-            String normalizedEmail = email.trim().toLowerCase();
-
-            User user = userRepository.findByEmail(normalizedEmail)
-                    .orElseGet(() -> createGoogleDriverUser(normalizedEmail, name));
-
-            validateUserCanAuthenticate(user);
-
-            LocalDateTime now = LocalDateTime.now();
-
-            user.setLastLoginAt(now);
-            user.setLastActiveAt(now);
-            user.setUpdatedAt(now);
-            userRepository.save(user);
-
-            publishUserStatus(user, true);
-
-            String accessToken = jwtService.generateAccessToken(user);
-            RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
-
-            addAuthCookies(response, accessToken, refreshToken.getToken());
-
-            return buildAuthResponse(user, accessToken, refreshToken.getToken());
+            return authenticateGoogleUserAndBuildResponse(googleUser, response, "Google login failed");
         } catch (RuntimeException error) {
             throw error;
         } catch (Exception error) {
             throw new RuntimeException("Google login failed");
+        }
+    }
+
+    /*
+     * NEW Google redirect/auth-code flow.
+     *
+     * Frontend receives:
+     *   /auth/google/callback?code=...
+     *
+     * Frontend then sends:
+     *   POST /api/auth/google-code
+     *   { "code": "..." }
+     *
+     * Backend exchanges the code with Google, reads Google user info,
+     * then creates this system's access token + refresh token as HttpOnly cookies.
+     */
+    @PostMapping("/google-code")
+    public AuthResponse googleLoginWithCode(
+            @Valid @RequestBody GoogleCodeRequest request,
+            HttpServletResponse response
+    ) {
+        if (request.getCode() == null || request.getCode().isBlank()) {
+            throw new RuntimeException("Google authorization code is required");
+        }
+
+        validateGoogleCodeConfiguration();
+
+        try {
+            RestTemplate restTemplate = new RestTemplate();
+
+            HttpHeaders tokenHeaders = new HttpHeaders();
+            tokenHeaders.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+            MultiValueMap<String, String> tokenBody = new LinkedMultiValueMap<>();
+            tokenBody.add("code", request.getCode().trim());
+            tokenBody.add("client_id", googleClientId);
+            tokenBody.add("client_secret", googleClientSecret);
+            tokenBody.add("redirect_uri", googleRedirectUri);
+            tokenBody.add("grant_type", "authorization_code");
+
+            ResponseEntity<Map> tokenResponse = restTemplate.postForEntity(
+                    "https://oauth2.googleapis.com/token",
+                    new HttpEntity<>(tokenBody, tokenHeaders),
+                    Map.class
+            );
+
+            Map<String, Object> tokenData = tokenResponse.getBody();
+
+            if (tokenData == null || tokenData.get("access_token") == null) {
+                throw new RuntimeException("Cannot exchange Google authorization code");
+            }
+
+            String googleAccessToken = String.valueOf(tokenData.get("access_token"));
+
+            ResponseEntity<Map> googleResponse = restTemplate.exchange(
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    org.springframework.http.HttpMethod.GET,
+                    new HttpEntity<>(createGoogleAuthHeaders(googleAccessToken)),
+                    Map.class
+            );
+
+            Map<String, Object> googleUser = googleResponse.getBody();
+
+            return authenticateGoogleUserAndBuildResponse(
+                    googleUser,
+                    response,
+                    "Google redirect login failed"
+            );
+        } catch (RuntimeException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new RuntimeException("Google redirect login failed");
         }
     }
 
@@ -223,6 +276,11 @@ public class AuthController {
     ) {
         String refreshTokenValue = refreshTokenFromCookie;
 
+        /*
+         * Backward compatible:
+         * - New frontend uses HttpOnly cookie only.
+         * - Old frontend may still send { refreshToken } in body.
+         */
         if ((refreshTokenValue == null || refreshTokenValue.isBlank())
                 && request != null
                 && request.getRefreshToken() != null
@@ -255,7 +313,11 @@ public class AuthController {
 
         addAuthCookies(response, newAccessToken, newRefreshToken.getToken());
 
-        return buildAuthResponse(user, newAccessToken, newRefreshToken.getToken());
+        /*
+         * Cookie-only auth:
+         * Do not expose tokens in JSON response.
+         */
+        return buildAuthResponse(user, null, null);
     }
 
     @PostMapping("/logout")
@@ -266,6 +328,11 @@ public class AuthController {
     ) {
         String refreshTokenValue = refreshTokenFromCookie;
 
+        /*
+         * Backward compatible:
+         * - New frontend sends no body.
+         * - Old frontend may still send { refreshToken }.
+         */
         if ((refreshTokenValue == null || refreshTokenValue.isBlank())
                 && request != null
                 && request.getRefreshToken() != null
@@ -336,6 +403,69 @@ public class AuthController {
         return "Password has been reset successfully";
     }
 
+    private AuthResponse authenticateGoogleUserAndBuildResponse(
+            Map<String, Object> googleUser,
+            HttpServletResponse response,
+            String defaultErrorMessage
+    ) {
+        if (googleUser == null) {
+            throw new RuntimeException("Cannot get Google account information");
+        }
+
+        String email = (String) googleUser.get("email");
+        String name = (String) googleUser.get("name");
+        Object emailVerifiedValue = googleUser.get("email_verified");
+
+        if (email == null || email.isBlank()) {
+            throw new RuntimeException("Google account does not contain an email");
+        }
+
+        boolean emailVerified = Boolean.TRUE.equals(emailVerifiedValue)
+                || "true".equalsIgnoreCase(String.valueOf(emailVerifiedValue));
+
+        if (!emailVerified) {
+            throw new RuntimeException("Google email is not verified");
+        }
+
+        try {
+            String normalizedEmail = email.trim().toLowerCase();
+
+            User user = userRepository.findByEmail(normalizedEmail)
+                    .orElseGet(() -> createGoogleDriverUser(normalizedEmail, name));
+
+            validateUserCanAuthenticate(user);
+
+            return completeSuccessfulLogin(user, response);
+        } catch (RuntimeException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new RuntimeException(defaultErrorMessage);
+        }
+    }
+
+    private AuthResponse completeSuccessfulLogin(User user, HttpServletResponse response) {
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setLastLoginAt(now);
+        user.setLastActiveAt(now);
+        user.setUpdatedAt(now);
+        userRepository.save(user);
+
+        publishUserStatus(user, true);
+
+        String accessToken = jwtService.generateAccessToken(user);
+        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
+
+        addAuthCookies(response, accessToken, refreshToken.getToken());
+
+        /*
+         * Cookie-only auth:
+         * Tokens are sent only through HttpOnly cookies.
+         * JSON response contains user metadata only.
+         */
+        return buildAuthResponse(user, null, null);
+    }
+
     private User createGoogleDriverUser(String email, String googleName) {
         Role driverRole = roleRepository.findByRoleName("DRIVER")
                 .orElseThrow(() -> new RuntimeException("Driver role not found"));
@@ -369,6 +499,20 @@ public class AuthController {
         return headers;
     }
 
+    private void validateGoogleCodeConfiguration() {
+        if (googleClientId == null || googleClientId.isBlank()) {
+            throw new RuntimeException("Missing google.client-id configuration");
+        }
+
+        if (googleClientSecret == null || googleClientSecret.isBlank()) {
+            throw new RuntimeException("Missing google.client-secret configuration");
+        }
+
+        if (googleRedirectUri == null || googleRedirectUri.isBlank()) {
+            throw new RuntimeException("Missing google.redirect-uri configuration");
+        }
+    }
+
     private void addAuthCookies(
             HttpServletResponse response,
             String accessToken,
@@ -376,16 +520,16 @@ public class AuthController {
     ) {
         ResponseCookie accessTokenCookie = ResponseCookie.from(ACCESS_TOKEN_COOKIE, accessToken)
                 .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
+                .secure(cookieSecure)
+                .sameSite(cookieSameSite)
                 .path("/")
                 .maxAge(Duration.ofMinutes(15))
                 .build();
 
         ResponseCookie refreshTokenCookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, refreshToken)
                 .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
+                .secure(cookieSecure)
+                .sameSite(cookieSameSite)
                 .path("/api/auth")
                 .maxAge(Duration.ofDays(7))
                 .build();
@@ -397,16 +541,16 @@ public class AuthController {
     private void clearAuthCookies(HttpServletResponse response) {
         ResponseCookie accessTokenCookie = ResponseCookie.from(ACCESS_TOKEN_COOKIE, "")
                 .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
+                .secure(cookieSecure)
+                .sameSite(cookieSameSite)
                 .path("/")
                 .maxAge(0)
                 .build();
 
         ResponseCookie refreshTokenCookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, "")
                 .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
+                .secure(cookieSecure)
+                .sameSite(cookieSameSite)
                 .path("/api/auth")
                 .maxAge(0)
                 .build();

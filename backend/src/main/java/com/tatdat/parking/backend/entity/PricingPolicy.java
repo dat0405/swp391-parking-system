@@ -32,8 +32,20 @@ public class PricingPolicy {
     @Column(name = "price_per_hour", nullable = false, precision = 18, scale = 2)
     private BigDecimal pricePerHour;
 
+    /**
+     * Phí qua đêm.
+     * Ví dụ: khách gửi xe từ hôm trước sang hôm sau thì cộng phí này.
+     */
     @Column(name = "overtime_fee", precision = 18, scale = 2)
     private BigDecimal overtimeFee;
+
+    /**
+     * Phí phạt quá giờ booking.
+     * Ví dụ: khách booking đến 10:00 nhưng 11:00 mới lấy xe
+     * thì số giờ quá hạn sẽ nhân với overstayFee.
+     */
+    @Column(name = "overstay_fee", nullable = false, precision = 18, scale = 2)
+    private BigDecimal overstayFee;
 
     @Column(name = "status", length = 20, nullable = false)
     private String status;
@@ -76,6 +88,10 @@ public class PricingPolicy {
 
         if (overtimeFee == null) {
             overtimeFee = BigDecimal.ZERO;
+        }
+
+        if (overstayFee == null) {
+            overstayFee = BigDecimal.ZERO;
         }
 
         if (status == null || status.isBlank()) {

@@ -14,19 +14,6 @@ import java.time.LocalDateTime;
 @Builder
 public class Booking {
 
-    /*
-     * Booking status flow:
-     *
-     * PENDING_PAYMENT: User created booking, waiting for payment
-     * CONFIRMED: Payment/admin confirmation completed
-     * CHECKED_IN: Vehicle has entered the parking lot
-     * COMPLETED: Booking finished / checked out
-     * CANCELLED: Cancelled by user/admin
-     * EXPIRED: Payment timeout / pending booking expired
-     * NO_SHOW: User did not arrive at booking time
-     * REFUNDED: Refund completed
-     */
-
     public static final String STATUS_PENDING_PAYMENT = "PENDING_PAYMENT";
     public static final String STATUS_CONFIRMED = "CONFIRMED";
     public static final String STATUS_CHECKED_IN = "CHECKED_IN";
@@ -36,10 +23,6 @@ public class Booking {
     public static final String STATUS_NO_SHOW = "NO_SHOW";
     public static final String STATUS_REFUNDED = "REFUNDED";
 
-    /*
-     * Keep this old constant temporarily so old service/controller code
-     * that still uses Booking.STATUS_PENDING will not break.
-     */
     public static final String STATUS_PENDING = STATUS_PENDING_PAYMENT;
 
     public static final String PAYMENT_STATUS_PENDING = "PENDING";
@@ -94,9 +77,6 @@ public class Booking {
     @Column(name = "refunded_at")
     private LocalDateTime refundedAt;
 
-    /*
-     * PayOS fields
-     */
     @Column(name = "payment_order_code", unique = true)
     private Long paymentOrderCode;
 

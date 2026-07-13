@@ -1,17 +1,15 @@
 package com.tatdat.parking.backend.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-@Data
-@Builder
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class PricingPolicyResponse {
 
     private Integer id;
@@ -25,6 +23,8 @@ public class PricingPolicyResponse {
     private BigDecimal pricePerHour;
 
     private BigDecimal overtimeFee;
+
+    private BigDecimal overstayFee;
 
     private String status;
 
