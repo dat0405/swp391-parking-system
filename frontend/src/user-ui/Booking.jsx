@@ -384,6 +384,41 @@ const formatCountdown = (totalSeconds) => {
   )}`;
 };
 
+const resolvePaymentExpiredAt = (booking) => {
+  const directValue =
+    booking?.paymentExpiredAt ||
+    booking?.payment_expired_at ||
+    booking?.expiredAt ||
+    booking?.payment?.expiredAt ||
+    booking?.payment?.paymentExpiredAt;
+
+  if (directValue) {
+    const directDate = new Date(directValue);
+
+    if (!Number.isNaN(directDate.getTime())) {
+      return directDate.toISOString();
+    }
+  }
+
+  const createdValue =
+    booking?.paymentCreatedAt ||
+    booking?.payment_created_at ||
+    booking?.createdAt ||
+    booking?.created_at;
+
+  if (createdValue) {
+    const createdDate = new Date(createdValue);
+
+    if (!Number.isNaN(createdDate.getTime())) {
+      return new Date(
+        createdDate.getTime() + 10 * 60 * 1000
+      ).toISOString();
+    }
+  }
+
+  return null;
+};
+
 function Booking() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -404,8 +439,10 @@ function Booking() {
   const [pendingBooking, setPendingBooking] = useState(null);
   const [pendingLoading, setPendingLoading] = useState(true);
   const [pendingRemainingSeconds, setPendingRemainingSeconds] = useState(0);
-  const [isCancellingPendingCard, setIsCancellingPendingCard] =
-    useState(false);
+  const [modalRemainingSeconds, setModalRemainingSeconds] = useState(0);
+
+  const pendingExpiryHandledRef = useRef(false);
+  const paymentPollingRef = useRef(false);
 
   const unwrapApiData = (response) => {
     return response?.data || response;
@@ -543,39 +580,50 @@ function Booking() {
   };
 
   const buildPendingModalData = (booking) => {
-    const duration =
-      booking?.durationMinutes ||
-      Math.max(
-        0,
-        Math.round(
-          (new Date(booking?.endTime).getTime() -
-            new Date(booking?.startTime).getTime()) /
-            60000
-        )
-      );
+    const startTime = booking?.startTime || booking?.start_time;
+    const endTime = booking?.endTime || booking?.end_time;
+    const startMillis = new Date(startTime).getTime();
+    const endMillis = new Date(endTime).getTime();
+
+    const calculatedDuration =
+      Number.isNaN(startMillis) || Number.isNaN(endMillis)
+        ? 0
+        : Math.max(0, Math.round((endMillis - startMillis) / 60000));
+
+    const duration = booking?.durationMinutes || calculatedDuration;
+    const qrCode = booking?.qrCode || booking?.paymentQrCode || "";
+    const paymentExpiredAt = resolvePaymentExpiredAt(booking);
 
     return {
-      bookingId: booking?.id,
-      bookingStatus: booking?.status || "PENDING_PAYMENT",
-      paymentStatus: booking?.paymentStatus || "PENDING",
-      licensePlate: booking?.licensePlate || "-",
-      slotId: booking?.slotId,
-      slotDisplayCode: booking?.slotCode || `Slot ID ${booking?.slotId || "-"}`,
+      bookingId: booking?.id || booking?.bookingId,
+      bookingStatus:
+        booking?.status || booking?.bookingStatus || "PENDING_PAYMENT",
+      paymentStatus:
+        booking?.paymentStatus || booking?.payment_status || "PENDING",
+      licensePlate: booking?.licensePlate || booking?.license_plate || "-",
+      slotId: booking?.slotId || booking?.parkingSlotId,
+      slotDisplayCode:
+        booking?.slotCode ||
+        booking?.parkingSlotCode ||
+        `Slot ID ${booking?.slotId || booking?.parkingSlotId || "-"}`,
       vehicleType: normalizeVehicleType(
-        booking?.vehicleTypeName
+        booking?.vehicleTypeName || booking?.vehicleType
       ).toUpperCase(),
       durationText: formatDurationText(duration),
-      amount: booking?.paymentAmount || 0,
-      currency: booking?.paymentCurrency || "VND",
-      orderCode: booking?.paymentOrderCode || null,
+      amount:
+        booking?.paymentAmount || booking?.amount || booking?.totalAmount || 0,
+      currency: booking?.paymentCurrency || booking?.currency || "VND",
+      orderCode:
+        booking?.paymentOrderCode || booking?.orderCode || null,
       paymentLinkId: booking?.paymentLinkId || "",
       checkoutUrl: booking?.checkoutUrl || "",
-      qrCode: booking?.qrCode || "",
-      qrImageSrc: getPaymentQrImageSrc(booking?.qrCode),
-      paymentExpiredAt: booking?.paymentExpiredAt,
-      displayStartTime: formatApiDateTime(booking?.startTime),
-      displayEndTime: formatApiDateTime(booking?.endTime),
-      pricePerHour: 0
+      qrCode,
+      qrImageSrc: getPaymentQrImageSrc(qrCode),
+      paymentExpiredAt,
+      displayStartTime: formatApiDateTime(startTime),
+      displayEndTime: formatApiDateTime(endTime),
+      pricePerHour:
+        booking?.pricePerHour || booking?.ratePerHour || currentRatePerHour
     };
   };
 
@@ -601,9 +649,15 @@ function Booking() {
         return;
       }
 
-      setPendingBooking(booking);
+      const paymentExpiredAt = resolvePaymentExpiredAt(booking);
+      const normalizedBooking = {
+        ...booking,
+        paymentExpiredAt
+      };
+
+      setPendingBooking(normalizedBooking);
       setPendingRemainingSeconds(
-        getRemainingSeconds(booking.paymentExpiredAt)
+        getRemainingSeconds(paymentExpiredAt)
       );
     } catch (error) {
       if (error.response?.status !== 204) {
@@ -758,14 +812,19 @@ function Booking() {
     }
   };
 
-  const loadAvailableSlots = async (vehicleTypeId) => {
+  const loadAvailableSlots = async (vehicleTypeId, options = {}) => {
+    const { silent = false } = options;
+
     if (!vehicleTypeId) {
       setAvailableSlots([]);
       return;
     }
 
     try {
-      setSlotsLoading(true);
+      if (!silent) {
+        setSlotsLoading(true);
+      }
+
       setSlotsError("");
 
       const [allSlotsResponse, availableSlotsResponse] = await Promise.all([
@@ -776,9 +835,9 @@ function Booking() {
       const allSlotsPayload = allSlotsResponse.data;
       const allSlots = Array.isArray(allSlotsPayload)
         ? allSlotsPayload
-        : allSlotsPayload.content ||
-          allSlotsPayload.data ||
-          allSlotsPayload.slots ||
+        : allSlotsPayload?.content ||
+          allSlotsPayload?.data ||
+          allSlotsPayload?.slots ||
           [];
 
       const slotDisplayMap = buildSlotDisplayMap(allSlots);
@@ -786,9 +845,9 @@ function Booking() {
       const availablePayload = availableSlotsResponse.data;
       const availableRawSlots = Array.isArray(availablePayload)
         ? availablePayload
-        : availablePayload.content ||
-          availablePayload.data ||
-          availablePayload.slots ||
+        : availablePayload?.content ||
+          availablePayload?.data ||
+          availablePayload?.slots ||
           [];
 
       const mappedSlots = availableRawSlots
@@ -828,17 +887,22 @@ function Booking() {
           (slot) => String(slot.id) === String(prev.slotId)
         );
 
+        if (selectedStillExists || !prev.slotId) {
+          return prev;
+        }
+
         return {
           ...prev,
-          slotId: selectedStillExists ? prev.slotId : ""
+          slotId: ""
         };
       });
     } catch (error) {
       console.error("Failed to load available slots:", error);
-      setAvailableSlots([]);
       setSlotsError("Không thể tải danh sách slot còn trống. Vui lòng thử lại.");
     } finally {
-      setSlotsLoading(false);
+      if (!silent) {
+        setSlotsLoading(false);
+      }
     }
   };
 
@@ -847,38 +911,71 @@ function Booking() {
   }, [currentUserId]);
 
   useEffect(() => {
-    if (!pendingBooking?.paymentExpiredAt) {
+    const paymentExpiredAt = pendingBooking?.paymentExpiredAt;
+
+    if (!paymentExpiredAt) {
       setPendingRemainingSeconds(0);
+      pendingExpiryHandledRef.current = false;
       return undefined;
     }
 
-    const updateCountdown = () => {
-      const remaining = getRemainingSeconds(
-        pendingBooking.paymentExpiredAt
-      );
+    pendingExpiryHandledRef.current = false;
+    let refreshTimeoutId = null;
 
+    const updateCountdown = () => {
+      const remaining = getRemainingSeconds(paymentExpiredAt);
       setPendingRemainingSeconds(remaining);
 
-      if (remaining <= 0) {
-        window.setTimeout(async () => {
+      if (remaining <= 0 && !pendingExpiryHandledRef.current) {
+        pendingExpiryHandledRef.current = true;
+
+        refreshTimeoutId = window.setTimeout(async () => {
           await loadPendingPayment();
-          await loadAvailableSlots(formData.vehicleTypeId);
+          await loadAvailableSlots(formData.vehicleTypeId, { silent: true });
         }, 6000);
       }
     };
 
     updateCountdown();
+    const intervalId = window.setInterval(updateCountdown, 1000);
 
-    const intervalId = window.setInterval(
-      updateCountdown,
-      1000
-    );
+    return () => {
+      window.clearInterval(intervalId);
 
-    return () => window.clearInterval(intervalId);
+      if (refreshTimeoutId) {
+        window.clearTimeout(refreshTimeoutId);
+      }
+    };
   }, [
     pendingBooking?.id,
     pendingBooking?.paymentExpiredAt,
     formData.vehicleTypeId
+  ]);
+
+  useEffect(() => {
+    const paymentExpiredAt = successModal.data?.paymentExpiredAt;
+
+    if (
+      !successModal.show ||
+      !paymentExpiredAt ||
+      bookingPaymentStatus === "PAID"
+    ) {
+      setModalRemainingSeconds(0);
+      return undefined;
+    }
+
+    const updateModalCountdown = () => {
+      setModalRemainingSeconds(getRemainingSeconds(paymentExpiredAt));
+    };
+
+    updateModalCountdown();
+    const intervalId = window.setInterval(updateModalCountdown, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    successModal.show,
+    successModal.data?.paymentExpiredAt,
+    bookingPaymentStatus
   ]);
 
   useEffect(() => {
@@ -1152,10 +1249,16 @@ function Booking() {
     let stopped = false;
 
     const checkPayment = async () => {
+      if (stopped || paymentPollingRef.current) {
+        return;
+      }
+
+      paymentPollingRef.current = true;
+
       try {
         const response = await axiosClient.get(
-        `/bookings/my-history/${bookingId}`
-      );
+          `/bookings/my-history/${bookingId}`
+        );
         const booking = unwrapApiData(response);
 
         if (stopped) {
@@ -1174,6 +1277,8 @@ function Booking() {
           setBookingPaymentStatus("PENDING");
           setBookingPaymentMessage("Đang chờ xác nhận thanh toán từ PayOS...");
         }
+      } finally {
+        paymentPollingRef.current = false;
       }
     };
 
@@ -1183,6 +1288,7 @@ function Booking() {
 
     return () => {
       stopped = true;
+      paymentPollingRef.current = false;
       window.clearInterval(intervalId);
     };
   }, [
@@ -1197,6 +1303,21 @@ function Booking() {
 
     if (!currentUserId) {
       alert("Không tìm thấy userId. Vui lòng đăng nhập lại.");
+      return;
+    }
+
+    /*
+     * Không cho tạo booking mới trong lúc hệ thống đang kiểm tra
+     * hoặc khi người dùng vẫn còn một booking chờ thanh toán.
+     * Người dùng phải tiếp tục thanh toán hoặc hủy booking cũ trước.
+     */
+    if (pendingLoading) {
+      alert("Hệ thống đang kiểm tra giao dịch chờ thanh toán. Vui lòng đợi trong giây lát.");
+      return;
+    }
+
+    if (pendingBooking) {
+      alert("Bạn đang có một booking chờ thanh toán. Vui lòng tiếp tục thanh toán hoặc hủy booking đó trước khi tạo booking mới.");
       return;
     }
 
@@ -1269,6 +1390,10 @@ function Booking() {
 
       const paymentData = unwrapApiData(paymentResponse);
       const paymentQrSrc = getPaymentQrImageSrc(paymentData?.qrCode);
+      const paymentExpiredAt =
+        bookingData?.paymentExpiredAt ||
+        paymentData?.paymentExpiredAt ||
+        new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
       setBookingPaymentStatus("PENDING");
       setBookingPaymentMessage("Đang chờ khách quét QR và chuyển khoản...");
@@ -1295,10 +1420,7 @@ function Booking() {
             formData.endDate,
             formData.endTime
           ),
-          paymentExpiredAt:
-            bookingData?.paymentExpiredAt ||
-            paymentData?.paymentExpiredAt ||
-            null,
+          paymentExpiredAt,
           pricePerHour: currentRatePerHour,
           amount: paymentData?.amount || totalEstimated,
           currency: paymentData?.currency || "VND",
@@ -1325,19 +1447,12 @@ function Booking() {
         endTime: payload.endTime,
         status: "PENDING_PAYMENT",
         paymentStatus: "PENDING",
-        paymentExpiredAt:
-          bookingData?.paymentExpiredAt ||
-          paymentData?.paymentExpiredAt ||
-          new Date(Date.now() + 10 * 60 * 1000).toISOString()
+        paymentExpiredAt
       });
 
-      setPendingRemainingSeconds(
-        getRemainingSeconds(
-          bookingData?.paymentExpiredAt ||
-            paymentData?.paymentExpiredAt ||
-            new Date(Date.now() + 10 * 60 * 1000).toISOString()
-        )
-      );
+      const initialRemainingSeconds = getRemainingSeconds(paymentExpiredAt);
+      setPendingRemainingSeconds(initialRemainingSeconds);
+      setModalRemainingSeconds(initialRemainingSeconds);
     } catch (error) {
       console.error("Create booking or PayOS payment failed:", error);
 
@@ -1407,11 +1522,17 @@ function Booking() {
       });
 
       setSuccessModal({ show: false, data: null });
+      setPendingBooking((current) => {
+        const currentId = current?.id || current?.bookingId;
+        return String(currentId) === String(bookingId) ? null : current;
+      });
+      setPendingRemainingSeconds(0);
+      setModalRemainingSeconds(0);
       setBookingPaymentStatus("IDLE");
       setBookingPaymentMessage("");
       resetBookingForm();
 
-      await loadAvailableSlots(formData.vehicleTypeId);
+      await loadAvailableSlots(formData.vehicleTypeId, { silent: true });
     } catch (error) {
       console.error("Cancel booking failed:", error);
 
@@ -1486,57 +1607,6 @@ function Booking() {
     });
   };
 
-  const handleCancelPendingCard = async () => {
-    if (!pendingBooking?.id || isCancellingPendingCard) {
-      return;
-    }
-
-    const shouldCancel = window.confirm(
-      "Bạn có chắc muốn hủy giao dịch đang dang dở này không?"
-    );
-
-    if (!shouldCancel) {
-      return;
-    }
-
-    try {
-      setIsCancellingPendingCard(true);
-
-      await axiosClient.put(
-        `/bookings/my-history/${pendingBooking.id}/cancel`
-      );
-
-      setPendingBooking(null);
-      setPendingRemainingSeconds(0);
-
-      setPaymentNotice({
-        show: true,
-        type: "cancel",
-        message: "Giao dịch đang dang dở đã được hủy."
-      });
-
-      await loadAvailableSlots(formData.vehicleTypeId);
-    } catch (error) {
-      console.error(
-        "Cancel pending payment card failed:",
-        error
-      );
-
-      setPaymentNotice({
-        show: true,
-        type: "error",
-        message:
-          error.response?.data?.message ||
-          error.response?.data ||
-          "Không thể hủy giao dịch đang dang dở."
-      });
-
-      await loadPendingPayment();
-    } finally {
-      setIsCancellingPendingCard(false);
-    }
-  };
-
   const handleModalClose = () => {
     if (bookingPaymentStatus === "PAID") {
       closeSuccessModal();
@@ -1544,10 +1614,15 @@ function Booking() {
     }
 
     /*
-     * Khi booking chưa thanh toán, đóng modal cũng phải đi qua
-     * quy trình hủy để không tạo booking PENDING bị bỏ quên.
+     * Nút X chỉ đóng cửa sổ QR. Booking vẫn ở trạng thái chờ thanh toán
+     * và tiếp tục xuất hiện trong thẻ bên dưới để người dùng mở lại sau.
+     * Chỉ nút "Hủy Booking" mới gọi API hủy booking.
      */
-    handleCancelBooking();
+    setSuccessModal({ show: false, data: null });
+    setBookingPaymentStatus("IDLE");
+    setBookingPaymentMessage("");
+    setIsCancelling(false);
+    resetBookingForm();
   };
 
   return (
@@ -2085,16 +2160,16 @@ function Booking() {
               font-size: 1rem;
             }
 
-            .pending-payment-card {
+            .pending-booking-section {
               margin-top: 1.5rem;
               background: var(--bg-card);
-              border: 1px solid rgba(245, 158, 11, 0.45);
+              border: 1px solid var(--border-color);
               border-radius: 0.85rem;
               padding: 1.25rem 1.5rem;
               box-shadow: var(--shadow-card);
             }
 
-            .pending-payment-header {
+            .pending-booking-section-header {
               display: flex;
               justify-content: space-between;
               align-items: flex-start;
@@ -2103,90 +2178,169 @@ function Booking() {
               flex-wrap: wrap;
             }
 
-            .pending-payment-title {
+            .pending-booking-section-title {
               margin: 0;
               color: var(--text-main);
               font-size: 1rem;
               font-weight: 800;
             }
 
-            .pending-payment-subtitle {
+            .pending-booking-section-subtitle {
               margin: 0.35rem 0 0;
               color: var(--text-muted);
               font-size: 0.8rem;
               line-height: 1.45;
             }
 
-            .pending-payment-countdown {
-              min-width: 104px;
+            .pending-booking-loading,
+            .pending-booking-empty {
+              min-height: 76px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              border: 1px dashed var(--border-color);
+              border-radius: 0.75rem;
+              color: var(--text-muted);
+              font-size: 0.82rem;
               text-align: center;
-              padding: 0.55rem 0.8rem;
+              padding: 1rem;
+              box-sizing: border-box;
+            }
+
+            .pending-booking-row {
+              width: 100%;
+              border: 1px solid rgba(245, 158, 11, 0.45);
+              border-radius: 0.85rem;
+              background: var(--bg-card-soft);
+              color: inherit;
+              padding: 1rem 1.1rem;
+              cursor: pointer;
+              display: grid;
+              grid-template-columns: minmax(170px, 1.25fr) minmax(130px, 1fr) minmax(105px, 0.75fr) minmax(135px, 0.9fr) minmax(110px, 0.7fr) auto;
+              gap: 1rem;
+              align-items: center;
+              text-align: left;
+              box-sizing: border-box;
+              transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+            }
+
+            .pending-booking-row:hover,
+            .pending-booking-row:focus-visible {
+              transform: translateY(-1px);
+              border-color: #f59e0b;
+              background: rgba(245, 158, 11, 0.08);
+              box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+              outline: none;
+            }
+
+            body:not(.light-mode) .pending-booking-row:hover,
+            body:not(.light-mode) .pending-booking-row:focus-visible {
+              box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
+            }
+
+            .pending-booking-primary {
+              min-width: 0;
+            }
+
+            .pending-booking-code-line {
+              display: flex;
+              align-items: center;
+              gap: 0.55rem;
+              flex-wrap: wrap;
+            }
+
+            .pending-booking-code {
+              color: var(--text-main);
+              font-size: 0.96rem;
+              font-weight: 900;
+              overflow-wrap: anywhere;
+            }
+
+            .pending-booking-status {
+              display: inline-flex;
+              align-items: center;
+              min-height: 24px;
+              padding: 0 0.55rem;
+              border-radius: 999px;
+              background: rgba(245, 158, 11, 0.14);
+              border: 1px solid rgba(245, 158, 11, 0.28);
+              color: #f59e0b;
+              font-size: 0.68rem;
+              font-weight: 900;
+              text-transform: uppercase;
+              white-space: nowrap;
+            }
+
+            .pending-booking-created {
+              display: block;
+              margin-top: 0.35rem;
+              color: var(--text-muted);
+              font-size: 0.72rem;
+              line-height: 1.35;
+            }
+
+            .pending-booking-cell {
+              min-width: 0;
+            }
+
+            .pending-booking-cell-label {
+              display: block;
+              color: var(--text-muted);
+              font-size: 0.65rem;
+              font-weight: 800;
+              text-transform: uppercase;
+              margin-bottom: 0.3rem;
+            }
+
+            .pending-booking-cell-value {
+              display: block;
+              color: var(--text-main);
+              font-size: 0.84rem;
+              font-weight: 850;
+              line-height: 1.35;
+              overflow-wrap: anywhere;
+            }
+
+            .pending-booking-cell-subvalue {
+              display: block;
+              margin-top: 0.18rem;
+              color: var(--text-muted);
+              font-size: 0.7rem;
+              line-height: 1.3;
+            }
+
+            .pending-booking-countdown {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              min-width: 86px;
+              min-height: 38px;
+              padding: 0 0.7rem;
               border-radius: 0.65rem;
               background: rgba(245, 158, 11, 0.12);
               border: 1px solid rgba(245, 158, 11, 0.32);
               color: #f59e0b;
-              font-size: 1.05rem;
+              font-size: 0.92rem;
               font-weight: 900;
-              letter-spacing: 0.06em;
+              letter-spacing: 0.05em;
+              box-sizing: border-box;
             }
 
-            .pending-payment-grid {
-              display: grid;
-              grid-template-columns: repeat(5, minmax(0, 1fr));
-              gap: 0.75rem;
-            }
-
-            .pending-payment-item {
-              background: var(--bg-card-soft);
-              border: 1px solid var(--border-color);
-              border-radius: 0.65rem;
-              padding: 0.8rem;
-              min-width: 0;
-            }
-
-            .pending-payment-item-label {
-              display: block;
-              color: var(--text-muted);
-              font-size: 0.67rem;
-              font-weight: 800;
-              text-transform: uppercase;
-              margin-bottom: 0.35rem;
-            }
-
-            .pending-payment-item-value {
-              color: var(--text-main);
-              font-size: 0.84rem;
-              font-weight: 800;
-              overflow-wrap: anywhere;
-            }
-
-            .pending-payment-actions {
-              display: flex;
-              justify-content: flex-end;
-              gap: 0.75rem;
-              margin-top: 1rem;
-              flex-wrap: wrap;
-            }
-
-            .pending-payment-button {
-              min-height: 40px;
-              padding: 0 1rem;
-              border-radius: 0.6rem;
-              font-size: 0.82rem;
-              font-weight: 800;
-              cursor: pointer;
-            }
-
-            .pending-payment-continue {
-              border: none;
-              background: var(--primary-blue);
-              color: #ffffff;
-            }
-
-            .pending-payment-cancel {
-              border: 1px solid rgba(239, 68, 68, 0.4);
+            .pending-booking-countdown.expired {
               background: rgba(239, 68, 68, 0.1);
-              color: var(--danger-red);
+              border-color: rgba(239, 68, 68, 0.3);
+              color: #ef4444;
+            }
+
+            .pending-booking-open {
+              display: inline-flex;
+              align-items: center;
+              justify-content: flex-end;
+              gap: 0.45rem;
+              color: var(--primary-blue);
+              font-size: 0.78rem;
+              font-weight: 900;
+              white-space: nowrap;
             }
 
             /* =======================================================
@@ -2229,6 +2383,16 @@ function Booking() {
               }
             }
 
+            @media (max-width: 1280px) {
+              .pending-booking-row {
+                grid-template-columns: minmax(170px, 1.3fr) minmax(125px, 1fr) minmax(95px, 0.7fr) minmax(130px, 1fr) minmax(100px, 0.75fr) auto;
+              }
+
+              .pending-booking-open {
+                display: none;
+              }
+            }
+
             @media (max-width: 1024px) {
               .booking-grid-layout {
                 grid-template-columns: 1fr;
@@ -2238,16 +2402,34 @@ function Booking() {
                 position: static;
               }
 
-              .pending-payment-grid {
+              .pending-booking-row {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
+              }
+
+              .pending-booking-primary,
+              .pending-booking-countdown {
+                grid-column: 1 / -1;
+              }
+
+              .pending-booking-countdown {
+                width: 100%;
               }
             }
 
             @media (max-width: 768px) {
               .booking-inner-form,
-              .vehicle-selector-grid,
-              .pending-payment-grid {
+              .vehicle-selector-grid {
                 grid-template-columns: 1fr;
+              }
+
+              .pending-booking-row {
+                grid-template-columns: 1fr;
+                gap: 0.8rem;
+              }
+
+              .pending-booking-primary,
+              .pending-booking-countdown {
+                grid-column: auto;
               }
 
               .time-section-header {
@@ -2255,13 +2437,6 @@ function Booking() {
                 align-items: flex-start;
               }
 
-              .pending-payment-actions {
-                flex-direction: column;
-              }
-
-              .pending-payment-button {
-                width: 100%;
-              }
             }
           `}</style>
 
@@ -2539,151 +2714,145 @@ function Booking() {
               <button
                 type="button"
                 className="submit-action-button"
-                disabled={isSubmitting || slotsLoading || Boolean(timeError)}
+                disabled={
+                  isSubmitting ||
+                  slotsLoading ||
+                  pendingLoading ||
+                  Boolean(timeError) ||
+                  Boolean(pendingBooking)
+                }
                 onClick={handleSubmit}
               >
-                <span>{isSubmitting ? "Creating..." : "Confirm Booking"}</span>
-                <ArrowRight size={16} />
+                <span>
+                  {pendingLoading
+                    ? "Checking Pending Booking..."
+                    : pendingBooking
+                      ? "Complete Pending Booking First"
+                      : isSubmitting
+                        ? "Creating..."
+                        : "Confirm Booking"}
+                </span>
+
+                {!pendingLoading && !pendingBooking && !isSubmitting && (
+                  <ArrowRight size={16} />
+                )}
               </button>
-              <p className="booking-note-text">After booking is created, the system will show the PayOS QR payment code.</p>
+
+              <p className="booking-note-text">
+                {pendingLoading
+                  ? "The system is checking whether you have a booking waiting for payment."
+                  : pendingBooking
+                    ? "You already have a booking waiting for payment. Continue or cancel it below before creating another booking."
+                    : "After booking is created, the system will show the PayOS QR payment code."}
+              </p>
             </div>
           </div>
 
-          <div className="pending-payment-card">
-            <div className="pending-payment-header">
+          <section className="pending-booking-section">
+            <div className="pending-booking-section-header">
               <div>
-                <h3 className="pending-payment-title">
-                  Giao dịch đang dang dở
+                <h3 className="pending-booking-section-title">
+                  Booking đang dang dở
                 </h3>
-                <p className="pending-payment-subtitle">
-                  Giao dịch chờ thanh toán được giữ trong 10 phút. Sau thời
-                  gian này, booking sẽ tự động chuyển sang Cancelled và
-                  payment sẽ chuyển sang Expired.
+                <p className="pending-booking-section-subtitle">
+                  Booking chưa thanh toán sẽ xuất hiện tại đây sau khi bạn tải
+                  lại trang. Nhấn vào booking để tiếp tục thanh toán hoặc hủy booking.
                 </p>
               </div>
-
-              {pendingBooking && (
-                <div className="pending-payment-countdown">
-                  {formatCountdown(pendingRemainingSeconds)}
-                </div>
-              )}
             </div>
 
             {pendingLoading ? (
-              <div className="field-helper-text">
-                Đang kiểm tra giao dịch chờ thanh toán...
+              <div className="pending-booking-loading">
+                Đang kiểm tra booking chờ thanh toán...
               </div>
             ) : !pendingBooking ? (
-              <div className="field-helper-text">
-                Hiện không có giao dịch đang dang dở.
+              <div className="pending-booking-empty">
+                Hiện không có booking nào đang chờ thanh toán.
               </div>
             ) : (
-              <>
-                <div className="pending-payment-grid">
-                  <div className="pending-payment-item">
-                    <span className="pending-payment-item-label">
-                      Booking
-                    </span>
-                    <span className="pending-payment-item-value">
+              <button
+                type="button"
+                className="pending-booking-row"
+                onClick={handleContinuePendingPayment}
+                aria-label="Mở booking đang chờ thanh toán để tiếp tục hoặc hủy"
+              >
+                <div className="pending-booking-primary">
+                  <div className="pending-booking-code-line">
+                    <span className="pending-booking-code">
                       {pendingBooking.bookingCode ||
-                        `BK-${String(pendingBooking.id).padStart(6, "0")}`}
+                        `BK-${String(
+                          pendingBooking.id || pendingBooking.bookingId || "-"
+                        ).padStart(6, "0")}`}
+                    </span>
+
+                    <span className="pending-booking-status">
+                      Pending Payment
                     </span>
                   </div>
 
-                  <div className="pending-payment-item">
-                    <span className="pending-payment-item-label">
-                      Biển số
-                    </span>
-                    <span className="pending-payment-item-value">
-                      {pendingBooking.licensePlate || "-"}
-                    </span>
-                  </div>
+                  <span className="pending-booking-created">
+                    Hết hạn: {formatApiDateTime(pendingBooking.paymentExpiredAt)}
+                  </span>
+                </div>
 
-                  <div className="pending-payment-item">
-                    <span className="pending-payment-item-label">
-                      Slot
-                    </span>
-                    <span className="pending-payment-item-value">
-                      {pendingBooking.slotCode || "-"}
-                    </span>
-                  </div>
-
-                  <div className="pending-payment-item">
-                    <span className="pending-payment-item-label">
-                      Trạng thái
-                    </span>
-                    <span className="pending-payment-item-value">
-                      {pendingBooking.status} /{" "}
-                      {pendingBooking.paymentStatus}
-                    </span>
-                  </div>
-
-                  <div className="pending-payment-item">
-                    <span className="pending-payment-item-label">
-                      Số tiền
-                    </span>
-                    <span className="pending-payment-item-value">
-                      {formatVnd(pendingBooking.paymentAmount)}
-                    </span>
-                  </div>
-
-                  <div className="pending-payment-item">
-                    <span className="pending-payment-item-label">
-                      Bắt đầu
-                    </span>
-                    <span className="pending-payment-item-value">
-                      {formatApiDateTime(pendingBooking.startTime)}
-                    </span>
-                  </div>
-
-                  <div className="pending-payment-item">
-                    <span className="pending-payment-item-label">
-                      Kết thúc
-                    </span>
-                    <span className="pending-payment-item-value">
-                      {formatApiDateTime(pendingBooking.endTime)}
-                    </span>
-                  </div>
-
-                  <div className="pending-payment-item">
-                    <span className="pending-payment-item-label">
-                      Hết hạn thanh toán
-                    </span>
-                    <span className="pending-payment-item-value">
-                      {formatApiDateTime(
-                        pendingBooking.paymentExpiredAt
+                <div className="pending-booking-cell">
+                  <span className="pending-booking-cell-label">Vehicle</span>
+                  <span className="pending-booking-cell-value">
+                    {pendingBooking.licensePlate || "-"}
+                  </span>
+                  <span className="pending-booking-cell-subvalue">
+                    {pendingBooking.vehicleTypeName ||
+                      getDisplayVehicleType(
+                        normalizeVehicleType(pendingBooking.vehicleType)
                       )}
-                    </span>
-                  </div>
+                  </span>
                 </div>
 
-                <div className="pending-payment-actions">
-                  <button
-                    type="button"
-                    className="pending-payment-button pending-payment-cancel"
-                    onClick={handleCancelPendingCard}
-                    disabled={isCancellingPendingCard}
-                  >
-                    {isCancellingPendingCard
-                      ? "Đang hủy..."
-                      : "Hủy booking"}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="pending-payment-button pending-payment-continue"
-                    onClick={handleContinuePendingPayment}
-                    disabled={
-                      pendingRemainingSeconds <= 0 ||
-                      !pendingBooking.qrCode
-                    }
-                  >
-                    Tiếp tục thanh toán
-                  </button>
+                <div className="pending-booking-cell">
+                  <span className="pending-booking-cell-label">Parking</span>
+                  <span className="pending-booking-cell-value">
+                    {pendingBooking.slotCode || `Slot ${pendingBooking.slotId || "-"}`}
+                  </span>
                 </div>
-              </>
+
+                <div className="pending-booking-cell">
+                  <span className="pending-booking-cell-label">
+                    Reservation time
+                  </span>
+                  <span className="pending-booking-cell-value">
+                    {formatApiDateTime(pendingBooking.startTime)}
+                  </span>
+                  <span className="pending-booking-cell-subvalue">
+                    To {formatApiDateTime(pendingBooking.endTime)}
+                  </span>
+                </div>
+
+                <div className="pending-booking-cell">
+                  <span className="pending-booking-cell-label">Payment</span>
+                  <span className="pending-booking-cell-value">
+                    {formatVnd(
+                      pendingBooking.paymentAmount || pendingBooking.amount
+                    )}
+                  </span>
+                </div>
+
+                <div
+                  className={`pending-booking-countdown ${
+                    pendingRemainingSeconds <= 0 ? "expired" : ""
+                  }`}
+                >
+                  {pendingRemainingSeconds > 0
+                    ? formatCountdown(pendingRemainingSeconds)
+                    : "Expired"}
+                </div>
+
+                <span className="pending-booking-open">
+                  Xem và xử lý
+                  <ArrowRight size={16} />
+                </span>
+              </button>
             )}
-          </div>
+          </section>
         </div>
 
         {/* ==========================================
@@ -2885,12 +3054,9 @@ function Booking() {
                           fontWeight: 800
                         }}
                       >
-                        Còn lại:{" "}
-                        {formatCountdown(
-                          getRemainingSeconds(
-                            successModal.data.paymentExpiredAt
-                          )
-                        )}
+                        {modalRemainingSeconds > 0
+                          ? `Còn lại: ${formatCountdown(modalRemainingSeconds)}`
+                          : "Mã QR đã hết hạn"}
                       </div>
                     )}
 

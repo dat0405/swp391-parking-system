@@ -1,18 +1,49 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://localhost:8080/api";
+/*
+ * VITE_API_BASE_URL chỉ chứa domain backend, ví dụ:
+ *
+ * Local:
+ * http://localhost:8080
+ *
+ * Production:
+ * https://swp391-parking-backend-2005-budsfhhce2d6gte8.southeastasia-01.azurewebsites.net
+ */
+const BACKEND_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+
+/*
+ * Xóa dấu "/" thừa ở cuối URL rồi thêm "/api".
+ *
+ * Ví dụ:
+ * http://localhost:8080
+ * trở thành:
+ * http://localhost:8080/api
+ */
+const API_BASE_URL = `${BACKEND_URL.replace(/\/+$/, "")}/api`;
 
 const axiosClient = axios.create({
   baseURL: API_BASE_URL,
+
+  /*
+   * Bắt buộc để trình duyệt gửi và nhận HttpOnly cookie
+   * giữa frontend Cloudflare và backend Azure.
+   */
   withCredentials: true,
+
   headers: {
     "Content-Type": "application/json",
+    Accept: "application/json",
   },
 });
 
 let isRefreshing = false;
 let failedQueue = [];
 
+/*
+ * Những API đăng nhập công khai không được tự động gọi refresh token
+ * khi nhận lỗi 401.
+ */
 const isAuthUrl = (url = "") => {
   return (
     url.includes("/auth/login") ||
@@ -24,28 +55,36 @@ const isAuthUrl = (url = "") => {
   );
 };
 
-const isRefreshUrl = (url = "") => url.includes("/auth/refresh-token");
-const isLogoutUrl = (url = "") => url.includes("/auth/logout");
+const isRefreshUrl = (url = "") => {
+  return url.includes("/auth/refresh-token");
+};
 
+const isLogoutUrl = (url = "") => {
+  return url.includes("/auth/logout");
+};
+
+/*
+ * Giải quyết các request đang chờ trong lúc refresh token.
+ */
 const processQueue = (error = null) => {
-  failedQueue.forEach((request) => {
+  failedQueue.forEach(({ resolve, reject }) => {
     if (error) {
-      request.reject(error);
+      reject(error);
     } else {
-      request.resolve();
+      resolve();
     }
   });
 
   failedQueue = [];
 };
 
+/*
+ * Xóa dữ liệu đăng nhập cũ phía frontend và đưa người dùng về Login.
+ *
+ * access_token và refresh_token là HttpOnly cookies nên JavaScript
+ * không thể và cũng không nên đọc trực tiếp.
+ */
 const clearAuthAndRedirect = () => {
-  /*
-   * Cookie-only auth:
-   * - access_token and refresh_token are HttpOnly cookies from backend.
-   * - JavaScript cannot and should not read those token values.
-   * - These localStorage removals are cleanup for old versions of the app.
-   */
   localStorage.removeItem("token");
   localStorage.removeItem("refreshToken");
   localStorage.removeItem("user");
@@ -61,12 +100,14 @@ const clearAuthAndRedirect = () => {
   }
 };
 
+/*
+ * Request interceptor.
+ */
 axiosClient.interceptors.request.use(
   (config) => {
     /*
-     * Cookie-only auth:
-     * Do NOT attach Authorization: Bearer from localStorage.
-     * Browser will automatically send HttpOnly cookies because withCredentials=true.
+     * Hệ thống sử dụng cookie-only authentication.
+     * Không lấy token cũ từ localStorage để thêm Bearer token.
      */
     if (config.headers?.Authorization) {
       delete config.headers.Authorization;
@@ -74,15 +115,28 @@ axiosClient.interceptors.request.use(
 
     return config;
   },
-  (error) => Promise.reject(error)
+
+  (error) => {
+    return Promise.reject(error);
+  }
 );
 
+/*
+ * Response interceptor.
+ */
 axiosClient.interceptors.response.use(
   (response) => response,
 
   async (error) => {
     const originalRequest = error.config;
 
+    /*
+     * Không có response thường là:
+     * - mất mạng;
+     * - backend không chạy;
+     * - DNS;
+     * - trình duyệt chặn request.
+     */
     if (!error.response || !originalRequest) {
       return Promise.reject(error);
     }
@@ -90,6 +144,14 @@ axiosClient.interceptors.response.use(
     const status = error.response.status;
     const requestUrl = originalRequest.url || "";
 
+    /*
+     * Chỉ thử refresh khi:
+     * - API trả 401;
+     * - request chưa retry;
+     * - không phải refresh API;
+     * - không phải logout API;
+     * - không phải API đăng nhập công khai.
+     */
     const shouldTryRefresh =
       status === 401 &&
       !originalRequest._retry &&
@@ -103,9 +165,16 @@ axiosClient.interceptors.response.use(
 
     originalRequest._retry = true;
 
+    /*
+     * Nếu một request khác đang refresh token,
+     * request hiện tại sẽ đợi kết quả thay vì refresh thêm lần nữa.
+     */
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
-        failedQueue.push({ resolve, reject });
+        failedQueue.push({
+          resolve,
+          reject,
+        });
       })
         .then(() => axiosClient(originalRequest))
         .catch((queueError) => Promise.reject(queueError));
@@ -115,15 +184,16 @@ axiosClient.interceptors.response.use(
 
     try {
       /*
-       * Backend reads refresh_token from HttpOnly cookie:
-       * @CookieValue(name = "refresh_token")
-       *
-       * No request body is needed here.
+       * Backend đọc refresh_token từ HttpOnly cookie.
+       * Không cần gửi refresh token trong request body.
        */
       await axiosClient.post("/auth/refresh-token");
 
-      processQueue(null);
+      processQueue();
 
+      /*
+       * Gửi lại request ban đầu sau khi refresh thành công.
+       */
       return axiosClient(originalRequest);
     } catch (refreshError) {
       processQueue(refreshError);
