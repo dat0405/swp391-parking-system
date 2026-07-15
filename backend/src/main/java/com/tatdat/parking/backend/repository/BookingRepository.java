@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -87,7 +88,7 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
             ORDER BY b.paymentExpiredAt ASC
             """)
     List<Booking> findExpiredPendingPaymentBookings(
-            @Param("now") LocalDateTime now
+            @Param("now") Instant now
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -101,22 +102,29 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
             ORDER BY b.paymentExpiredAt ASC
             """)
     List<Booking> findExpiredPendingPaymentBookingsForUpdate(
-            @Param("now") LocalDateTime now
+            @Param("now") Instant now
     );
 
+    /*
+     * A newly-created booking may briefly have a null paymentExpiredAt until
+     * PayOS returns its QR/link. It is still considered an active pending
+     * booking so the same user cannot create duplicates during that window.
+     */
     @Query("""
             SELECT b
             FROM Booking b
             WHERE b.user.id = :userId
               AND b.status = 'PENDING_PAYMENT'
               AND b.paymentStatus = 'PENDING'
-              AND b.paymentExpiredAt IS NOT NULL
-              AND b.paymentExpiredAt > :now
+              AND (
+                    b.paymentExpiredAt IS NULL
+                    OR b.paymentExpiredAt > :now
+              )
             ORDER BY b.bookingTime DESC
             """)
     List<Booking> findActivePendingPaymentsByUser(
             @Param("userId") Integer userId,
-            @Param("now") LocalDateTime now
+            @Param("now") Instant now
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -141,7 +149,7 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
 
     /*
      * Backward-compatible bulk method for old code.
-     * New scheduler logic uses row locking and saveAll instead.
+     * The current scheduler uses row locking and saveAll instead.
      */
     @Modifying(
             clearAutomatically = true,
@@ -151,14 +159,14 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
             UPDATE Booking b
             SET b.status = 'CANCELLED',
                 b.paymentStatus = 'EXPIRED',
-                b.cancelledAt = :now
+                b.cancelledAt = :cancelledAt
             WHERE b.status = 'PENDING_PAYMENT'
               AND b.paymentStatus = 'PENDING'
               AND b.paymentExpiredAt IS NOT NULL
-              AND b.paymentExpiredAt <= :now
+              AND b.paymentExpiredAt <= :expiresNow
             """)
     int expirePendingPaymentBookings(
-            @Param("now") LocalDateTime now
+            @Param("expiresNow") Instant expiresNow,
+            @Param("cancelledAt") LocalDateTime cancelledAt
     );
-
 }

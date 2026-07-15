@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 
@@ -44,7 +45,8 @@ public class BookingHistoryResponse {
 
     private String status;
 
-    private LocalDateTime paymentExpiredAt;
+    private Instant paymentCreatedAt;
+    private Instant paymentExpiredAt;
     private LocalDateTime paidAt;
     private LocalDateTime cancelledAt;
     private LocalDateTime checkedInAt;
@@ -106,6 +108,7 @@ public class BookingHistoryResponse {
                 .endTime(booking.getEndTime())
                 .durationMinutes(durationMinutes)
                 .status(booking.getStatus())
+                .paymentCreatedAt(booking.getPaymentCreatedAt())
                 .paymentExpiredAt(booking.getPaymentExpiredAt())
                 .paidAt(booking.getPaidAt())
                 .cancelledAt(booking.getCancelledAt())

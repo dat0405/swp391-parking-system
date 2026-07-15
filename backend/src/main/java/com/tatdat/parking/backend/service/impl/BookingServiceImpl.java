@@ -19,6 +19,7 @@ import com.tatdat.parking.backend.repository.VehicleTypeRepository;
 import com.tatdat.parking.backend.service.BookingService;
 import com.tatdat.parking.backend.service.PayOSPaymentLinkManager;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -27,7 +28,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -50,6 +54,9 @@ public class BookingServiceImpl implements BookingService {
     private final UserRepository userRepository;
     private final ParkingSlotRepository parkingSlotRepository;
     private final PayOSPaymentLinkManager payOSPaymentLinkManager;
+
+    @Value("${app.business-time-zone:Asia/Ho_Chi_Minh}")
+    private String businessTimeZone;
 
     @Override
     @Transactional(readOnly = true)
@@ -125,7 +132,7 @@ public class BookingServiceImpl implements BookingService {
     @Transactional
     public Optional<BookingHistoryResponse> getMyPendingPayment() {
         User currentUser = getCurrentAuthenticatedUser();
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
 
         /*
          * Do not wait for the scheduler when the user reloads this page.
@@ -201,7 +208,7 @@ public class BookingServiceImpl implements BookingService {
         booking.setPaymentStatus(
                 Booking.PAYMENT_STATUS_CANCELLED
         );
-        booking.setCancelledAt(LocalDateTime.now());
+        booking.setCancelledAt(getBusinessNow());
 
         releaseReservedSlotIfNeeded(
                 booking.getSlot()
@@ -227,14 +234,15 @@ public class BookingServiceImpl implements BookingService {
          * The owner is always the authenticated user.
          */
         User user = getCurrentAuthenticatedUser();
-        LocalDateTime now = LocalDateTime.now();
+        Instant paymentNow = Instant.now();
+        LocalDateTime businessNow = getBusinessNow();
 
-        expirePendingBookingsInternal(now);
+        expirePendingBookingsInternal(paymentNow);
 
         List<Booking> activePendingPayments =
                 bookingRepository.findActivePendingPaymentsByUser(
                         user.getId(),
-                        now
+                        paymentNow
                 );
 
         if (!activePendingPayments.isEmpty()) {
@@ -292,7 +300,7 @@ public class BookingServiceImpl implements BookingService {
                                                     )
                                             )
                                             .createdAt(
-                                                    LocalDateTime.now()
+                                                    businessNow
                                             )
                                             .build();
 
@@ -337,7 +345,7 @@ public class BookingServiceImpl implements BookingService {
                 .user(user)
                 .vehicle(vehicle)
                 .slot(slot)
-                .bookingTime(now)
+                .bookingTime(businessNow)
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
                 .status(
@@ -347,9 +355,17 @@ public class BookingServiceImpl implements BookingService {
                         Booking.PAYMENT_STATUS_PENDING
                 )
                 .paymentCurrency("VND")
+                /*
+                 * Provisional timeout prevents an orphan PENDING booking if
+                 * the following PayOS request fails. PaymentServiceImpl resets
+                 * both values when it actually starts QR creation, so the user
+                 * still receives a fresh full 10-minute QR window.
+                 */
+                .paymentCreatedAt(paymentNow)
                 .paymentExpiredAt(
-                        now.plusMinutes(
-                                PAYMENT_TIMEOUT_MINUTES
+                        paymentNow.plus(
+                                PAYMENT_TIMEOUT_MINUTES,
+                                ChronoUnit.MINUTES
                         )
                 )
                 .build();
@@ -404,7 +420,7 @@ public class BookingServiceImpl implements BookingService {
                                 vehicle.getLicensePlate()
                         )
                         .color(vehicle.getColor())
-                        .updatedAt(LocalDateTime.now())
+                        .updatedAt(getBusinessNow())
                         .updatedBy(staff.getFullName())
                         .reason(dto.getReason())
                         .build();
@@ -515,13 +531,15 @@ public class BookingServiceImpl implements BookingService {
             );
         }
 
+        Instant paymentNow = Instant.now();
+
         if (booking.getPaymentExpiredAt() != null
-                && !LocalDateTime.now().isBefore(
+                && !paymentNow.isBefore(
                 booking.getPaymentExpiredAt()
         )) {
             expireBookingAsPaymentTimeout(
                     booking,
-                    LocalDateTime.now()
+                    paymentNow
             );
 
             bookingRepository.save(booking);
@@ -564,7 +582,7 @@ public class BookingServiceImpl implements BookingService {
 
         if (booking.getPaidAt() == null) {
             booking.setPaidAt(
-                    LocalDateTime.now()
+                    getBusinessNow()
             );
         }
 
@@ -633,7 +651,7 @@ public class BookingServiceImpl implements BookingService {
         }
 
         booking.setCancelledAt(
-                LocalDateTime.now()
+                getBusinessNow()
         );
 
         releaseReservedSlotIfNeeded(
@@ -652,7 +670,7 @@ public class BookingServiceImpl implements BookingService {
     @Transactional
     public int cancelExpiredPendingPayments() {
         return expirePendingBookingsInternal(
-                LocalDateTime.now()
+                Instant.now()
         );
     }
 
@@ -666,7 +684,7 @@ public class BookingServiceImpl implements BookingService {
     }
 
     private int expirePendingBookingsInternal(
-            LocalDateTime now
+            Instant now
     ) {
         List<Booking> expiredBookings =
                 bookingRepository
@@ -692,7 +710,7 @@ public class BookingServiceImpl implements BookingService {
 
     private void expireBookingAsPaymentTimeout(
             Booking booking,
-            LocalDateTime cancelledAt
+            Instant expiredAt
     ) {
         payOSPaymentLinkManager.cancelPaymentLinkSilently(
                 booking,
@@ -707,7 +725,9 @@ public class BookingServiceImpl implements BookingService {
                 Booking.PAYMENT_STATUS_EXPIRED
         );
 
-        booking.setCancelledAt(cancelledAt);
+        booking.setCancelledAt(
+                toBusinessLocalDateTime(expiredAt)
+        );
 
         /*
          * A pending-payment booking normally does not change the physical
@@ -852,7 +872,7 @@ public class BookingServiceImpl implements BookingService {
         }
 
         if (request.getStartTime()
-                .isBefore(LocalDateTime.now())) {
+                .isBefore(getBusinessNow())) {
 
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -989,7 +1009,7 @@ public class BookingServiceImpl implements BookingService {
 
         if (booking.getPaidAt() == null) {
             booking.setPaidAt(
-                    LocalDateTime.now()
+                    getBusinessNow()
             );
             changed = true;
         }
@@ -1050,6 +1070,23 @@ public class BookingServiceImpl implements BookingService {
             );
             parkingSlotRepository.save(slot);
         }
+    }
+
+    private ZoneId getBusinessZone() {
+        return ZoneId.of(businessTimeZone);
+    }
+
+    private LocalDateTime getBusinessNow() {
+        return LocalDateTime.now(getBusinessZone());
+    }
+
+    private LocalDateTime toBusinessLocalDateTime(Instant instant) {
+        Instant safeInstant = instant == null ? Instant.now() : instant;
+
+        return LocalDateTime.ofInstant(
+                safeInstant,
+                getBusinessZone()
+        );
     }
 
     private String normalizeLicensePlate(

@@ -1,6 +1,12 @@
 package com.tatdat.parking.backend.dto;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.time.Instant;
 
 @Getter
 @Setter
@@ -26,4 +32,8 @@ public class CreatePayOSPaymentResponse {
     private String checkoutUrl;
 
     private String qrCode;
+
+    private Instant paymentCreatedAt;
+
+    private Instant paymentExpiredAt;
 }

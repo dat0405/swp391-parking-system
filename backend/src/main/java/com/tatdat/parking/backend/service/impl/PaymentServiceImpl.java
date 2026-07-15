@@ -4,8 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tatdat.parking.backend.dto.CreateCheckoutPayOSPaymentRequest;
 import com.tatdat.parking.backend.dto.CreatePayOSPaymentResponse;
-import com.tatdat.parking.backend.dto.PayOSWebhookRequest;
 import com.tatdat.parking.backend.dto.PayOSPaymentStatusResponse;
+import com.tatdat.parking.backend.dto.PayOSWebhookRequest;
 import com.tatdat.parking.backend.entity.Booking;
 import com.tatdat.parking.backend.entity.ParkingSlot;
 import com.tatdat.parking.backend.entity.PricingPolicy;
@@ -32,8 +32,10 @@ import vn.payos.model.webhooks.WebhookData;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 
 @Service
@@ -42,6 +44,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     private static final int FALLBACK_PRICE_PER_HOUR = 4000;
     private static final int MINIMUM_PAYMENT_AMOUNT = 1000;
+    private static final int PAYMENT_TIMEOUT_MINUTES = 10;
 
     private static final String SLOT_STATUS_AVAILABLE = "AVAILABLE";
     private static final String SLOT_STATUS_RESERVED = "RESERVED";
@@ -57,9 +60,14 @@ public class PaymentServiceImpl implements PaymentService {
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
+    @Value("${app.business-time-zone:Asia/Ho_Chi_Minh}")
+    private String businessTimeZone;
+
     @Override
     @Transactional
-    public CreatePayOSPaymentResponse createPayOSPayment(Integer bookingId) throws Exception {
+    public CreatePayOSPaymentResponse createPayOSPayment(
+            Integer bookingId
+    ) throws Exception {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -72,6 +80,19 @@ public class PaymentServiceImpl implements PaymentService {
         if (hasExistingPaymentData(booking)) {
             return buildPaymentResponse(booking);
         }
+
+        /*
+         * Thời hạn 10 phút bắt đầu khi backend bắt đầu tạo QR PayOS.
+         * Instant giúp thời gian không phụ thuộc timezone của máy local/Azure.
+         */
+        Instant paymentCreatedAt = Instant.now();
+        Instant paymentExpiredAt = paymentCreatedAt.plus(
+                PAYMENT_TIMEOUT_MINUTES,
+                ChronoUnit.MINUTES
+        );
+
+        booking.setPaymentCreatedAt(paymentCreatedAt);
+        booking.setPaymentExpiredAt(paymentExpiredAt);
 
         Long orderCode = booking.getPaymentOrderCode();
 
@@ -97,20 +118,16 @@ public class PaymentServiceImpl implements PaymentService {
                 .returnUrl(returnUrl)
                 .cancelUrl(cancelUrl);
 
-        /*
-         * payOS supports expiredAt for payment links. The reflection helper
-         * keeps this code compatible with SDK builds where expiredAt uses
-         * Long, long, Integer or int.
-         */
         applyPayOSExpiredAt(
                 paymentRequestBuilder,
-                booking.getPaymentExpiredAt()
+                paymentExpiredAt
         );
 
         CreatePaymentLinkRequest paymentRequest =
                 paymentRequestBuilder.build();
 
-        CreatePaymentLinkResponse paymentResponse = payOS.paymentRequests().create(paymentRequest);
+        CreatePaymentLinkResponse paymentResponse =
+                payOS.paymentRequests().create(paymentRequest);
 
         booking.setPaymentOrderCode(orderCode);
         booking.setPaymentAmount(amount);
@@ -135,12 +152,16 @@ public class PaymentServiceImpl implements PaymentService {
             throw new RuntimeException("Payment request is required");
         }
 
-        if (request.getTicketId() == null || request.getTicketId().trim().isEmpty()) {
+        if (request.getTicketId() == null
+                || request.getTicketId().trim().isEmpty()) {
             throw new RuntimeException("Ticket ID is required");
         }
 
-        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Payment amount must be greater than 0");
+        if (request.getAmount() == null
+                || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException(
+                    "Payment amount must be greater than 0"
+            );
         }
 
         int amount = request.getAmount()
@@ -151,18 +172,21 @@ public class PaymentServiceImpl implements PaymentService {
             amount = MINIMUM_PAYMENT_AMOUNT;
         }
 
-        String ticketId = request.getTicketId().trim().toUpperCase();
-
-        String licensePlate = request.getLicensePlate() == null
-                ? ""
-                : request.getLicensePlate().trim().toUpperCase();
+        String ticketId = request.getTicketId()
+                .trim()
+                .toUpperCase();
 
         Long orderCode = generateCheckoutOrderCode(ticketId);
 
         String description = request.getDescription();
 
         if (description == null || description.trim().isEmpty()) {
-            description = "CHECKOUT" + ticketId.replaceAll("[^A-Z0-9]", "");
+            description =
+                    "CHECKOUT"
+                            + ticketId.replaceAll(
+                            "[^A-Z0-9]",
+                            ""
+                    );
         }
 
         description = description.trim();
@@ -179,15 +203,29 @@ public class PaymentServiceImpl implements PaymentService {
                 + "/check-in-out?payment=cancel&ticketId="
                 + ticketId;
 
-        CreatePaymentLinkRequest paymentRequest = CreatePaymentLinkRequest.builder()
+        Instant paymentCreatedAt = Instant.now();
+        Instant paymentExpiredAt = paymentCreatedAt.plus(
+                PAYMENT_TIMEOUT_MINUTES,
+                ChronoUnit.MINUTES
+        );
+
+        var paymentRequestBuilder = CreatePaymentLinkRequest.builder()
                 .orderCode(orderCode)
                 .amount((long) amount)
                 .description(description)
                 .returnUrl(returnUrl)
-                .cancelUrl(cancelUrl)
-                .build();
+                .cancelUrl(cancelUrl);
 
-        CreatePaymentLinkResponse paymentResponse = payOS.paymentRequests().create(paymentRequest);
+        applyPayOSExpiredAt(
+                paymentRequestBuilder,
+                paymentExpiredAt
+        );
+
+        CreatePaymentLinkRequest paymentRequest =
+                paymentRequestBuilder.build();
+
+        CreatePaymentLinkResponse paymentResponse =
+                payOS.paymentRequests().create(paymentRequest);
 
         return CreatePayOSPaymentResponse.builder()
                 .bookingId(null)
@@ -195,48 +233,35 @@ public class PaymentServiceImpl implements PaymentService {
                 .amount(amount)
                 .currency("VND")
                 .bookingStatus(null)
-                .paymentStatus("PENDING")
+                .paymentStatus(Booking.PAYMENT_STATUS_PENDING)
                 .paymentLinkId(paymentResponse.getPaymentLinkId())
                 .checkoutUrl(paymentResponse.getCheckoutUrl())
                 .qrCode(paymentResponse.getQrCode())
+                .paymentCreatedAt(paymentCreatedAt)
+                .paymentExpiredAt(paymentExpiredAt)
                 .build();
     }
 
     @Override
-    public PayOSPaymentStatusResponse getPayOSPaymentStatus(Long orderCode) throws Exception {
+    public PayOSPaymentStatusResponse getPayOSPaymentStatus(
+            Long orderCode
+    ) throws Exception {
         if (orderCode == null) {
             throw new RuntimeException("Order code is required");
         }
 
-        /*
-         * This payOS SDK version does not expose a typed
-         * getPaymentLinkInformation(...) method.
-         *
-         * Use the generic GET helper from the PayOS client instead.
-         * The payOS API path for checking a payment link is:
-         * GET /v2/payment-requests/{id}
-         */
         Object paymentInfo = payOS.get(
                 "/v2/payment-requests/" + orderCode,
                 Object.class
         );
 
-        Map<String, Object> paymentInfoMap = objectMapper.convertValue(
-                paymentInfo,
-                new TypeReference<Map<String, Object>>() {
-                }
-        );
+        Map<String, Object> paymentInfoMap =
+                objectMapper.convertValue(
+                        paymentInfo,
+                        new TypeReference<Map<String, Object>>() {
+                        }
+                );
 
-        /*
-         * Depending on SDK/API wrapping, response can be:
-         * {
-         *   code, desc, data: { status, amount, paymentLinkId, ... }
-         * }
-         * or directly:
-         * {
-         *   status, amount, paymentLinkId, ...
-         * }
-         */
         Map<String, Object> dataMap = paymentInfoMap;
 
         Object dataObject = paymentInfoMap.get("data");
@@ -252,7 +277,10 @@ public class PaymentServiceImpl implements PaymentService {
         String status = String.valueOf(
                 dataMap.getOrDefault(
                         "status",
-                        paymentInfoMap.getOrDefault("status", "PENDING")
+                        paymentInfoMap.getOrDefault(
+                                "status",
+                                "PENDING"
+                        )
                 )
         );
 
@@ -263,9 +291,12 @@ public class PaymentServiceImpl implements PaymentService {
             amount = number.intValue();
         }
 
-        String paymentLinkId = dataMap.get("paymentLinkId") == null
-                ? null
-                : String.valueOf(dataMap.get("paymentLinkId"));
+        String paymentLinkId =
+                dataMap.get("paymentLinkId") == null
+                        ? null
+                        : String.valueOf(
+                        dataMap.get("paymentLinkId")
+                );
 
         return PayOSPaymentStatusResponse.builder()
                 .orderCode(orderCode)
@@ -277,29 +308,41 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
-    public void handlePayOSWebhook(PayOSWebhookRequest request) throws Exception {
+    public void handlePayOSWebhook(
+            PayOSWebhookRequest request
+    ) throws Exception {
         if (request == null) {
-            System.out.println("PayOS webhook ignored. Request is null.");
+            System.out.println(
+                    "PayOS webhook ignored. Request is null."
+            );
             return;
         }
 
-        Map<String, Object> webhookBody = objectMapper.convertValue(
-                request,
-                new TypeReference<Map<String, Object>>() {
-                }
-        );
+        Map<String, Object> webhookBody =
+                objectMapper.convertValue(
+                        request,
+                        new TypeReference<Map<String, Object>>() {
+                        }
+                );
 
         WebhookData webhookData;
 
         try {
-            webhookData = payOS.webhooks().verify(webhookBody);
+            webhookData =
+                    payOS.webhooks().verify(webhookBody);
         } catch (Exception exception) {
-            System.out.println("PayOS webhook verify failed or test webhook ignored: " + exception.getMessage());
+            System.out.println(
+                    "PayOS webhook verify failed or test webhook ignored: "
+                            + exception.getMessage()
+            );
             return;
         }
 
-        if (webhookData == null || webhookData.getOrderCode() == null) {
-            System.out.println("PayOS webhook ignored. Missing orderCode.");
+        if (webhookData == null
+                || webhookData.getOrderCode() == null) {
+            System.out.println(
+                    "PayOS webhook ignored. Missing orderCode."
+            );
             return;
         }
 
@@ -310,22 +353,37 @@ public class PaymentServiceImpl implements PaymentService {
                 .orElse(null);
 
         if (booking == null) {
-            System.out.println("PayOS webhook ignored. Booking not found for orderCode: " + webhookData.getOrderCode());
+            System.out.println(
+                    "PayOS webhook ignored. Booking not found for orderCode: "
+                            + webhookData.getOrderCode()
+            );
             return;
         }
 
-        String currentBookingStatus = normalizeText(booking.getStatus());
-        String currentPaymentStatus = normalizeText(booking.getPaymentStatus());
+        String currentBookingStatus =
+                normalizeText(booking.getStatus());
 
-        if (Booking.STATUS_CONFIRMED.equals(currentBookingStatus)
-                || Booking.PAYMENT_STATUS_PAID.equals(currentPaymentStatus)) {
+        String currentPaymentStatus =
+                normalizeText(booking.getPaymentStatus());
+
+        if (Booking.STATUS_CONFIRMED.equals(
+                currentBookingStatus
+        )
+                || Booking.PAYMENT_STATUS_PAID.equals(
+                currentPaymentStatus
+        )) {
             markBookingSlotAsReserved(booking);
 
-            System.out.println("PayOS webhook ignored. Booking already paid. bookingId=" + booking.getId());
+            System.out.println(
+                    "PayOS webhook ignored. Booking already paid. bookingId="
+                            + booking.getId()
+            );
             return;
         }
 
-        if (!Booking.STATUS_PENDING_PAYMENT.equals(currentBookingStatus)) {
+        if (!Booking.STATUS_PENDING_PAYMENT.equals(
+                currentBookingStatus
+        )) {
             System.out.println(
                     "PayOS webhook ignored. Booking is not pending payment. bookingId="
                             + booking.getId()
@@ -335,17 +393,25 @@ public class PaymentServiceImpl implements PaymentService {
             return;
         }
 
-        String payosCode = normalizeText(webhookData.getCode());
+        String payosCode =
+                normalizeText(webhookData.getCode());
+
         String payosDesc = webhookData.getDesc();
-        LocalDateTime now = LocalDateTime.now();
+
+        Instant now = Instant.now();
 
         /*
-         * A late webhook must never reactivate an expired booking.
+         * Webhook đến trễ không được phép kích hoạt lại booking đã hết hạn.
          */
         if (booking.getPaymentExpiredAt() != null
-                && !now.isBefore(booking.getPaymentExpiredAt())) {
+                && !now.isBefore(
+                booking.getPaymentExpiredAt()
+        )) {
+            expireBookingAsPaymentTimeout(
+                    booking,
+                    now
+            );
 
-            expireBookingAsPaymentTimeout(booking, now);
             bookingRepository.save(booking);
 
             System.out.println(
@@ -354,7 +420,6 @@ public class PaymentServiceImpl implements PaymentService {
                             + ", orderCode="
                             + webhookData.getOrderCode()
             );
-
             return;
         }
 
@@ -363,7 +428,6 @@ public class PaymentServiceImpl implements PaymentService {
                     && webhookData.getAmount() != null
                     && booking.getPaymentAmount().intValue()
                     != webhookData.getAmount().intValue()) {
-
                 booking.setPaymentStatus(
                         Booking.PAYMENT_STATUS_FAILED
                 );
@@ -378,19 +442,31 @@ public class PaymentServiceImpl implements PaymentService {
                         "PayOS webhook rejected because amount mismatch. bookingId="
                                 + booking.getId()
                 );
-
                 return;
             }
-            booking.setStatus(Booking.STATUS_CONFIRMED);
-            booking.setPaymentStatus(Booking.PAYMENT_STATUS_PAID);
-            booking.setPaidAt(now);
+
+            booking.setStatus(
+                    Booking.STATUS_CONFIRMED
+            );
+
+            booking.setPaymentStatus(
+                    Booking.PAYMENT_STATUS_PAID
+            );
+
+            booking.setPaidAt(
+                    toBusinessLocalDateTime(now)
+            );
 
             if (webhookData.getPaymentLinkId() != null) {
-                booking.setPaymentLinkId(webhookData.getPaymentLinkId());
+                booking.setPaymentLinkId(
+                        webhookData.getPaymentLinkId()
+                );
             }
 
             if (webhookData.getAmount() != null) {
-                booking.setPaymentAmount(webhookData.getAmount().intValue());
+                booking.setPaymentAmount(
+                        webhookData.getAmount().intValue()
+                );
             }
 
             markBookingSlotAsReserved(booking);
@@ -403,13 +479,20 @@ public class PaymentServiceImpl implements PaymentService {
                             + ", orderCode="
                             + webhookData.getOrderCode()
                             + ", slotId="
-                            + (booking.getSlot() == null ? null : booking.getSlot().getId())
+                            + (
+                            booking.getSlot() == null
+                                    ? null
+                                    : booking.getSlot().getId()
+                    )
                             + " marked as RESERVED"
             );
             return;
         }
 
-        booking.setPaymentStatus(Booking.PAYMENT_STATUS_FAILED);
+        booking.setPaymentStatus(
+                Booking.PAYMENT_STATUS_FAILED
+        );
+
         booking.setPaymentDescription(
                 payosDesc == null || payosDesc.isBlank()
                         ? "PayOS payment failed"
@@ -428,20 +511,29 @@ public class PaymentServiceImpl implements PaymentService {
         );
     }
 
-    private void validateBookingCanCreatePayment(Booking booking) {
-        String bookingStatus = normalizeText(booking.getStatus());
+    private void validateBookingCanCreatePayment(
+            Booking booking
+    ) {
+        String bookingStatus =
+                normalizeText(booking.getStatus());
 
-        if (!Booking.STATUS_PENDING_PAYMENT.equals(bookingStatus)) {
-            throw new RuntimeException("Only PENDING_PAYMENT booking can create payment");
+        if (!Booking.STATUS_PENDING_PAYMENT.equals(
+                bookingStatus
+        )) {
+            throw new RuntimeException(
+                    "Only PENDING_PAYMENT booking can create payment"
+            );
         }
 
+        Instant now = Instant.now();
+
         if (booking.getPaymentExpiredAt() != null
-                && !LocalDateTime.now().isBefore(
+                && !now.isBefore(
                 booking.getPaymentExpiredAt()
         )) {
             expireBookingAsPaymentTimeout(
                     booking,
-                    LocalDateTime.now()
+                    now
             );
 
             bookingRepository.save(booking);
@@ -452,29 +544,40 @@ public class PaymentServiceImpl implements PaymentService {
             );
         }
 
-        if (booking.getStartTime() == null || booking.getEndTime() == null) {
-            throw new RuntimeException("Booking start time and end time are required");
+        if (booking.getStartTime() == null
+                || booking.getEndTime() == null) {
+            throw new RuntimeException(
+                    "Booking start time and end time are required"
+            );
         }
 
-        if (!booking.getEndTime().isAfter(booking.getStartTime())) {
-            throw new RuntimeException("Booking end time must be after start time");
+        if (!booking.getEndTime().isAfter(
+                booking.getStartTime()
+        )) {
+            throw new RuntimeException(
+                    "Booking end time must be after start time"
+            );
         }
 
-        if (booking.getSlot() == null || booking.getSlot().getVehicleType() == null) {
-            throw new RuntimeException("Booking slot or vehicle type is missing");
+        if (booking.getSlot() == null
+                || booking.getSlot().getVehicleType() == null) {
+            throw new RuntimeException(
+                    "Booking slot or vehicle type is missing"
+            );
         }
     }
 
     private void validateBookingOwnedByCurrentUser(
             Booking booking
     ) {
-        User currentUser = getCurrentAuthenticatedUser();
+        User currentUser =
+                getCurrentAuthenticatedUser();
 
         if (booking.getUser() == null
                 || booking.getUser().getId() == null
-                || !booking.getUser().getId()
+                || !booking.getUser()
+                .getId()
                 .equals(currentUser.getId())) {
-
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
                     "Booking not found"
@@ -492,7 +595,6 @@ public class PaymentServiceImpl implements PaymentService {
                 || !authentication.isAuthenticated()
                 || authentication
                 instanceof AnonymousAuthenticationToken) {
-
             throw new ResponseStatusException(
                     HttpStatus.UNAUTHORIZED,
                     "User is not authenticated"
@@ -513,7 +615,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     private void expireBookingAsPaymentTimeout(
             Booking booking,
-            LocalDateTime now
+            Instant now
     ) {
         booking.setStatus(
                 Booking.STATUS_CANCELLED
@@ -523,33 +625,25 @@ public class PaymentServiceImpl implements PaymentService {
                 Booking.PAYMENT_STATUS_EXPIRED
         );
 
-        booking.setCancelledAt(now);
+        booking.setCancelledAt(
+                toBusinessLocalDateTime(now)
+        );
     }
 
     private void applyPayOSExpiredAt(
             Object paymentRequestBuilder,
-            LocalDateTime paymentExpiredAt
+            Instant paymentExpiredAt
     ) {
         if (paymentRequestBuilder == null
                 || paymentExpiredAt == null) {
             return;
         }
 
-        long epochSeconds = paymentExpiredAt
-                .atZone(ZoneId.systemDefault())
-                .toEpochSecond();
+        long epochSeconds =
+                paymentExpiredAt.getEpochSecond();
 
         Class<?> builderClass =
                 paymentRequestBuilder.getClass();
-
-        Object[] values = {
-                epochSeconds,
-                Long.valueOf(epochSeconds),
-                Math.toIntExact(epochSeconds),
-                Integer.valueOf(
-                        Math.toIntExact(epochSeconds)
-                )
-        };
 
         Class<?>[] types = {
                 long.class,
@@ -558,21 +652,34 @@ public class PaymentServiceImpl implements PaymentService {
                 Integer.class
         };
 
-        for (int index = 0; index < types.length; index++) {
+        for (Class<?> type : types) {
+            Object value;
+
+            if (type.equals(int.class)
+                    || type.equals(Integer.class)) {
+                if (epochSeconds > Integer.MAX_VALUE
+                        || epochSeconds < Integer.MIN_VALUE) {
+                    continue;
+                }
+
+                value = (int) epochSeconds;
+            } else {
+                value = epochSeconds;
+            }
+
             try {
                 builderClass
                         .getMethod(
                                 "expiredAt",
-                                types[index]
+                                type
                         )
                         .invoke(
                                 paymentRequestBuilder,
-                                values[index]
+                                value
                         );
-
                 return;
             } catch (ReflectiveOperationException ignored) {
-                // Try the next supported number type.
+                // Thử kiểu số tiếp theo mà SDK hỗ trợ.
             }
         }
 
@@ -582,29 +689,43 @@ public class PaymentServiceImpl implements PaymentService {
         );
     }
 
-    private void markBookingSlotAsReserved(Booking booking) {
-        if (booking == null || booking.getSlot() == null || booking.getSlot().getId() == null) {
+    private void markBookingSlotAsReserved(
+            Booking booking
+    ) {
+        if (booking == null
+                || booking.getSlot() == null
+                || booking.getSlot().getId() == null) {
             return;
         }
 
-        ParkingSlot slot = parkingSlotRepository.findById(booking.getSlot().getId())
+        ParkingSlot slot = parkingSlotRepository
+                .findById(booking.getSlot().getId())
                 .orElse(null);
 
         if (slot == null) {
-            System.out.println("Cannot mark slot as RESERVED. Slot not found for bookingId=" + booking.getId());
+            System.out.println(
+                    "Cannot mark slot as RESERVED. Slot not found for bookingId="
+                            + booking.getId()
+            );
             return;
         }
 
-        String currentSlotStatus = normalizeText(slot.getStatus());
+        String currentSlotStatus =
+                normalizeText(slot.getStatus());
 
-        if (currentSlotStatus.isBlank() || SLOT_STATUS_AVAILABLE.equals(currentSlotStatus)) {
+        if (currentSlotStatus.isBlank()
+                || SLOT_STATUS_AVAILABLE.equals(
+                currentSlotStatus
+        )) {
             slot.setStatus(SLOT_STATUS_RESERVED);
             parkingSlotRepository.save(slot);
             booking.setSlot(slot);
             return;
         }
 
-        if (SLOT_STATUS_RESERVED.equals(currentSlotStatus)) {
+        if (SLOT_STATUS_RESERVED.equals(
+                currentSlotStatus
+        )) {
             return;
         }
 
@@ -618,7 +739,9 @@ public class PaymentServiceImpl implements PaymentService {
         );
     }
 
-    private boolean hasExistingPaymentData(Booking booking) {
+    private boolean hasExistingPaymentData(
+            Booking booking
+    ) {
         return booking.getPaymentOrderCode() != null
                 && booking.getCheckoutUrl() != null
                 && !booking.getCheckoutUrl().isBlank()
@@ -626,8 +749,11 @@ public class PaymentServiceImpl implements PaymentService {
                 && !booking.getQrCode().isBlank();
     }
 
-    private int calculateBookingAmount(Booking booking) {
-        if (booking.getPaymentAmount() != null && booking.getPaymentAmount() > 0) {
+    private int calculateBookingAmount(
+            Booking booking
+    ) {
+        if (booking.getPaymentAmount() != null
+                && booking.getPaymentAmount() > 0) {
             return booking.getPaymentAmount();
         }
 
@@ -636,14 +762,20 @@ public class PaymentServiceImpl implements PaymentService {
                 booking.getEndTime()
         ).toMinutes();
 
-        long hours = (long) Math.ceil(minutes / 60.0);
+        long hours =
+                (long) Math.ceil(minutes / 60.0);
 
         if (hours <= 0) {
             hours = 1;
         }
 
-        BigDecimal pricePerHour = getActivePricePerHour(booking);
-        BigDecimal totalAmount = pricePerHour.multiply(BigDecimal.valueOf(hours));
+        BigDecimal pricePerHour =
+                getActivePricePerHour(booking);
+
+        BigDecimal totalAmount =
+                pricePerHour.multiply(
+                        BigDecimal.valueOf(hours)
+                );
 
         int roundedAmount = totalAmount
                 .setScale(0, RoundingMode.HALF_UP)
@@ -656,22 +788,33 @@ public class PaymentServiceImpl implements PaymentService {
         return roundedAmount;
     }
 
-    private BigDecimal getActivePricePerHour(Booking booking) {
-        Integer vehicleTypeId = booking.getSlot().getVehicleType().getId();
+    private BigDecimal getActivePricePerHour(
+            Booking booking
+    ) {
+        Integer vehicleTypeId =
+                booking.getSlot()
+                        .getVehicleType()
+                        .getId();
 
         return pricingPolicyRepository
                 .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByUpdatedAtDesc(
                         vehicleTypeId,
                         PricingPolicy.STATUS_ACTIVE
                 )
-                .or(() -> pricingPolicyRepository
-                        .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByIdDesc(
-                                vehicleTypeId,
-                                PricingPolicy.STATUS_ACTIVE
-                        )
+                .or(() ->
+                        pricingPolicyRepository
+                                .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByIdDesc(
+                                        vehicleTypeId,
+                                        PricingPolicy.STATUS_ACTIVE
+                                )
                 )
                 .map(PricingPolicy::getPricePerHour)
-                .filter(price -> price != null && price.compareTo(BigDecimal.ZERO) > 0)
+                .filter(price ->
+                        price != null
+                                && price.compareTo(
+                                BigDecimal.ZERO
+                        ) > 0
+                )
                 .orElseGet(() -> {
                     System.out.println(
                             "Active pricing policy not found for vehicleTypeId="
@@ -680,58 +823,130 @@ public class PaymentServiceImpl implements PaymentService {
                                     + FALLBACK_PRICE_PER_HOUR
                     );
 
-                    return BigDecimal.valueOf(FALLBACK_PRICE_PER_HOUR);
+                    return BigDecimal.valueOf(
+                            FALLBACK_PRICE_PER_HOUR
+                    );
                 });
     }
 
-    private String buildPaymentDescription(Booking booking) {
+    private String buildPaymentDescription(
+            Booking booking
+    ) {
         return "BOOKING" + booking.getId();
     }
 
-    private Long generateOrderCode(Integer bookingId) {
-        String timePart = String.valueOf(System.currentTimeMillis());
-        String shortTimePart = timePart.substring(Math.max(0, timePart.length() - 6));
-        String rawOrderCode = String.valueOf(bookingId) + shortTimePart;
+    private Long generateOrderCode(
+            Integer bookingId
+    ) {
+        String timePart =
+                String.valueOf(
+                        System.currentTimeMillis()
+                );
+
+        String shortTimePart =
+                timePart.substring(
+                        Math.max(
+                                0,
+                                timePart.length() - 6
+                        )
+                );
+
+        String rawOrderCode =
+                String.valueOf(bookingId)
+                        + shortTimePart;
 
         return Long.parseLong(rawOrderCode);
     }
 
-    private Long generateCheckoutOrderCode(String ticketId) {
-        String safeTicketId = ticketId == null ? "" : ticketId;
+    private Long generateCheckoutOrderCode(
+            String ticketId
+    ) {
+        String safeTicketId =
+                ticketId == null ? "" : ticketId;
 
-        String digits = safeTicketId.replaceAll("[^0-9]", "");
+        String digits =
+                safeTicketId.replaceAll(
+                        "[^0-9]",
+                        ""
+                );
 
         if (digits.isBlank()) {
             digits = "9";
         }
 
-        String timePart = String.valueOf(System.currentTimeMillis());
-        String shortTimePart = timePart.substring(Math.max(0, timePart.length() - 6));
+        String timePart =
+                String.valueOf(
+                        System.currentTimeMillis()
+                );
 
-        String rawOrderCode = digits + shortTimePart;
+        String shortTimePart =
+                timePart.substring(
+                        Math.max(
+                                0,
+                                timePart.length() - 6
+                        )
+                );
+
+        String rawOrderCode =
+                digits + shortTimePart;
 
         if (rawOrderCode.length() > 15) {
-            rawOrderCode = rawOrderCode.substring(rawOrderCode.length() - 15);
+            rawOrderCode =
+                    rawOrderCode.substring(
+                            rawOrderCode.length() - 15
+                    );
         }
 
         return Long.parseLong(rawOrderCode);
     }
 
-    private CreatePayOSPaymentResponse buildPaymentResponse(Booking booking) {
+    private CreatePayOSPaymentResponse buildPaymentResponse(
+            Booking booking
+    ) {
         return CreatePayOSPaymentResponse.builder()
                 .bookingId(booking.getId())
-                .orderCode(booking.getPaymentOrderCode())
+                .orderCode(
+                        booking.getPaymentOrderCode()
+                )
                 .amount(booking.getPaymentAmount())
-                .currency(booking.getPaymentCurrency())
+                .currency(
+                        booking.getPaymentCurrency()
+                )
                 .bookingStatus(booking.getStatus())
-                .paymentStatus(booking.getPaymentStatus())
-                .paymentLinkId(booking.getPaymentLinkId())
+                .paymentStatus(
+                        booking.getPaymentStatus()
+                )
+                .paymentLinkId(
+                        booking.getPaymentLinkId()
+                )
                 .checkoutUrl(booking.getCheckoutUrl())
                 .qrCode(booking.getQrCode())
+                .paymentCreatedAt(
+                        booking.getPaymentCreatedAt()
+                )
+                .paymentExpiredAt(
+                        booking.getPaymentExpiredAt()
+                )
                 .build();
     }
 
-    private String normalizeText(String value) {
+    private LocalDateTime toBusinessLocalDateTime(
+            Instant instant
+    ) {
+        Instant safeInstant =
+                instant == null
+                        ? Instant.now()
+                        : instant;
+
+        return LocalDateTime.ofInstant(
+                safeInstant,
+                ZoneId.of(businessTimeZone)
+        );
+    }
+
+    private String normalizeText(
+            String value
+    ) {
         if (value == null) {
             return "";
         }

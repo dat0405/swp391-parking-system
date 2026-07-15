@@ -3,7 +3,9 @@ package com.tatdat.parking.backend.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Entity
 @Table(name = "bookings")
@@ -31,6 +33,9 @@ public class Booking {
     public static final String PAYMENT_STATUS_EXPIRED = "EXPIRED";
     public static final String PAYMENT_STATUS_FAILED = "FAILED";
 
+    private static final ZoneId DEFAULT_BUSINESS_ZONE =
+            ZoneId.of("Asia/Ho_Chi_Minh");
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
@@ -47,6 +52,10 @@ public class Booking {
     @JoinColumn(name = "slot_id", nullable = false)
     private ParkingSlot slot;
 
+    /*
+     * bookingTime/startTime/endTime are business-local date/time values.
+     * Payment countdown timestamps below are UTC Instants.
+     */
     @Column(name = "booking_time", nullable = false)
     private LocalDateTime bookingTime;
 
@@ -59,8 +68,11 @@ public class Booking {
     @Column(length = 30, nullable = false)
     private String status;
 
+    @Column(name = "payment_created_at")
+    private Instant paymentCreatedAt;
+
     @Column(name = "payment_expired_at")
-    private LocalDateTime paymentExpiredAt;
+    private Instant paymentExpiredAt;
 
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
@@ -104,7 +116,7 @@ public class Booking {
     @PrePersist
     public void prePersist() {
         if (bookingTime == null) {
-            bookingTime = LocalDateTime.now();
+            bookingTime = LocalDateTime.now(DEFAULT_BUSINESS_ZONE);
         }
 
         if (status == null || status.trim().isEmpty()) {
@@ -113,9 +125,11 @@ public class Booking {
 
         status = normalizeStatus(status);
 
-        if (STATUS_PENDING_PAYMENT.equals(status) && paymentExpiredAt == null) {
-            paymentExpiredAt = bookingTime.plusMinutes(10);
-        }
+        /*
+         * paymentCreatedAt and paymentExpiredAt are intentionally not created
+         * here. Their 10-minute window starts only when the PayOS QR/link is
+         * actually created in PaymentServiceImpl.
+         */
 
         if (paymentCurrency == null || paymentCurrency.trim().isEmpty()) {
             paymentCurrency = "VND";

@@ -4,6 +4,7 @@ import com.tatdat.parking.backend.entity.Booking;
 import lombok.Builder;
 import lombok.Data;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Data
@@ -34,7 +35,8 @@ public class BookingResponse {
 
     private String status;
 
-    private LocalDateTime paymentExpiredAt;
+    private Instant paymentCreatedAt;
+    private Instant paymentExpiredAt;
     private LocalDateTime paidAt;
     private LocalDateTime cancelledAt;
 
@@ -89,6 +91,7 @@ public class BookingResponse {
                 .startTime(booking.getStartTime())
                 .endTime(booking.getEndTime())
                 .status(booking.getStatus())
+                .paymentCreatedAt(booking.getPaymentCreatedAt())
                 .paymentExpiredAt(booking.getPaymentExpiredAt())
                 .paidAt(booking.getPaidAt())
                 .cancelledAt(booking.getCancelledAt())

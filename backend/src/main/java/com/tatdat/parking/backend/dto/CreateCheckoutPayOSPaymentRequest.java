@@ -1,6 +1,13 @@
 package com.tatdat.parking.backend.dto;
 
-import lombok.*;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 
@@ -11,17 +18,17 @@ import java.math.BigDecimal;
 @Builder
 public class CreateCheckoutPayOSPaymentRequest {
 
+    @NotBlank(message = "Ticket ID is required")
     private String ticketId;
 
     private String licensePlate;
 
+    @NotNull(message = "Payment amount is required")
+    @DecimalMin(
+            value = "0.01",
+            message = "Payment amount must be greater than 0"
+    )
     private BigDecimal amount;
 
     private String description;
-
-    /*
-     * true khi khách bị mất vé.
-     * Frontend gửi field này để QR PayOS / checkout flow biết đây là hóa đơn có phí mất vé.
-     */
-    private Boolean lostTicket;
 }
