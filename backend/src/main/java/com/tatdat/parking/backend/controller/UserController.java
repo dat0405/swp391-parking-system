@@ -18,17 +18,25 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
 public class UserController {
+
+    private static final long ONLINE_TIMEOUT_SECONDS = 90;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -37,7 +45,8 @@ public class UserController {
 
     @GetMapping
     public List<UserResponse> getAllUsers() {
-        return userRepository.findAllByOrderByIdDesc()
+        return userRepository
+                .findAllByOrderByIdDesc()
                 .stream()
                 .map(this::mapToUserResponse)
                 .toList();
@@ -52,13 +61,16 @@ public class UserController {
     public UserResponse heartbeat() {
         User currentUser = getCurrentUser();
 
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
 
         currentUser.setLastActiveAt(now);
         currentUser.setUpdatedAt(now);
 
-        User savedUser = userRepository.save(currentUser);
-        UserResponse response = mapToUserResponse(savedUser);
+        User savedUser =
+                userRepository.save(currentUser);
+
+        UserResponse response =
+                mapToUserResponse(savedUser);
 
         publishUserStatus(savedUser, true);
 
@@ -69,18 +81,20 @@ public class UserController {
     public UserResponse offline() {
         User currentUser = getCurrentUser();
 
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
 
         /*
-         * lastActiveAt phải để null để backend hiểu user đã offline.
-         * updatedAt lưu thời điểm user vừa offline để frontend hiện:
-         * Offline · just now / Offline · 2 min ago
+         * lastActiveAt = null để backend xác định user offline.
+         * updatedAt lưu thời điểm người dùng vừa offline.
          */
         currentUser.setLastActiveAt(null);
         currentUser.setUpdatedAt(now);
 
-        User savedUser = userRepository.save(currentUser);
-        UserResponse response = mapToUserResponse(savedUser);
+        User savedUser =
+                userRepository.save(currentUser);
+
+        UserResponse response =
+                mapToUserResponse(savedUser);
 
         publishUserStatus(savedUser, false);
 
@@ -88,41 +102,70 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
-    public UserResponse getUserById(@PathVariable Integer id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+    public UserResponse getUserById(
+            @PathVariable Integer id
+    ) {
+        User user = userRepository
+                .findById(id)
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "User not found"
+                        )
+                );
 
         return mapToUserResponse(user);
     }
 
     @PostMapping
-    public UserResponse createUser(@Valid @RequestBody CreateUserRequest request) {
-        String email = request.getEmail().trim().toLowerCase();
+    public UserResponse createUser(
+            @Valid @RequestBody
+            CreateUserRequest request
+    ) {
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase();
 
         if (userRepository.existsByEmail(email)) {
-            throw new RuntimeException("Email already exists");
+            throw new RuntimeException(
+                    "Email already exists"
+            );
         }
 
         String phone = null;
 
-        if (request.getPhone() != null && !request.getPhone().isBlank()) {
+        if (request.getPhone() != null
+                && !request.getPhone().isBlank()) {
             phone = request.getPhone().trim();
 
             if (userRepository.existsByPhone(phone)) {
-                throw new RuntimeException("Phone already exists");
+                throw new RuntimeException(
+                        "Phone already exists"
+                );
             }
         }
 
-        Role role = roleRepository.findById(request.getRoleId())
-                .orElseThrow(() -> new RuntimeException("Role not found"));
+        Role role = roleRepository
+                .findById(request.getRoleId())
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "Role not found"
+                        )
+                );
 
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
 
         User user = new User();
-        user.setFullName(request.getFullName().trim());
+
+        user.setFullName(
+                request.getFullName().trim()
+        );
         user.setEmail(email);
         user.setPhone(phone);
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setPassword(
+                passwordEncoder.encode(
+                        request.getPassword()
+                )
+        );
         user.setRole(role);
         user.setStatus("ACTIVE");
         user.setCreatedAt(now);
@@ -130,8 +173,11 @@ public class UserController {
         user.setLastLoginAt(null);
         user.setLastActiveAt(null);
 
-        User savedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponse(savedUser);
+        User savedUser =
+                userRepository.save(user);
+
+        UserResponse response =
+                mapToUserResponse(savedUser);
 
         publishUserStatus(savedUser, false);
 
@@ -141,47 +187,75 @@ public class UserController {
     @PutMapping("/{id}")
     public UserResponse updateUser(
             @PathVariable Integer id,
-            @Valid @RequestBody UpdateUserRequest request
+            @Valid @RequestBody
+            UpdateUserRequest request
     ) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = userRepository
+                .findById(id)
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "User not found"
+                        )
+                );
 
-        if (request.getFullName() != null && !request.getFullName().isBlank()) {
-            user.setFullName(request.getFullName().trim());
+        if (request.getFullName() != null
+                && !request.getFullName().isBlank()) {
+            user.setFullName(
+                    request.getFullName().trim()
+            );
         }
 
-        if (request.getEmail() != null && !request.getEmail().isBlank()) {
-            String email = request.getEmail().trim().toLowerCase();
+        if (request.getEmail() != null
+                && !request.getEmail().isBlank()) {
+            String email = request.getEmail()
+                    .trim()
+                    .toLowerCase();
 
             userRepository.findByEmail(email)
                     .ifPresent(existingUser -> {
-                        if (!existingUser.getId().equals(id)) {
-                            throw new RuntimeException("Email already exists");
+                        if (!existingUser
+                                .getId()
+                                .equals(id)) {
+                            throw new RuntimeException(
+                                    "Email already exists"
+                            );
                         }
                     });
 
             user.setEmail(email);
         }
 
-        if (request.getPhone() != null && !request.getPhone().isBlank()) {
-            String phone = request.getPhone().trim();
+        if (request.getPhone() != null
+                && !request.getPhone().isBlank()) {
+            String phone =
+                    request.getPhone().trim();
 
             userRepository.findByPhone(phone)
                     .ifPresent(existingUser -> {
-                        if (!existingUser.getId().equals(id)) {
-                            throw new RuntimeException("Phone already exists");
+                        if (!existingUser
+                                .getId()
+                                .equals(id)) {
+                            throw new RuntimeException(
+                                    "Phone already exists"
+                            );
                         }
                     });
 
             user.setPhone(phone);
         }
 
-        user.setUpdatedAt(LocalDateTime.now());
+        user.setUpdatedAt(Instant.now());
 
-        User savedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponse(savedUser);
+        User savedUser =
+                userRepository.save(user);
 
-        publishUserStatus(savedUser, isOnline(savedUser.getLastActiveAt()));
+        UserResponse response =
+                mapToUserResponse(savedUser);
+
+        publishUserStatus(
+                savedUser,
+                isOnline(savedUser.getLastActiveAt())
+        );
 
         return response;
     }
@@ -189,25 +263,44 @@ public class UserController {
     @PutMapping("/{id}/role")
     public UserResponse updateUserRole(
             @PathVariable Integer id,
-            @RequestBody UpdateUserRoleRequest request
+            @RequestBody
+            UpdateUserRoleRequest request
     ) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = userRepository
+                .findById(id)
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "User not found"
+                        )
+                );
 
         if (request.getRoleId() == null) {
-            throw new RuntimeException("Role is required");
+            throw new RuntimeException(
+                    "Role is required"
+            );
         }
 
-        Role role = roleRepository.findById(request.getRoleId())
-                .orElseThrow(() -> new RuntimeException("Role not found"));
+        Role role = roleRepository
+                .findById(request.getRoleId())
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "Role not found"
+                        )
+                );
 
         user.setRole(role);
-        user.setUpdatedAt(LocalDateTime.now());
+        user.setUpdatedAt(Instant.now());
 
-        User savedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponse(savedUser);
+        User savedUser =
+                userRepository.save(user);
 
-        publishUserStatus(savedUser, isOnline(savedUser.getLastActiveAt()));
+        UserResponse response =
+                mapToUserResponse(savedUser);
+
+        publishUserStatus(
+                savedUser,
+                isOnline(savedUser.getLastActiveAt())
+        );
 
         return response;
     }
@@ -215,41 +308,59 @@ public class UserController {
     @PutMapping("/{id}/status")
     public UserResponse updateUserStatus(
             @PathVariable Integer id,
-            @Valid @RequestBody UpdateUserStatusRequest request
+            @Valid @RequestBody
+            UpdateUserStatusRequest request
     ) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = userRepository
+                .findById(id)
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "User not found"
+                        )
+                );
 
         String status = request.getStatus();
 
         if (!"ACTIVE".equals(status)
                 && !"INACTIVE".equals(status)
                 && !"BANNED".equals(status)) {
-            throw new RuntimeException("Invalid status");
+            throw new RuntimeException(
+                    "Invalid status"
+            );
         }
 
         User currentUser = getCurrentUser();
 
         if (currentUser.getId().equals(id)
-                && ("BANNED".equals(status) || "INACTIVE".equals(status))) {
-            throw new RuntimeException("You cannot disable your own account");
+                && ("BANNED".equals(status)
+                || "INACTIVE".equals(status))) {
+            throw new RuntimeException(
+                    "You cannot disable your own account"
+            );
         }
 
         user.setStatus(status);
-        user.setUpdatedAt(LocalDateTime.now());
+        user.setUpdatedAt(Instant.now());
 
         /*
-         * Nếu khóa tài khoản thì tài khoản không còn online.
-         * Với Locked, frontend chỉ cần hiện Locked, không cần Offline · x min ago.
+         * Tài khoản bị khóa hoặc vô hiệu hóa
+         * không được xem là đang online.
          */
-        if ("BANNED".equals(status) || "INACTIVE".equals(status)) {
+        if ("BANNED".equals(status)
+                || "INACTIVE".equals(status)) {
             user.setLastActiveAt(null);
         }
 
-        User savedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponse(savedUser);
+        User savedUser =
+                userRepository.save(user);
 
-        publishUserStatus(savedUser, isOnline(savedUser.getLastActiveAt()));
+        UserResponse response =
+                mapToUserResponse(savedUser);
+
+        publishUserStatus(
+                savedUser,
+                isOnline(savedUser.getLastActiveAt())
+        );
 
         return response;
     }
@@ -257,34 +368,61 @@ public class UserController {
     @PutMapping("/{id}/reset-password")
     public UserResponse resetPassword(
             @PathVariable Integer id,
-            @Valid @RequestBody ResetPasswordRequest request
+            @Valid @RequestBody
+            ResetPasswordRequest request
     ) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = userRepository
+                .findById(id)
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "User not found"
+                        )
+                );
 
-        if (request.getNewPassword() == null || request.getNewPassword().isBlank()) {
-            throw new RuntimeException("New password is required");
+        if (request.getNewPassword() == null
+                || request.getNewPassword().isBlank()) {
+            throw new RuntimeException(
+                    "New password is required"
+            );
         }
 
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        user.setUpdatedAt(LocalDateTime.now());
+        user.setPassword(
+                passwordEncoder.encode(
+                        request.getNewPassword()
+                )
+        );
 
-        User savedUser = userRepository.save(user);
-        UserResponse response = mapToUserResponse(savedUser);
+        user.setUpdatedAt(Instant.now());
 
-        publishUserStatus(savedUser, isOnline(savedUser.getLastActiveAt()));
+        User savedUser =
+                userRepository.save(user);
+
+        UserResponse response =
+                mapToUserResponse(savedUser);
+
+        publishUserStatus(
+                savedUser,
+                isOnline(savedUser.getLastActiveAt())
+        );
 
         return response;
     }
 
     private User getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
 
-        if (authentication == null || authentication.getPrincipal() == null) {
-            throw new RuntimeException("Current user not found");
+        if (authentication == null
+                || authentication.getPrincipal() == null) {
+            throw new RuntimeException(
+                    "Current user not found"
+            );
         }
 
-        Object principal = authentication.getPrincipal();
+        Object principal =
+                authentication.getPrincipal();
 
         String email = null;
 
@@ -300,50 +438,99 @@ public class UserController {
             email = principalString;
         }
 
-        if (email == null || email.isBlank() || "anonymousUser".equals(email)) {
+        if (email == null
+                || email.isBlank()
+                || "anonymousUser".equals(email)) {
             email = authentication.getName();
         }
 
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Current user not found"));
+        if (email == null || email.isBlank()) {
+            throw new RuntimeException(
+                    "Current user not found"
+            );
+        }
+
+        String normalizedEmail =
+                email.trim().toLowerCase();
+
+        return userRepository
+                .findByEmail(normalizedEmail)
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                "Current user not found"
+                        )
+                );
     }
 
-    private UserResponse mapToUserResponse(User user) {
+    private UserResponse mapToUserResponse(
+            User user
+    ) {
+        Integer roleId = null;
+        String roleName = null;
+
+        if (user.getRole() != null) {
+            roleId = user.getRole().getId();
+            roleName = user.getRole().getRoleName();
+        }
+
         return UserResponse.builder()
                 .id(user.getId())
                 .fullName(user.getFullName())
                 .email(user.getEmail())
                 .phone(user.getPhone())
                 .status(user.getStatus())
-                .roleId(user.getRole().getId())
-                .roleName(user.getRole().getRoleName())
+                .roleId(roleId)
+                .roleName(roleName)
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
-                .lastLoginAt(user.getLastLoginAt())
-                .lastActiveAt(user.getLastActiveAt())
-                .online(isOnline(user.getLastActiveAt()))
+                .lastLoginAt(
+                        user.getLastLoginAt()
+                )
+                .lastActiveAt(
+                        user.getLastActiveAt()
+                )
+                .online(
+                        isOnline(
+                                user.getLastActiveAt()
+                        )
+                )
                 .build();
     }
 
-    private boolean isOnline(LocalDateTime lastActiveAt) {
+    private boolean isOnline(
+            Instant lastActiveAt
+    ) {
         if (lastActiveAt == null) {
             return false;
         }
 
-        long seconds = Duration.between(lastActiveAt, LocalDateTime.now()).getSeconds();
+        long seconds = Duration.between(
+                lastActiveAt,
+                Instant.now()
+        ).getSeconds();
 
-        return seconds >= 0 && seconds <= 90;
+        return seconds >= 0
+                && seconds <= ONLINE_TIMEOUT_SECONDS;
     }
 
-    private void publishUserStatus(User user, boolean online) {
+    private void publishUserStatus(
+            User user,
+            boolean online
+    ) {
         userStatusEventService.publishUserStatus(
                 UserStatusEvent.builder()
                         .userId(user.getId())
                         .status(user.getStatus())
                         .online(online)
-                        .lastLoginAt(user.getLastLoginAt())
-                        .lastActiveAt(user.getLastActiveAt())
-                        .updatedAt(user.getUpdatedAt())
+                        .lastLoginAt(
+                                user.getLastLoginAt()
+                        )
+                        .lastActiveAt(
+                                user.getLastActiveAt()
+                        )
+                        .updatedAt(
+                                user.getUpdatedAt()
+                        )
                         .build()
         );
     }

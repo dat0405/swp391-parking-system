@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Getter
 @Setter
@@ -21,9 +21,20 @@ public class UserStatusEvent {
 
     private boolean online;
 
-    private LocalDateTime lastLoginAt;
+    /*
+     * Thời điểm đăng nhập gần nhất.
+     * Instant giúp backend trả JSON có timezone UTC rõ ràng,
+     * ví dụ: 2026-07-20T09:04:00Z
+     */
+    private Instant lastLoginAt;
 
-    private LocalDateTime lastActiveAt;
+    /*
+     * Thời điểm hoạt động gần nhất của người dùng.
+     */
+    private Instant lastActiveAt;
 
-    private LocalDateTime updatedAt;
+    /*
+     * Thời điểm thông tin người dùng được cập nhật gần nhất.
+     */
+    private Instant updatedAt;
 }
