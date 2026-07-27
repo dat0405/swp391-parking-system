@@ -1,21 +1,21 @@
-// Role definitions phải khớp chính xác với role trong backend và database.
+// Role definitions must match backend/database role names.
+// DRIVER is the normal end-user role.
+// There is no separate USER role.
 export const ROLES = {
   SYSTEM_ADMIN: 'SYSTEM_ADMIN',
   PARKING_MANAGER: 'PARKING_MANAGER',
   PARKING_STAFF: 'PARKING_STAFF',
   DRIVER: 'DRIVER',
-  USER: 'USER'
 };
 
 /**
- * Chuẩn hóa role để tránh lỗi khác biệt định dạng.
+ * Chuẩn hóa role từ backend, database hoặc localStorage.
  *
  * Ví dụ:
- * ROLE_DRIVER -> DRIVER
- * driver -> DRIVER
- * " DRIVER " -> DRIVER
+ * ROLE_PARKING_STAFF -> PARKING_STAFF
+ * parking_staff      -> PARKING_STAFF
  */
-const normalizeRole = (role) => {
+export const normalizeRole = (role) => {
   if (!role) {
     return '';
   }
@@ -27,14 +27,16 @@ const normalizeRole = (role) => {
 };
 
 /**
- * Lấy giá trị role từ nhiều cấu trúc user khác nhau.
- *
- * Hỗ trợ:
- * user.role = "DRIVER"
- * user.roleName = "DRIVER"
- * user.role.roleName = "DRIVER"
- * user.role.name = "DRIVER"
- * user.role.authority = "ROLE_DRIVER"
+ * Kiểm tra role có thuộc bốn role chính thức hay không.
+ */
+export const isSupportedRole = (role) => {
+  const cleanRole = normalizeRole(role);
+
+  return Object.values(ROLES).includes(cleanRole);
+};
+
+/**
+ * Lấy role từ nhiều cấu trúc user response khác nhau.
  */
 const getUserRoleValue = (user) => {
   if (!user) {
@@ -51,19 +53,23 @@ const getUserRoleValue = (user) => {
 
   if (
     user.role &&
-    typeof user.role === 'object'
+    typeof user.role.roleName === 'string'
   ) {
-    if (typeof user.role.roleName === 'string') {
-      return user.role.roleName;
-    }
+    return user.role.roleName;
+  }
 
-    if (typeof user.role.name === 'string') {
-      return user.role.name;
-    }
+  if (
+    user.role &&
+    typeof user.role.name === 'string'
+  ) {
+    return user.role.name;
+  }
 
-    if (typeof user.role.authority === 'string') {
-      return user.role.authority;
-    }
+  if (
+    user.role &&
+    typeof user.role.authority === 'string'
+  ) {
+    return user.role.authority;
   }
 
   if (typeof user.authority === 'string') {
@@ -74,96 +80,77 @@ const getUserRoleValue = (user) => {
 };
 
 /**
- * Quyền truy cập route.
- *
- * Được sử dụng chung trong:
- * - App.jsx
- * - Sidebar.jsx
- * - Các component cần kiểm tra role
+ * Phân quyền các trang frontend.
  */
 export const ROUTE_PERMISSIONS = {
-  /**
-   * DRIVER và USER được tạo booking mới.
-   */
-  booking: [
-    ROLES.DRIVER,
-    ROLES.USER
-  ],
+  // Người dùng thông thường.
+  booking: [ROLES.DRIVER],
 
-  /**
-   * DRIVER và USER được xem lịch sử booking của chính mình.
-   */
-  bookingHistory: [
-    ROLES.DRIVER,
-    ROLES.USER
-  ],
+  bookingHistory: [ROLES.DRIVER],
 
-  /**
-   * DRIVER và USER chỉ được xem tình trạng bãi xe.
+  /*
+   * DRIVER:
+   * - Chỉ xem tình trạng chỗ đỗ.
    *
-   * PARKING_STAFF, PARKING_MANAGER và SYSTEM_ADMIN
-   * được truy cập để thực hiện các chức năng quản lý
-   * tùy theo quyền được kiểm tra trong từng trang.
+   * PARKING_MANAGER và SYSTEM_ADMIN:
+   * - Có thể quản lý tầng và chỗ đỗ.
    */
   parkingFloors: [
     ROLES.DRIVER,
-    ROLES.USER,
-    ROLES.PARKING_STAFF,
     ROLES.PARKING_MANAGER,
-    ROLES.SYSTEM_ADMIN
+    ROLES.SYSTEM_ADMIN,
   ],
 
-  /**
-   * Tất cả role đã đăng nhập đều được xem bảng giá.
+  /*
+   * PARKING_STAFF không được vào Dashboard.
+   */
+  dashboard: [
+    ROLES.PARKING_MANAGER,
+    ROLES.SYSTEM_ADMIN,
+  ],
+
+  /*
+   * Trang Check-in/out.
+   */
+  checkInOut: [
+    ROLES.PARKING_STAFF,
+    ROLES.PARKING_MANAGER,
+    ROLES.SYSTEM_ADMIN,
+  ],
+
+  /*
+   * Quản lý đặt chỗ.
+   */
+  reservations: [
+    ROLES.PARKING_MANAGER,
+    ROLES.SYSTEM_ADMIN,
+  ],
+
+  /*
+   * DRIVER:
+   * - Chỉ xem bảng giá.
    *
-   * Chức năng thêm, sửa, xóa chính sách giá vẫn cần
-   * được backend kiểm tra quyền riêng.
+   * PARKING_MANAGER và SYSTEM_ADMIN:
+   * - Có thể quản lý chính sách giá và ngày lễ.
    */
   pricingPolicies: [
     ROLES.DRIVER,
-    ROLES.USER,
-    ROLES.PARKING_STAFF,
     ROLES.PARKING_MANAGER,
-    ROLES.SYSTEM_ADMIN
+    ROLES.SYSTEM_ADMIN,
   ],
 
-  /**
-   * Các trang vận hành:
-   * - Dashboard
-   * - Check-in/out
-   * - Reservations
-   *
-   * Chỉ dành cho Staff, Manager và System Admin.
-   */
-  operationalPages: [
-    ROLES.PARKING_STAFF,
-    ROLES.PARKING_MANAGER,
-    ROLES.SYSTEM_ADMIN
-  ],
-
-  /**
-   * Reports chỉ dành cho Manager và System Admin.
-   */
   reports: [
     ROLES.PARKING_MANAGER,
-    ROLES.SYSTEM_ADMIN
+    ROLES.SYSTEM_ADMIN,
   ],
 
-  /**
-   * User Management chỉ dành cho System Admin.
-   */
   userManagement: [
-    ROLES.SYSTEM_ADMIN
-  ]
+    ROLES.SYSTEM_ADMIN,
+  ],
 };
 
 /**
- * Lấy user snapshot từ localStorage.
- *
- * Lưu ý:
- * User trong localStorage chỉ dùng cho giao diện.
- * Backend vẫn là nơi xác thực phiên đăng nhập thật
- * thông qua HttpOnly cookie.
+ * Lấy user đã lưu trong localStorage.
  */
 export const getSavedUser = () => {
   const savedUser = localStorage.getItem('user');
@@ -188,11 +175,11 @@ export const getSavedUser = () => {
 };
 
 /**
- * Lấy role hiện tại của user.
+ * Lấy role hiện tại.
  *
  * Ưu tiên:
- * 1. Role trong object user.
- * 2. user_role trong localStorage.
+ * 1. Role bên trong object user.
+ * 2. Giá trị user_role trong localStorage.
  */
 export const getSavedUserRole = () => {
   const user = getSavedUser();
@@ -201,93 +188,105 @@ export const getSavedUserRole = () => {
     getUserRoleValue(user)
   );
 
-  if (roleFromUser) {
+  if (isSupportedRole(roleFromUser)) {
     return roleFromUser;
   }
 
-  return normalizeRole(
+  const roleFromStorage = normalizeRole(
     localStorage.getItem('user_role')
   );
+
+  return isSupportedRole(roleFromStorage)
+    ? roleFromStorage
+    : '';
 };
 
 /**
- * Kiểm tra user hiện tại có thuộc danh sách role được phép hay không.
- *
- * @param {string[]} allowedRoles
- * @returns {boolean}
+ * Xác định trang mặc định sau khi đăng nhập.
+ */
+export const getDefaultPathByRole = (role) => {
+  const cleanRole = normalizeRole(role);
+
+  if (
+    cleanRole === ROLES.SYSTEM_ADMIN ||
+    cleanRole === ROLES.PARKING_MANAGER
+  ) {
+    return '/dashboard';
+  }
+
+  if (cleanRole === ROLES.PARKING_STAFF) {
+    return '/check-in-out';
+  }
+
+  if (cleanRole === ROLES.DRIVER) {
+    return '/user-ui';
+  }
+
+  return '/login';
+};
+
+/**
+ * Kiểm tra role hiện tại có nằm trong danh sách được phép.
  */
 export const hasRole = (allowedRoles = []) => {
   const currentRole = getSavedUserRole();
 
-  if (!currentRole) {
+  if (
+    !currentRole ||
+    !Array.isArray(allowedRoles)
+  ) {
     return false;
   }
 
-  if (!Array.isArray(allowedRoles)) {
-    return false;
-  }
-
-  const normalizedAllowedRoles = allowedRoles
-    .map((role) => normalizeRole(role))
-    .filter(Boolean);
-
-  return normalizedAllowedRoles.includes(
-    currentRole
-  );
+  return allowedRoles
+    .map(normalizeRole)
+    .filter(isSupportedRole)
+    .includes(currentRole);
 };
 
 /**
- * Alias để code dễ đọc hơn khi kiểm tra nhiều role.
+ * Alias để tương thích với các file cũ.
  */
 export const hasAnyRole = hasRole;
 
 /**
- * Cookie-only authentication.
+ * Kiểm tra trạng thái đăng nhập ở frontend.
  *
- * Access token và refresh token được lưu trong
- * HttpOnly cookie nên JavaScript không thể đọc trực tiếp.
- *
- * Hàm này chỉ kiểm tra frontend còn user snapshot hay không.
- * Backend mới là nơi xác thực phiên đăng nhập thật.
+ * Token thật được lưu trong HttpOnly Cookie.
  */
 export const isAuthenticated = () => {
-  return Boolean(getSavedUser());
+  return Boolean(
+    getSavedUser() &&
+    getSavedUserRole()
+  );
 };
 
 /**
- * Chỉ giữ lại để tương thích với code cũ.
+ * Giữ lại để tương thích với code cũ.
  *
- * Không nên dùng token trong localStorage để gửi
- * Authorization header nữa.
+ * Hệ thống hiện tại sử dụng HttpOnly Cookie,
+ * nên thông thường hàm này sẽ trả về null.
  */
 export const getToken = () => {
   return localStorage.getItem('token');
 };
 
 /**
- * Xóa toàn bộ dữ liệu xác thực lưu tại frontend.
- *
- * HttpOnly cookie sẽ được backend xóa thông qua API logout.
+ * Xóa toàn bộ dữ liệu xác thực cũ khỏi trình duyệt.
  */
 export const clearLocalAuthData = () => {
   localStorage.removeItem('user');
   localStorage.removeItem('user_role');
-
-  /*
-   * Xóa token cũ từ những phiên bản trước
-   * từng lưu token trong localStorage.
-   */
   localStorage.removeItem('token');
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('accessToken');
   localStorage.removeItem('authToken');
-
   localStorage.removeItem('headerUserSyncedAt');
 };
 
 /**
- * Bật cờ logout để ngăn các API nền như heartbeat
- * chạy lại trong lúc quá trình logout đang diễn ra.
+ * Đặt cờ đang logout để tránh interceptor
+ * tự gọi refresh token trong lúc đăng xuất.
  */
 export const setLogoutGuard = () => {
   localStorage.setItem(
@@ -310,24 +309,26 @@ export const clearLogoutGuard = () => {
 };
 
 /**
- * Kiểm tra logout guard còn hiệu lực hay không.
+ * Kiểm tra cờ logout có còn hiệu lực hay không.
  *
- * Guard tự hết hạn sau 15 giây để tránh bị kẹt
- * nếu quá trình logout bị gián đoạn.
+ * Cờ tự hết hạn sau 15 giây.
  */
 export const isLogoutGuardActive = () => {
   const isLoggingOut =
-    localStorage.getItem('isLoggingOut') === 'true';
+    localStorage.getItem('isLoggingOut') ===
+    'true';
 
   const startedAt = Number(
-    localStorage.getItem('logoutStartedAt') || 0
+    localStorage.getItem('logoutStartedAt') ||
+    0
   );
 
   if (!isLoggingOut || !startedAt) {
     return false;
   }
 
-  const elapsedMs = Date.now() - startedAt;
+  const elapsedMs =
+    Date.now() - startedAt;
 
   if (elapsedMs > 15000) {
     clearLogoutGuard();
@@ -338,22 +339,11 @@ export const isLogoutGuardActive = () => {
 };
 
 /**
- * Logout phía frontend.
- *
- * Hàm này:
- * - Bật logout guard.
- * - Xóa user snapshot.
- * - Xóa sessionStorage.
- * - Chuyển về trang login.
- *
- * Cookie HttpOnly vẫn nên được backend xóa
- * thông qua API /auth/logout trước khi gọi hàm này.
+ * Đăng xuất ở frontend và chuyển về trang login.
  */
 export const logoutWithGuard = () => {
   setLogoutGuard();
-
   clearLocalAuthData();
-
   sessionStorage.clear();
 
   window.location.replace('/login');
@@ -362,8 +352,11 @@ export const logoutWithGuard = () => {
 export default {
   ROLES,
   ROUTE_PERMISSIONS,
+  normalizeRole,
+  isSupportedRole,
   getSavedUser,
   getSavedUserRole,
+  getDefaultPathByRole,
   hasRole,
   hasAnyRole,
   isAuthenticated,
@@ -372,5 +365,5 @@ export default {
   setLogoutGuard,
   clearLogoutGuard,
   isLogoutGuardActive,
-  logoutWithGuard
+  logoutWithGuard,
 };

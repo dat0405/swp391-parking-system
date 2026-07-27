@@ -28,7 +28,6 @@ function CheckInOutPage() {
   const generateTicketId = () =>
     `TK-${Math.floor(100000 + Math.random() * 900000)}`;
 
-  const [floorsData, setFloorsData] = useState([]);
   const [activeSessions, setActiveSessions] = useState([]);
 
   const [licensePlateIn, setLicensePlateIn] = useState("");
@@ -61,7 +60,6 @@ function CheckInOutPage() {
   const [searchPlate, setSearchPlate] = useState("");
   const [searchTicketId, setSearchTicketId] = useState("");
   const [checkoutData, setCheckoutData] = useState(null);
-  const [checkoutLostTicket, setCheckoutLostTicket] = useState(false);
   const [checkoutPlateScanned, setCheckoutPlateScanned] = useState(false);
   const [activeVehicleSearch, setActiveVehicleSearch] = useState("");
 
@@ -72,12 +70,57 @@ function CheckInOutPage() {
   const [checkoutFinalized, setCheckoutFinalized] = useState(false);
 
   const ticketScannerElementId = "ticket-qr-reader";
-  const ticketScannerRef = useRef(null);
+  const checkInPreviewUrlRef = useRef("");
+  const checkOutPreviewUrlRef = useRef("");
   const [ticketScannerModal, setTicketScannerModal] = useState({
     show: false,
     error: "",
     status: "IDLE"
   });
+
+  const getApiErrorMessage = (error, fallbackMessage) => {
+    const responseData = error?.response?.data;
+
+    if (typeof responseData?.message === "string" && responseData.message.trim()) {
+      return responseData.message;
+    }
+
+    if (typeof responseData?.error === "string" && responseData.error.trim()) {
+      return responseData.error;
+    }
+
+    if (typeof responseData === "string" && responseData.trim()) {
+      return responseData;
+    }
+
+    if (typeof error?.message === "string" && error.message.trim()) {
+      return error.message;
+    }
+
+    return fallbackMessage;
+  };
+
+  const revokePreviewUrl = (previewUrlRef) => {
+    const currentUrl = previewUrlRef.current;
+
+    if (currentUrl && currentUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(currentUrl);
+    }
+
+    previewUrlRef.current = "";
+  };
+
+  const normalizeOcrConfidence = (value) => {
+    const numericValue = Number(value);
+
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      return 0;
+    }
+
+    return numericValue > 1
+      ? Math.min(numericValue / 100, 1)
+      : Math.min(numericValue, 1);
+  };
 
   const getPaymentQrImageSrc = (qrCode) => {
     /*
@@ -184,7 +227,6 @@ function CheckInOutPage() {
 
     try {
       setSearchTicketId(normalizedTicket);
-      setCheckoutLostTicket(lostTicket);
 
       const res = await parkingSessionApi.searchCheckout({
         ticketId: normalizedTicket,
@@ -224,9 +266,10 @@ function CheckInOutPage() {
       });
     } catch (error) {
       alert(
-        error.response?.data?.message ||
-          error.response?.data ||
+        getApiErrorMessage(
+          error,
           "QR Ticket không hợp lệ hoặc xe không còn trong bãi."
+        )
       );
       setCheckoutData(null);
     }
@@ -315,21 +358,6 @@ function CheckInOutPage() {
     return motorbikeRegex.test(value);
   };
 
-  const formatPlateForSearch = (value) => {
-    const raw = String(value || "").toUpperCase();
-    const cleaned = cleanPlateInput(raw);
-
-    if (/^\d{2}-[A-Z0-9]{1,3}[-\s]/.test(raw) || raw.includes(" ")) {
-      return formatMotorbikePlate(raw);
-    }
-
-    if (/^\d{2}[A-Z][0-9][0-9]{5}$/.test(cleaned) || /^\d{2}[A-Z]{2}[0-9]{5}$/.test(cleaned)) {
-      return formatMotorbikePlate(cleaned);
-    }
-
-    return formatCarPlate(cleaned);
-  };
-
   const normalizePlateForCompare = (value) => {
     return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   };
@@ -371,6 +399,7 @@ function CheckInOutPage() {
   };
 
   const resetCheckoutGateScan = () => {
+    revokePreviewUrl(checkOutPreviewUrlRef);
     setSearchPlate("");
     setCheckoutPlateScanned(false);
     setCheckOutPlateImage({
@@ -386,7 +415,6 @@ function CheckInOutPage() {
   const resetCheckoutWorkingState = () => {
     resetCheckoutGateScan();
     setSearchTicketId("");
-    setCheckoutLostTicket(false);
   };
 
   const validateCheckoutBeforeFinalizing = () => {
@@ -497,7 +525,7 @@ function CheckInOutPage() {
       return false;
     }
 
-    const confidence = Number(data?.confidence || 0);
+    const confidence = normalizeOcrConfidence(data?.confidence);
 
     if (confidence > 0 && confidence < 0.35) {
       return false;
@@ -529,7 +557,7 @@ function CheckInOutPage() {
   };
 
   const buildOcrSuccessMessage = (prefix, detectedPlate, uiDetectedType, data) => {
-    const confidence = Number(data?.confidence || 0);
+    const confidence = normalizeOcrConfidence(data?.confidence);
     const confidencePercent = Math.round(confidence * 100);
     const reviewHint =
       confidence > 0 && confidence < 0.75
@@ -608,6 +636,59 @@ function CheckInOutPage() {
     return null;
   };
 
+  const resolveOcrPlate = (data, fallbackType = "") => {
+    const rawDetectedPlate = pickOcrPlate(data);
+    const rawDetectedType = pickOcrVehicleType(
+      data,
+      rawDetectedPlate,
+      fallbackType
+    );
+
+    const textFallback = extractPlateFromOcrText(
+      data?.rawText ||
+        data?.raw_text ||
+        data?.recognizedText ||
+        data?.recognized_text ||
+        data?.ocrText ||
+        data?.ocr_text ||
+        data?.text ||
+        ""
+    );
+
+    if (!rawDetectedPlate && textFallback) {
+      return textFallback;
+    }
+
+    const candidateTypes = [
+      rawDetectedType,
+      detectVehicleTypeFromPlate(rawDetectedPlate),
+      fallbackType,
+      "Car",
+      "Motorbike"
+    ]
+      .map(toUiVehicleType)
+      .filter((type, index, values) => values.indexOf(type) === index);
+
+    for (const candidateType of candidateTypes) {
+      const formattedPlate = formatPlateByVehicleType(
+        rawDetectedPlate,
+        candidateType
+      );
+
+      if (validateVietnamPlate(formattedPlate, candidateType)) {
+        return {
+          plate: formattedPlate,
+          vehicleType: candidateType
+        };
+      }
+    }
+
+    return textFallback || {
+      plate: rawDetectedPlate,
+      vehicleType: toUiVehicleType(rawDetectedType || fallbackType)
+    };
+  };
+
   const runCheckInPlateOcr = async (file, previewUrl, fileName) => {
     setCheckInOcrLoading(true);
     setCheckInOcrProgress(0);
@@ -627,21 +708,15 @@ function CheckInOutPage() {
 
       const response = await axiosClient.post(
         `/plate-recognition/scan?vehicleType=${encodeURIComponent(vehicleType)}&mode=accurate`,
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data"
-          }
-        }
+        formData
       );
 
       setCheckInOcrProgress(100);
 
       const data = unwrapOcrData(response.data);
-      const rawDetectedPlate = pickOcrPlate(data);
-      const rawDetectedType = pickOcrVehicleType(data, rawDetectedPlate, vehicleType);
-      const uiDetectedType = toUiVehicleType(rawDetectedType);
-      const detectedPlate = formatPlateByVehicleType(rawDetectedPlate, uiDetectedType);
+      const resolvedPlate = resolveOcrPlate(data, vehicleType);
+      const detectedPlate = resolvedPlate?.plate || "";
+      const uiDetectedType = resolvedPlate?.vehicleType || vehicleType;
 
       const ocrSucceeded =
         data.success !== false &&
@@ -658,34 +733,34 @@ function CheckInOutPage() {
         return;
       }
 
-      /*
-       * FIX: khi OCR trả về biển hợp lệ thì LUÔN tự động:
-       * 1. Chọn đúng loại xe (Car/Motorbike) trong dropdown.
-       * 2. Điền biển số xuống input LICENSE PLATE NUMBER.
-       */
       setVehicleType(uiDetectedType);
       setLicensePlateIn(detectedPlate);
 
       setCheckInPlateImage({
         previewUrl,
         fileName,
-        message: buildOcrSuccessMessage("OCR nhận diện", detectedPlate, uiDetectedType, data)
+        message: buildOcrSuccessMessage(
+          "OCR nhận diện",
+          detectedPlate,
+          uiDetectedType,
+          data
+        )
       });
     } catch (error) {
       setLicensePlateIn("");
       setCheckInPlateImage({
         previewUrl,
         fileName,
-        message:
-          error.response?.data?.message ||
+        message: getApiErrorMessage(
+          error,
           "Không kết nối được OCR service. Hãy kiểm tra Python OCR service đang chạy ở port 8001 hoặc nhập biển số thủ công."
+        )
       });
     } finally {
       setCheckInOcrLoading(false);
       setCheckInOcrProgress(0);
     }
   };
-
 
   const runCheckOutPlateOcr = async (file, previewUrl, fileName) => {
     setCheckOutOcrLoading(true);
@@ -707,21 +782,15 @@ function CheckInOutPage() {
 
       const response = await axiosClient.post(
         "/plate-recognition/scan?mode=accurate",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data"
-          }
-        }
+        formData
       );
 
       setCheckOutOcrProgress(100);
 
       const data = unwrapOcrData(response.data);
-      const rawDetectedPlate = pickOcrPlate(data);
-      const rawDetectedType = pickOcrVehicleType(data, rawDetectedPlate, "");
-      const uiDetectedType = toUiVehicleType(rawDetectedType);
-      const detectedPlate = formatPlateByVehicleType(rawDetectedPlate, uiDetectedType);
+      const resolvedPlate = resolveOcrPlate(data);
+      const detectedPlate = resolvedPlate?.plate || "";
+      const uiDetectedType = resolvedPlate?.vehicleType || "Car";
 
       const ocrSucceeded =
         data.success !== false &&
@@ -739,17 +808,18 @@ function CheckInOutPage() {
         return;
       }
 
-      /*
-       * FIX: OCR checkout thành công thì tự điền biển số cổng ra
-       * và bật cờ checkoutPlateScanned để cho phép quét QR Ticket.
-       */
       setSearchPlate(detectedPlate);
       setCheckoutPlateScanned(true);
 
       setCheckOutPlateImage({
         previewUrl,
         fileName,
-        message: buildOcrSuccessMessage("OCR checkout nhận diện", detectedPlate, uiDetectedType, data)
+        message: buildOcrSuccessMessage(
+          "OCR checkout nhận diện",
+          detectedPlate,
+          uiDetectedType,
+          data
+        )
       });
     } catch (error) {
       setSearchPlate("");
@@ -757,9 +827,10 @@ function CheckInOutPage() {
       setCheckOutPlateImage({
         previewUrl,
         fileName,
-        message:
-          error.response?.data?.message ||
+        message: getApiErrorMessage(
+          error,
           "Không kết nối được OCR service cho checkout. Hãy kiểm tra Python OCR service ở port 8001."
+        )
       });
     } finally {
       setCheckOutOcrLoading(false);
@@ -774,8 +845,35 @@ function CheckInOutPage() {
       return;
     }
 
+    if (!file.type.startsWith("image/")) {
+      alert("Vui lòng chọn đúng file ảnh biển số.");
+      event.target.value = "";
+      return;
+    }
+
+    const maximumFileSize = 10 * 1024 * 1024;
+
+    if (file.size > maximumFileSize) {
+      alert("Ảnh biển số không được vượt quá 10 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    const previewRef =
+      mode === "checkin" ? checkInPreviewUrlRef : checkOutPreviewUrlRef;
+
+    revokePreviewUrl(previewRef);
+
     const previewUrl = URL.createObjectURL(file);
-    const extractedPlate = tryExtractPlateFromFileName(file.name);
+    previewRef.current = previewUrl;
+
+    const allowFilenameFallback =
+      import.meta.env.DEV &&
+      import.meta.env.VITE_ALLOW_FILENAME_PLATE_FALLBACK === "true";
+
+    const extractedPlate = allowFilenameFallback
+      ? tryExtractPlateFromFileName(file.name)
+      : "";
 
     const commonData = {
       previewUrl,
@@ -784,11 +882,12 @@ function CheckInOutPage() {
 
     if (mode === "checkin") {
       if (extractedPlate) {
-        const detectedType = detectVehicleTypeFromPlate(extractedPlate) || vehicleType;
+        const detectedType =
+          detectVehicleTypeFromPlate(extractedPlate) || vehicleType;
 
         setCheckInPlateImage({
           ...commonData,
-          message: `Đã nhận diện từ tên file: ${extractedPlate} | Loại xe: ${detectedType}`
+          message: `DEV fallback từ tên file: ${extractedPlate} | Loại xe: ${detectedType}`
         });
 
         setLicensePlateIn(extractedPlate);
@@ -806,7 +905,7 @@ function CheckInOutPage() {
       setCheckoutData(null);
       setCheckOutPlateImage({
         ...commonData,
-        message: `Đã nhận diện biển số cổng ra từ tên file: ${extractedPlate}`
+        message: `DEV fallback biển số cổng ra từ tên file: ${extractedPlate}`
       });
       return;
     }
@@ -953,19 +1052,15 @@ function CheckInOutPage() {
     }
   };
 
-  const loadParkingFloorStats = async () => {
-    try {
-      const res = await parkingSessionApi.getParkingFloorStats();
-      setFloorsData(Array.isArray(res.data) ? res.data : []);
-    } catch (error) {
-      console.error("Load parking floor stats failed:", error);
-      setFloorsData([]);
-    }
-  };
-
   useEffect(() => {
     loadActiveSessions();
-    loadParkingFloorStats();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      revokePreviewUrl(checkInPreviewUrlRef);
+      revokePreviewUrl(checkOutPreviewUrlRef);
+    };
   }, []);
 
   useEffect(() => {
@@ -1032,6 +1127,7 @@ function CheckInOutPage() {
 
       const createdTicketId = res.data?.ticketId || generateTicketId();
 
+      revokePreviewUrl(checkInPreviewUrlRef);
       setLicensePlateIn("");
       setCheckInPlateImage({
         previewUrl: "",
@@ -1055,11 +1151,10 @@ function CheckInOutPage() {
       });
 
       await loadActiveSessions();
-      await loadParkingFloorStats();
 
       resetCheckoutWorkingState();
     } catch (error) {
-      alert(error.response?.data?.message || error.response?.data || "Check-in thất bại");
+      alert(getApiErrorMessage(error, "Check-in thất bại"));
     }
   };
 
@@ -1140,16 +1235,16 @@ function CheckInOutPage() {
       );
 
       await loadActiveSessions();
-      await loadParkingFloorStats();
 
       resetCheckoutWorkingState();
     } catch (error) {
       setCheckoutFinalized(false);
       setCheckoutPaymentStatus("ERROR");
       setCheckoutPaymentMessage(
-        error.response?.data?.message ||
-          error.response?.data ||
+        getApiErrorMessage(
+          error,
           "Đã nhận thanh toán nhưng không thể hoàn tất check-out. Vui lòng thử lại."
+        )
       );
     }
   };
@@ -1203,16 +1298,16 @@ function CheckInOutPage() {
       );
 
       await loadActiveSessions();
-      await loadParkingFloorStats();
 
       resetCheckoutWorkingState();
     } catch (error) {
       setCheckoutFinalized(false);
       setCheckoutPaymentStatus("ERROR");
       setCheckoutPaymentMessage(
-        error.response?.data?.message ||
-          error.response?.data ||
+        getApiErrorMessage(
+          error,
           "Không thể hoàn tất check-out bằng tiền mặt. Vui lòng thử lại."
+        )
       );
     }
   };
@@ -1262,9 +1357,8 @@ function CheckInOutPage() {
         );
 
         await loadActiveSessions();
-        await loadParkingFloorStats();
-
-      resetCheckoutWorkingState();
+  
+        resetCheckoutWorkingState();
         return;
       }
 
@@ -1298,19 +1392,28 @@ function CheckInOutPage() {
       setShowPaymentModal(true);
     } catch (error) {
       alert(
-        error.response?.data?.message ||
-          error.response?.data ||
+        getApiErrorMessage(
+          error,
           "Tạo QR thanh toán hoặc Check-out thất bại"
+        )
       );
     }
   };
 
   useEffect(() => {
+    const terminalPaymentStatuses = [
+      "PAID",
+      "ERROR",
+      "CANCELLED",
+      "CANCELED",
+      "EXPIRED",
+      "FAILED"
+    ];
+
     if (
       !showPaymentModal ||
       !checkoutPaymentData?.orderCode ||
-      checkoutPaymentStatus === "PAID" ||
-      checkoutPaymentStatus === "ERROR"
+      terminalPaymentStatuses.includes(checkoutPaymentStatus)
     ) {
       return undefined;
     }
@@ -1409,8 +1512,6 @@ function CheckInOutPage() {
         }));
 
         html5QrCode = new Html5Qrcode(ticketScannerElementId);
-        ticketScannerRef.current = html5QrCode;
-
         const cameras = await Html5Qrcode.getCameras();
 
         if (!cameras || cameras.length === 0) {
@@ -1466,14 +1567,29 @@ function CheckInOutPage() {
       }
     };
 
-    window.setTimeout(startScanner, 100);
+    const startTimerId = window.setTimeout(() => {
+      if (!stopped) {
+        startScanner();
+      }
+    }, 100);
 
     return () => {
+      window.clearTimeout(startTimerId);
       stopScanner();
     };
   }, [ticketScannerModal.show]);
 
   const handleCloseModal = () => {
+    if (checkoutPaymentStatus === "PENDING" && !checkoutFinalized) {
+      const confirmed = window.confirm(
+        "Thanh toán PayOS vẫn đang chờ xác nhận. Nếu đóng cửa sổ, hệ thống sẽ ngừng theo dõi giao dịch này. Bạn vẫn muốn đóng?"
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
     setShowPaymentModal(false);
     setSearchPlate("");
     setSearchTicketId("");
@@ -1634,6 +1750,7 @@ function CheckInOutPage() {
                 inputKey={`checkin-plate-${checkInPlateInputKey}`}
                 previewUrl={checkInPlateImage.previewUrl}
                 isLoading={checkInOcrLoading}
+                progress={checkInOcrProgress}
                 onChange={(event) => handlePlateImageUpload(event, "checkin")}
               />
 
@@ -1774,6 +1891,7 @@ function CheckInOutPage() {
               inputKey={`checkout-plate-${checkOutPlateInputKey}`}
               previewUrl={checkOutPlateImage.previewUrl}
               isLoading={checkOutOcrLoading}
+              progress={checkOutOcrProgress}
               onChange={(event) => handlePlateImageUpload(event, "checkout")}
             />
 
@@ -2056,8 +2174,7 @@ function CheckInOutPage() {
                       return;
                     }
 
-                    setCheckoutLostTicket(false);
-                    setSearchTicketId(session.ticketId);
+                                    setSearchTicketId(session.ticketId);
 
                     try {
                       const res = await parkingSessionApi.searchCheckout({
@@ -2074,7 +2191,7 @@ function CheckInOutPage() {
 
                       window.scrollTo({ top: 0, behavior: "smooth" });
                     } catch (error) {
-                      alert(error.response?.data?.message || "Không lấy được thông tin checkout");
+                      alert(getApiErrorMessage(error, "Không lấy được thông tin checkout"));
                       setCheckoutData(null);
                     }
                   }}
@@ -2137,7 +2254,6 @@ function CheckInOutPage() {
                           return;
                         }
 
-                        setCheckoutLostTicket(true);
                         setSearchTicketId(session.ticketId);
 
                         try {
@@ -2155,7 +2271,7 @@ function CheckInOutPage() {
 
                           window.scrollTo({ top: 0, behavior: "smooth" });
                         } catch (error) {
-                          alert(error.response?.data?.message || "Không lấy được thông tin checkout mất vé");
+                          alert(getApiErrorMessage(error, "Không lấy được thông tin checkout mất vé"));
                           setCheckoutData(null);
                         }
                       }}
@@ -2581,13 +2697,13 @@ function CheckInOutPage() {
                     <div>
                       <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>DURATION</div>
                       <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
-                        {checkoutData.durationHours || 1} giờ
+                        {checkoutData.durationHours ? `${checkoutData.durationHours} giờ` : "N/A"}
                       </div>
                     </div>
                     <div>
                       <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>PRICE PER HOUR</div>
                       <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
-                        {formatCurrency(checkoutData.pricePerHour || 5000)} / giờ
+                        {checkoutData.pricePerHour ? `${formatCurrency(checkoutData.pricePerHour)} / giờ` : "N/A"}
                       </div>
                     </div>
                   </div>
@@ -2795,7 +2911,15 @@ function CheckInOutPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            window.open(checkoutPaymentData.checkoutUrl, "_blank");
+                            const paymentWindow = window.open(
+                              checkoutPaymentData.checkoutUrl,
+                              "_blank",
+                              "noopener,noreferrer"
+                            );
+
+                            if (paymentWindow) {
+                              paymentWindow.opener = null;
+                            }
                           }}
                           style={{
                             marginTop: "1rem",
@@ -2838,6 +2962,7 @@ function PlateImageScannerBox({
   inputKey,
   previewUrl,
   isLoading = false,
+  progress = 0,
   onChange
 }) {
   return (
@@ -2911,6 +3036,27 @@ function PlateImageScannerBox({
               animation: "plateScanLine 1.35s ease-in-out infinite alternate"
             }}
           />
+        )}
+
+        {isLoading && (
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              bottom: "1.25rem",
+              transform: "translateX(-50%)",
+              padding: "0.45rem 0.75rem",
+              borderRadius: "999px",
+              background: "rgba(15, 23, 42, 0.85)",
+              color: "#ffffff",
+              fontSize: "0.75rem",
+              fontWeight: 800,
+              zIndex: 3,
+              whiteSpace: "nowrap"
+            }}
+          >
+            Đang nhận diện OCR {Math.max(0, Math.min(Number(progress) || 0, 100))}%
+          </div>
         )}
 
         <div

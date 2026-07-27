@@ -1,5 +1,10 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import {
+  Routes,
+  Route,
+  Navigate,
+  Outlet
+} from 'react-router-dom';
 import './App.css';
 
 import DashboardIntro from './landing-page/DashboardIntro';
@@ -21,7 +26,12 @@ import BookingHistoryPage from './booking-history/BookingHistoryPage';
 import bookingBg from './Pictures/booking.png';
 
 import { userApi } from './api/userApi';
-import { ROUTE_PERMISSIONS } from './utils/auth';
+import {
+  ROUTE_PERMISSIONS,
+  getDefaultPathByRole,
+  isSupportedRole,
+  normalizeRole
+} from './utils/auth';
 
 const LOGOUT_FLAG_KEY = 'isLoggingOut';
 const LOGOUT_STARTED_AT_KEY = 'logoutStartedAt';
@@ -37,15 +47,6 @@ const clearLocalSession = () => {
   localStorage.removeItem('headerUserSyncedAt');
   localStorage.removeItem(LOGOUT_FLAG_KEY);
   localStorage.removeItem(LOGOUT_STARTED_AT_KEY);
-};
-
-const normalizeRole = (role) => {
-  if (!role) return null;
-
-  return String(role)
-    .trim()
-    .toUpperCase()
-    .replace(/^ROLE_/, '');
 };
 
 const getSavedUser = () => {
@@ -70,30 +71,29 @@ const getSavedUser = () => {
 const extractRole = (user) => {
   if (!user) return null;
 
+  let rawRole = '';
+
   if (user.role && typeof user.role === 'object') {
-    return normalizeRole(
+    rawRole =
       user.role.roleName ||
-        user.role.name ||
-        user.role.authority ||
-        ''
-    );
+      user.role.name ||
+      user.role.authority ||
+      '';
+  } else if (typeof user.role === 'string') {
+    rawRole = user.role;
+  } else if (user.roleName) {
+    rawRole = user.roleName;
+  } else if (user.authority) {
+    rawRole = user.authority;
+  } else {
+    rawRole = localStorage.getItem('user_role');
   }
 
-  if (user.role && typeof user.role === 'string') {
-    return normalizeRole(user.role);
-  }
+  const cleanRole = normalizeRole(rawRole);
 
-  if (user.roleName) {
-    return normalizeRole(user.roleName);
-  }
-
-  if (user.authority) {
-    return normalizeRole(user.authority);
-  }
-
-  return normalizeRole(
-    localStorage.getItem('user_role')
-  );
+  return isSupportedRole(cleanRole)
+    ? cleanRole
+    : null;
 };
 
 const isLogoutGuardActive = () => {
@@ -124,19 +124,6 @@ const clearLogoutGuard = () => {
   localStorage.removeItem(LOGOUT_STARTED_AT_KEY);
 };
 
-const getDefaultPathByRole = (role) => {
-  const cleanRole = normalizeRole(role);
-
-  if (
-    cleanRole === 'DRIVER' ||
-    cleanRole === 'USER'
-  ) {
-    return '/user-ui';
-  }
-
-  return '/dashboard';
-};
-
 const AuthLayout = () => {
   const user = getSavedUser();
   const userRole = extractRole(user);
@@ -161,8 +148,10 @@ const AuthLayout = () => {
 
 const PrivateLayout = () => {
   const user = getSavedUser();
+  const userRole = extractRole(user);
 
-  if (!user) {
+  if (!user || !userRole) {
+    clearLocalSession();
     return <Navigate to="/login" replace />;
   }
 
@@ -180,9 +169,7 @@ const PrivateLayout = () => {
   );
 };
 
-const RoleProtectedRoute = ({
-  allowedRoles
-}) => {
+const RoleProtectedRoute = ({ allowedRoles }) => {
   const user = getSavedUser();
   const userRole = extractRole(user);
 
@@ -190,11 +177,9 @@ const RoleProtectedRoute = ({
     return <Navigate to="/login" replace />;
   }
 
-  const cleanAllowedRoles = (
-    allowedRoles || []
-  )
-    .map((role) => normalizeRole(role))
-    .filter(Boolean);
+  const cleanAllowedRoles = (allowedRoles || [])
+    .map(normalizeRole)
+    .filter(isSupportedRole);
 
   const hasPermission =
     cleanAllowedRoles.includes(userRole);
@@ -217,8 +202,13 @@ function App() {
 
     const sendHeartbeat = async () => {
       const user = getSavedUser();
+      const userRole = extractRole(user);
 
-      if (!user || isLogoutGuardActive()) {
+      if (
+        !user ||
+        !userRole ||
+        isLogoutGuardActive()
+      ) {
         return;
       }
 
@@ -258,6 +248,10 @@ function App() {
         element={<DashboardIntro />}
       />
 
+      {/*
+       * Keep Google callback outside AuthLayout so stale local user data
+       * cannot redirect away before the OAuth callback is completed.
+       */}
       <Route
         path="/auth/google/callback"
         element={<GoogleCallbackPage />}
@@ -289,9 +283,7 @@ function App() {
         <Route
           element={
             <RoleProtectedRoute
-              allowedRoles={
-                ROUTE_PERMISSIONS.booking
-              }
+              allowedRoles={ROUTE_PERMISSIONS.booking}
             />
           }
         >
@@ -309,9 +301,7 @@ function App() {
         <Route
           element={
             <RoleProtectedRoute
-              allowedRoles={
-                ROUTE_PERMISSIONS.bookingHistory
-              }
+              allowedRoles={ROUTE_PERMISSIONS.bookingHistory}
             />
           }
         >
@@ -324,9 +314,7 @@ function App() {
         <Route
           element={
             <RoleProtectedRoute
-              allowedRoles={
-                ROUTE_PERMISSIONS.pricingPolicies
-              }
+              allowedRoles={ROUTE_PERMISSIONS.pricingPolicies}
             />
           }
         >
@@ -339,9 +327,7 @@ function App() {
         <Route
           element={
             <RoleProtectedRoute
-              allowedRoles={
-                ROUTE_PERMISSIONS.parkingFloors
-              }
+              allowedRoles={ROUTE_PERMISSIONS.parkingFloors}
             />
           }
         >
@@ -354,9 +340,7 @@ function App() {
         <Route
           element={
             <RoleProtectedRoute
-              allowedRoles={
-                ROUTE_PERMISSIONS.operationalPages
-              }
+              allowedRoles={ROUTE_PERMISSIONS.dashboard}
             />
           }
         >
@@ -364,12 +348,28 @@ function App() {
             path="/dashboard"
             element={<DashboardPage />}
           />
+        </Route>
 
+        <Route
+          element={
+            <RoleProtectedRoute
+              allowedRoles={ROUTE_PERMISSIONS.checkInOut}
+            />
+          }
+        >
           <Route
             path="/check-in-out"
             element={<CheckInOutPage />}
           />
+        </Route>
 
+        <Route
+          element={
+            <RoleProtectedRoute
+              allowedRoles={ROUTE_PERMISSIONS.reservations}
+            />
+          }
+        >
           <Route
             path="/reservations"
             element={<ReservationAdmin />}
@@ -379,9 +379,7 @@ function App() {
         <Route
           element={
             <RoleProtectedRoute
-              allowedRoles={
-                ROUTE_PERMISSIONS.reports
-              }
+              allowedRoles={ROUTE_PERMISSIONS.reports}
             />
           }
         >
@@ -394,9 +392,7 @@ function App() {
         <Route
           element={
             <RoleProtectedRoute
-              allowedRoles={
-                ROUTE_PERMISSIONS.userManagement
-              }
+              allowedRoles={ROUTE_PERMISSIONS.userManagement}
             />
           }
         >

@@ -1,4 +1,9 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
+import React, {
+  memo,
+  useEffect,
+  useRef,
+  useState
+} from 'react';
 import {
   Bell,
   Settings,
@@ -8,8 +13,13 @@ import {
 
 import { userApi } from '../api/userApi';
 import axiosClient from '../api/axiosClient';
+import {
+  isSupportedRole,
+  normalizeRole
+} from '../utils/auth';
 
-const NOTIFICATION_STORAGE_KEY = 'parking_notifications';
+const NOTIFICATION_STORAGE_KEY =
+  'parking_notifications';
 const LOGOUT_FLAG_KEY = 'isLoggingOut';
 const LOGOUT_STARTED_AT_KEY = 'logoutStartedAt';
 const THEME_STORAGE_KEY = 'theme';
@@ -20,35 +30,37 @@ const USER_SYNCED_AT_KEY = 'headerUserSyncedAt';
 const USER_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 const formatRole = (role) => {
-  if (!role) return 'Staff';
+  const cleanRole = normalizeRole(role);
 
-  if (role === 'SYSTEM_ADMIN') return 'System Admin';
-  if (role === 'PARKING_MANAGER') return 'Parking Manager';
-  if (role === 'PARKING_STAFF') return 'Parking Staff';
-  if (role === 'DRIVER') return 'Driver';
-  if (role === 'USER') return 'User';
+  if (!cleanRole) return 'Unknown Role';
+  if (cleanRole === 'SYSTEM_ADMIN') return 'System Admin';
+  if (cleanRole === 'PARKING_MANAGER') return 'Parking Manager';
+  if (cleanRole === 'PARKING_STAFF') return 'Parking Staff';
 
-  return String(role)
-    .toLowerCase()
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+  // DRIVER is the normal end-user role.
+  if (cleanRole === 'DRIVER') return 'Driver';
+
+  return 'Unknown Role';
 };
+
+const getEmptyUser = () => ({
+  name: 'Parking User',
+  role: 'Unknown Role',
+  rawRole: ''
+});
 
 const getCurrentUserFromStorage = () => {
   const savedUser = localStorage.getItem(USER_CACHE_KEY);
 
   if (!savedUser) {
-    return {
-      name: 'Parking User',
-      role: 'Staff',
-      rawRole: 'PARKING_STAFF'
-    };
+    return getEmptyUser();
   }
 
   try {
     const parsedUser = JSON.parse(savedUser);
-    const rawRole = parsedUser.role || parsedUser.roleName || 'PARKING_STAFF';
+    const rawRole = normalizeRole(
+      parsedUser.role || parsedUser.roleName || ''
+    );
 
     return {
       name:
@@ -57,24 +69,27 @@ const getCurrentUserFromStorage = () => {
         parsedUser.email ||
         'Parking User',
       role: formatRole(rawRole),
-      rawRole
+      rawRole: isSupportedRole(rawRole)
+        ? rawRole
+        : ''
     };
   } catch (error) {
-    console.error('Không thể đọc dữ liệu user từ localStorage:', error);
+    console.error(
+      'Cannot read user data from localStorage:',
+      error
+    );
 
     localStorage.removeItem(USER_CACHE_KEY);
     localStorage.removeItem(USER_ROLE_KEY);
 
-    return {
-      name: 'Parking User',
-      role: 'Staff',
-      rawRole: 'PARKING_STAFF'
-    };
+    return getEmptyUser();
   }
 };
 
 const getInitialTheme = () => {
-  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  const savedTheme = localStorage.getItem(
+    THEME_STORAGE_KEY
+  );
 
   if (savedTheme === 'light') return 'light';
   if (savedTheme === 'dark') return 'dark';
@@ -96,13 +111,18 @@ const applyThemeToBody = (theme) => {
 };
 
 const clearExpiredLogoutGuard = () => {
-  const isLoggingOut = localStorage.getItem(LOGOUT_FLAG_KEY) === 'true';
-  const logoutStartedAt = Number(localStorage.getItem(LOGOUT_STARTED_AT_KEY) || 0);
+  const isLoggingOut =
+    localStorage.getItem(LOGOUT_FLAG_KEY) === 'true';
+
+  const logoutStartedAt = Number(
+    localStorage.getItem(LOGOUT_STARTED_AT_KEY) || 0
+  );
 
   if (!isLoggingOut) return false;
 
   const isStillFresh =
-    logoutStartedAt > 0 && Date.now() - logoutStartedAt < LOGOUT_GUARD_MS;
+    logoutStartedAt > 0 &&
+    Date.now() - logoutStartedAt < LOGOUT_GUARD_MS;
 
   if (isStillFresh) {
     return true;
@@ -115,14 +135,10 @@ const clearExpiredLogoutGuard = () => {
 };
 
 const clearLocalAuthSession = () => {
-  /*
-   * Cookie-only auth:
-   * - access_token and refresh_token are HttpOnly cookies handled by backend.
-   * - localStorage only stores non-sensitive UI metadata.
-   * - token and refreshToken removals are cleanup for older app versions.
-   */
   localStorage.removeItem('token');
   localStorage.removeItem('refreshToken');
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('authToken');
   localStorage.removeItem(USER_CACHE_KEY);
   localStorage.removeItem(USER_ROLE_KEY);
   localStorage.removeItem(USER_SYNCED_AT_KEY);
@@ -131,10 +147,14 @@ const clearLocalAuthSession = () => {
 };
 
 function Header() {
-  const [currentUser, setCurrentUser] = useState(() => getCurrentUserFromStorage());
+  const [currentUser, setCurrentUser] = useState(
+    () => getCurrentUserFromStorage()
+  );
   const [notifications, setNotifications] = useState([]);
-  const [isOpenDropdown, setIsOpenDropdown] = useState(false);
-  const [isOpenSettings, setIsOpenSettings] = useState(false);
+  const [isOpenDropdown, setIsOpenDropdown] =
+    useState(false);
+  const [isOpenSettings, setIsOpenSettings] =
+    useState(false);
   const [activeToast, setActiveToast] = useState(null);
   const [theme, setTheme] = useState(getInitialTheme);
 
@@ -146,7 +166,9 @@ function Header() {
 
   const isDarkMode = theme === 'dark';
   const displayNotifications = notifications.slice(0, 8);
-  const unreadCount = notifications.filter((notification) => !notification.isRead).length;
+  const unreadCount = notifications.filter(
+    (notification) => !notification.isRead
+  ).length;
 
   const syncUserState = (nextUser) => {
     const current = currentUserRef.current;
@@ -164,15 +186,25 @@ function Header() {
   };
 
   const shouldSyncUserFromServer = () => {
-    const lastSyncedAt = Number(localStorage.getItem(USER_SYNCED_AT_KEY) || 0);
+    const lastSyncedAt = Number(
+      localStorage.getItem(USER_SYNCED_AT_KEY) || 0
+    );
 
     if (!lastSyncedAt) return true;
 
-    return Date.now() - lastSyncedAt > USER_SYNC_INTERVAL_MS;
+    return (
+      Date.now() - lastSyncedAt >
+      USER_SYNC_INTERVAL_MS
+    );
   };
 
-  const loadUserInformation = async ({ force = false } = {}) => {
-    if (isLoggingOutRef.current || clearExpiredLogoutGuard()) {
+  const loadUserInformation = async (
+    { force = false } = {}
+  ) => {
+    if (
+      isLoggingOutRef.current ||
+      clearExpiredLogoutGuard()
+    ) {
       return;
     }
 
@@ -184,13 +216,15 @@ function Header() {
     }
 
     try {
-      /*
-       * /auth/me is authenticated by HttpOnly cookie.
-       * axiosClient has withCredentials=true, so no token is needed in localStorage.
-       */
       const response = await axiosClient.get('/auth/me');
       const data = response.data || {};
-      const rawRole = data.role || data.roleName || 'PARKING_STAFF';
+      const rawRole = normalizeRole(
+        data.role || data.roleName || ''
+      );
+
+      if (!isSupportedRole(rawRole)) {
+        throw new Error('Unsupported account role');
+      }
 
       const nextUser = {
         name:
@@ -215,11 +249,21 @@ function Header() {
         })
       );
 
-      localStorage.setItem(USER_ROLE_KEY, String(rawRole).toUpperCase());
-      localStorage.setItem(USER_SYNCED_AT_KEY, String(Date.now()));
+      localStorage.setItem(USER_ROLE_KEY, rawRole);
+      localStorage.setItem(
+        USER_SYNCED_AT_KEY,
+        String(Date.now())
+      );
 
       syncUserState(nextUser);
     } catch (error) {
+      if (error.response?.status === 401) {
+        clearLocalAuthSession();
+        sessionStorage.clear();
+        window.location.replace('/login');
+        return;
+      }
+
       syncUserState(fallbackUser);
     }
   };
@@ -247,7 +291,9 @@ function Header() {
   };
 
   const loadNotificationsFromStorage = () => {
-    const savedNotifications = localStorage.getItem(NOTIFICATION_STORAGE_KEY);
+    const savedNotifications = localStorage.getItem(
+      NOTIFICATION_STORAGE_KEY
+    );
 
     if (!savedNotifications) {
       setNotifications([]);
@@ -255,15 +301,27 @@ function Header() {
     }
 
     try {
-      const parsedNotifications = JSON.parse(savedNotifications);
-      setNotifications(Array.isArray(parsedNotifications) ? parsedNotifications : []);
+      const parsedNotifications = JSON.parse(
+        savedNotifications
+      );
+
+      setNotifications(
+        Array.isArray(parsedNotifications)
+          ? parsedNotifications
+          : []
+      );
     } catch (error) {
-      console.error('Không thể đọc notifications từ localStorage:', error);
+      console.error(
+        'Cannot read notifications from localStorage:',
+        error
+      );
       setNotifications([]);
     }
   };
 
-  const saveNotificationsToStorage = (nextNotifications) => {
+  const saveNotificationsToStorage = (
+    nextNotifications
+  ) => {
     localStorage.setItem(
       NOTIFICATION_STORAGE_KEY,
       JSON.stringify(nextNotifications.slice(0, 30))
@@ -275,9 +333,14 @@ function Header() {
       return `${actor.name} (${actor.role}) ${payload}`;
     }
 
-    const action = payload?.action || 'performed an action';
-    const target = payload?.target ? ` ${payload.target}` : '';
-    const detail = payload?.detail ? ` - ${payload.detail}` : '';
+    const action =
+      payload?.action || 'performed an action';
+    const target = payload?.target
+      ? ` ${payload.target}`
+      : '';
+    const detail = payload?.detail
+      ? ` - ${payload.detail}`
+      : '';
 
     return `${actor.name} (${actor.role}) ${action}${target}${detail}`;
   };
@@ -297,7 +360,11 @@ function Header() {
     };
 
     setNotifications((prev) => {
-      const nextNotifications = [newNotification, ...prev].slice(0, 30);
+      const nextNotifications = [
+        newNotification,
+        ...prev
+      ].slice(0, 30);
+
       saveNotificationsToStorage(nextNotifications);
       return nextNotifications;
     });
@@ -318,7 +385,10 @@ function Header() {
 
     const handleStorageChange = (event) => {
       if (event.key === THEME_STORAGE_KEY) {
-        const nextTheme = event.newValue === 'light' ? 'light' : 'dark';
+        const nextTheme =
+          event.newValue === 'light'
+            ? 'light'
+            : 'dark';
         setTheme(nextTheme);
         return;
       }
@@ -342,12 +412,24 @@ function Header() {
     loadUserInformation();
     loadNotificationsFromStorage();
 
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('dispatchParkingNotification', handlePageNotification);
+    window.addEventListener(
+      'storage',
+      handleStorageChange
+    );
+    window.addEventListener(
+      'dispatchParkingNotification',
+      handlePageNotification
+    );
 
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('dispatchParkingNotification', handlePageNotification);
+      window.removeEventListener(
+        'storage',
+        handleStorageChange
+      );
+      window.removeEventListener(
+        'dispatchParkingNotification',
+        handlePageNotification
+      );
     };
   }, []);
 
@@ -367,37 +449,53 @@ function Header() {
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target)
+      ) {
         setIsOpenDropdown(false);
       }
 
-      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
+      if (
+        settingsRef.current &&
+        !settingsRef.current.contains(event.target)
+      ) {
         setIsOpenSettings(false);
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener(
+      'mousedown',
+      handleClickOutside
+    );
 
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () =>
+      document.removeEventListener(
+        'mousedown',
+        handleClickOutside
+      );
   }, []);
 
   const handleBellClick = () => {
     setIsOpenDropdown((prev) => !prev);
 
     setNotifications((prev) => {
-      const nextNotifications = prev.map((notification) => ({
-        ...notification,
-        isRead: true
-      }));
+      const nextNotifications = prev.map(
+        (notification) => ({
+          ...notification,
+          isRead: true
+        })
+      );
 
       saveNotificationsToStorage(nextNotifications);
-
       return nextNotifications;
     });
   };
 
   const handleToggleTheme = () => {
-    setTheme((prevTheme) => (prevTheme === 'dark' ? 'light' : 'dark'));
+    setTheme((prevTheme) =>
+      prevTheme === 'dark' ? 'light' : 'dark'
+    );
   };
 
   const handleLogOut = async () => {
@@ -407,7 +505,10 @@ function Header() {
 
     isLoggingOutRef.current = true;
     localStorage.setItem(LOGOUT_FLAG_KEY, 'true');
-    localStorage.setItem(LOGOUT_STARTED_AT_KEY, String(Date.now()));
+    localStorage.setItem(
+      LOGOUT_STARTED_AT_KEY,
+      String(Date.now())
+    );
 
     setIsOpenSettings(false);
 
@@ -419,11 +520,6 @@ function Header() {
       }
 
       try {
-        /*
-         * Cookie-only logout:
-         * Do not send refreshToken from localStorage.
-         * Backend reads refresh_token from HttpOnly cookie and clears both cookies.
-         */
         await axiosClient.post('/auth/logout');
       } catch (error) {
         console.error('Logout failed:', error);
@@ -431,14 +527,15 @@ function Header() {
     } finally {
       clearLocalAuthSession();
       sessionStorage.clear();
-
       window.location.replace('/login');
     }
   };
 
   const handleClearNotifications = () => {
     setNotifications([]);
-    localStorage.removeItem(NOTIFICATION_STORAGE_KEY);
+    localStorage.removeItem(
+      NOTIFICATION_STORAGE_KEY
+    );
   };
 
   const avatarLetter = currentUser.name
@@ -506,12 +603,24 @@ function Header() {
             alignItems: 'center',
             justifyContent: 'center'
           }}
-          title={isDarkMode ? 'Chuyển sang Chế độ Sáng' : 'Chuyển sang Chế độ Tối'}
+          title={
+            isDarkMode
+              ? 'Chuyển sang Chế độ Sáng'
+              : 'Chuyển sang Chế độ Tối'
+          }
         >
           {isDarkMode ? (
-            <Sun size={20} style={{ color: '#f59e0b' }} />
+            <Sun
+              size={20}
+              style={{ color: '#f59e0b' }}
+            />
           ) : (
-            <Moon size={20} style={{ color: 'var(--text-muted)' }} />
+            <Moon
+              size={20}
+              style={{
+                color: 'var(--text-muted)'
+              }}
+            />
           )}
         </button>
 
@@ -541,7 +650,9 @@ function Header() {
             <Bell
               size={20}
               style={{
-                color: isOpenDropdown ? 'var(--text-main)' : 'var(--text-muted)'
+                color: isOpenDropdown
+                  ? 'var(--text-main)'
+                  : 'var(--text-muted)'
               }}
             />
 
@@ -555,7 +666,8 @@ function Header() {
                   height: '8px',
                   backgroundColor: '#ef4444',
                   borderRadius: '50%',
-                  border: '2px solid var(--bg-column-left)'
+                  border:
+                    '2px solid var(--bg-column-left)'
                 }}
               />
             )}
@@ -570,7 +682,8 @@ function Header() {
                 width: '320px',
                 backgroundColor: 'var(--bg-card)',
                 border: '1px solid #3b82f6',
-                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.35)',
+                boxShadow:
+                  '0 10px 25px -5px rgba(0,0,0,0.35)',
                 borderRadius: '0.5rem',
                 padding: '0.75rem',
                 zIndex: 9999
@@ -625,10 +738,13 @@ function Header() {
                 top: '52px',
                 right: '0',
                 width: '360px',
-                backgroundColor: 'var(--bg-column-left)',
-                border: '1px solid var(--border-color)',
+                backgroundColor:
+                  'var(--bg-column-left)',
+                border:
+                  '1px solid var(--border-color)',
                 borderRadius: '0.5rem',
-                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.35)',
+                boxShadow:
+                  '0 20px 25px -5px rgba(0, 0, 0, 0.35)',
                 zIndex: 9998,
                 padding: '0.5rem 0'
               }}
@@ -636,7 +752,8 @@ function Header() {
               <div
                 style={{
                   padding: '0.5rem 1rem',
-                  borderBottom: '1px solid var(--border-color)',
+                  borderBottom:
+                    '1px solid var(--border-color)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
@@ -663,7 +780,8 @@ function Header() {
                   <span
                     style={{
                       fontSize: '0.7rem',
-                      backgroundColor: 'var(--bg-input)',
+                      backgroundColor:
+                        'var(--bg-input)',
                       color: 'var(--text-muted)',
                       padding: '0.1rem 0.4rem',
                       borderRadius: '0.25rem'
@@ -691,7 +809,12 @@ function Header() {
                 </div>
               </div>
 
-              <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+              <div
+                style={{
+                  maxHeight: '280px',
+                  overflowY: 'auto'
+                }}
+              >
                 {displayNotifications.length === 0 ? (
                   <div
                     style={{
@@ -704,39 +827,45 @@ function Header() {
                     No notifications yet.
                   </div>
                 ) : (
-                  displayNotifications.map((notification) => (
-                    <div
-                      key={notification.id}
-                      style={{
-                        padding: '0.75rem 1rem',
-                        borderBottom: '1px solid var(--border-color)',
-                        backgroundColor: notification.isRead
-                          ? 'transparent'
-                          : 'rgba(59, 130, 246, 0.08)',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <p
+                  displayNotifications.map(
+                    (notification) => (
+                      <div
+                        key={notification.id}
                         style={{
-                          margin: '0 0 0.35rem 0',
-                          fontSize: '0.78rem',
-                          color: 'var(--text-main)',
-                          lineHeight: '1.4'
+                          padding: '0.75rem 1rem',
+                          borderBottom:
+                            '1px solid var(--border-color)',
+                          backgroundColor:
+                            notification.isRead
+                              ? 'transparent'
+                              : 'rgba(59, 130, 246, 0.08)',
+                          cursor: 'pointer'
                         }}
                       >
-                        {notification.text}
-                      </p>
+                        <p
+                          style={{
+                            margin: '0 0 0.35rem 0',
+                            fontSize: '0.78rem',
+                            color: 'var(--text-main)',
+                            lineHeight: '1.4'
+                          }}
+                        >
+                          {notification.text}
+                        </p>
 
-                      <span
-                        style={{
-                          fontSize: '0.68rem',
-                          color: 'var(--text-muted)'
-                        }}
-                      >
-                        {getTimeText(notification.createdAt)}
-                      </span>
-                    </div>
-                  ))
+                        <span
+                          style={{
+                            fontSize: '0.68rem',
+                            color: 'var(--text-muted)'
+                          }}
+                        >
+                          {getTimeText(
+                            notification.createdAt
+                          )}
+                        </span>
+                      </div>
+                    )
+                  )
                 )}
               </div>
             </div>
@@ -754,7 +883,9 @@ function Header() {
           <button
             type="button"
             className="stable-header-icon-button"
-            onClick={() => setIsOpenSettings((prev) => !prev)}
+            onClick={() =>
+              setIsOpenSettings((prev) => !prev)
+            }
             style={{
               background: 'none',
               border: 'none',
@@ -768,7 +899,9 @@ function Header() {
             <Settings
               size={20}
               style={{
-                color: isOpenSettings ? 'var(--text-main)' : 'var(--text-muted)'
+                color: isOpenSettings
+                  ? 'var(--text-main)'
+                  : 'var(--text-muted)'
               }}
             />
           </button>
@@ -780,10 +913,13 @@ function Header() {
                 top: '52px',
                 right: '0',
                 width: '150px',
-                backgroundColor: 'var(--bg-column-left)',
-                border: '1px solid var(--border-color)',
+                backgroundColor:
+                  'var(--bg-column-left)',
+                border:
+                  '1px solid var(--border-color)',
                 borderRadius: '0.375rem',
-                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.35)',
+                boxShadow:
+                  '0 10px 15px -3px rgba(0, 0, 0, 0.35)',
                 zIndex: 9999,
                 padding: '0.25rem 0'
               }}
@@ -800,12 +936,18 @@ function Header() {
                   color: '#ef4444',
                   fontSize: '0.8rem',
                   textAlign: 'left',
-                  cursor: isLoggingOutRef.current ? 'not-allowed' : 'pointer',
+                  cursor: isLoggingOutRef.current
+                    ? 'not-allowed'
+                    : 'pointer',
                   fontWeight: '600',
-                  opacity: isLoggingOutRef.current ? 0.6 : 1
+                  opacity: isLoggingOutRef.current
+                    ? 0.6
+                    : 1
                 }}
               >
-                {isLoggingOutRef.current ? 'Logging out...' : 'Log out'}
+                {isLoggingOutRef.current
+                  ? 'Logging out...'
+                  : 'Log out'}
               </button>
             </div>
           )}
@@ -829,7 +971,12 @@ function Header() {
             justifyContent: 'flex-end'
           }}
         >
-          <div style={{ textAlign: 'right', minWidth: '100px' }}>
+          <div
+            style={{
+              textAlign: 'right',
+              minWidth: '100px'
+            }}
+          >
             <h4
               className="stable-header-user-name"
               style={{
