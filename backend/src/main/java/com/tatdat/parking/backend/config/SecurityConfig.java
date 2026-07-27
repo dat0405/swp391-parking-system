@@ -28,6 +28,40 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+        /*
+         * Database roles:
+         * - SYSTEM_ADMIN
+         * - PARKING_MANAGER
+         * - PARKING_STAFF
+         * - DRIVER
+         *
+         * DRIVER is the normal end-user role.
+         * There is no separate USER role.
+         */
+        private static final String[] ALL_SYSTEM_ROLES = {
+                "DRIVER",
+                "PARKING_STAFF",
+                "PARKING_MANAGER",
+                "SYSTEM_ADMIN"
+        };
+
+        private static final String[] MANAGEMENT_ROLES = {
+                "PARKING_MANAGER",
+                "SYSTEM_ADMIN"
+        };
+
+        private static final String[] OPERATIONAL_ROLES = {
+                "PARKING_STAFF",
+                "PARKING_MANAGER",
+                "SYSTEM_ADMIN"
+        };
+
+        private static final String[] DRIVER_AND_MANAGEMENT_ROLES = {
+                "DRIVER",
+                "PARKING_MANAGER",
+                "SYSTEM_ADMIN"
+        };
+
         private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
         @Value(
@@ -67,9 +101,7 @@ public class SecurityConfig {
                                 )
                                 .permitAll()
 
-                                /*
-                                 * Public health-check endpoint for Northflank.
-                                 */
+                                /* Public health check. */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/health"
@@ -77,8 +109,8 @@ public class SecurityConfig {
                                 .permitAll()
 
                                 /*
-                                 * Only the PayOS webhook is public because it is called
-                                 * by the PayOS server and does not contain the user's JWT.
+                                 * PayOS calls this webhook from its own server,
+                                 * so it does not contain the user's JWT cookie.
                                  */
                                 .requestMatchers(
                                         HttpMethod.POST,
@@ -86,374 +118,282 @@ public class SecurityConfig {
                                 )
                                 .permitAll()
 
-                                .requestMatchers(
-                                        "/api/auth/me"
-                                )
+                                /* Must stay before /api/auth/**. */
+                                .requestMatchers("/api/auth/me")
                                 .authenticated()
 
                                 .requestMatchers(
                                         "/api/auth/**",
-                                        "/api/test/**",
                                         "/v3/api-docs/**",
                                         "/swagger-ui/**",
                                         "/swagger-ui.html"
                                 )
                                 .permitAll()
 
-                                .requestMatchers(
-                                        "/api/admin/**"
-                                )
+                                /* System administrator APIs. */
+                                .requestMatchers("/api/admin/**")
                                 .hasRole("SYSTEM_ADMIN")
 
                                 /*
-                                 * Current-user online status endpoints.
+                                 * Every authenticated role may update its own
+                                 * online/offline status.
                                  */
                                 .requestMatchers(
                                         HttpMethod.PUT,
                                         "/api/users/me/heartbeat",
                                         "/api/users/me/offline"
                                 )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(ALL_SYSTEM_ROLES)
 
+                                /* User-management live status is admin-only. */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/users/status-stream"
                                 )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        "/api/users/**"
-                                )
                                 .hasRole("SYSTEM_ADMIN")
 
-                                .requestMatchers(
-                                        "/api/roles/**"
-                                )
+                                .requestMatchers("/api/users/**")
+                                .hasRole("SYSTEM_ADMIN")
+
+                                .requestMatchers("/api/roles/**")
                                 .hasRole("SYSTEM_ADMIN")
 
                                 /*
-                                 * Vehicle APIs.
+                                 * DRIVER may manage personal vehicles.
+                                 * Manager/Admin may inspect or manage vehicles.
+                                 * Staff uses parking-operation APIs instead.
                                  */
-                                .requestMatchers(
-                                        "/api/vehicles/**"
-                                )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .requestMatchers("/api/vehicles/**")
+                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
 
-                                /*
-                                 * Vehicle type APIs.
-                                 */
+                                /* Vehicle types are needed by booking and gate pages. */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/vehicle-types/**"
                                 )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(ALL_SYSTEM_ROLES)
 
                                 .requestMatchers(
                                         HttpMethod.POST,
                                         "/api/vehicle-types/**"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
                                 .requestMatchers(
                                         HttpMethod.PUT,
                                         "/api/vehicle-types/**"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.DELETE,
-                                        "/api/vehicle-types/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                /*
-                                 * Parking facility APIs.
-                                 */
-                                .requestMatchers(
-                                        HttpMethod.GET,
-                                        "/api/parking-facilities/**"
-                                )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.POST,
-                                        "/api/parking-facilities/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.PUT,
-                                        "/api/parking-facilities/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.DELETE,
-                                        "/api/parking-facilities/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                /*
-                                 * Parking floor APIs.
-                                 */
-                                .requestMatchers(
-                                        HttpMethod.GET,
-                                        "/api/parking-floors/**"
-                                )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.POST,
-                                        "/api/parking-floors/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.PUT,
-                                        "/api/parking-floors/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.DELETE,
-                                        "/api/parking-floors/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                /*
-                                 * Parking zone APIs.
-                                 */
-                                .requestMatchers(
-                                        HttpMethod.GET,
-                                        "/api/parking-zones/**"
-                                )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.POST,
-                                        "/api/parking-zones/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.PUT,
-                                        "/api/parking-zones/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.DELETE,
-                                        "/api/parking-zones/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                /*
-                                 * Parking slot APIs.
-                                 */
-                                .requestMatchers(
-                                        HttpMethod.GET,
-                                        "/api/parking-slots/**"
-                                )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        HttpMethod.PUT,
-                                        "/api/parking-slots/*/status"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
                                 .requestMatchers(
                                         HttpMethod.PATCH,
-                                        "/api/parking-slots/*/status"
+                                        "/api/vehicle-types/**"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
+                                .requestMatchers(
+                                        HttpMethod.DELETE,
+                                        "/api/vehicle-types/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                /* Parking facility read-only access. */
+                                .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/parking-facilities/**"
+                                )
+                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.POST,
+                                        "/api/parking-facilities/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PUT,
+                                        "/api/parking-facilities/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PATCH,
+                                        "/api/parking-facilities/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.DELETE,
+                                        "/api/parking-facilities/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                /* Parking floor read-only access. */
+                                .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/parking-floors/**"
+                                )
+                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.POST,
+                                        "/api/parking-floors/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PUT,
+                                        "/api/parking-floors/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PATCH,
+                                        "/api/parking-floors/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.DELETE,
+                                        "/api/parking-floors/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                /* Parking zone read-only access. */
+                                .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/parking-zones/**"
+                                )
+                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.POST,
+                                        "/api/parking-zones/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PUT,
+                                        "/api/parking-zones/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PATCH,
+                                        "/api/parking-zones/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.DELETE,
+                                        "/api/parking-zones/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                /* Parking slot read-only access. */
+                                .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/parking-slots/**"
+                                )
+                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
+
+                                /*
+                                 * Direct slot-management endpoints are reserved for
+                                 * Manager/Admin. Check-in/out changes slot state through
+                                 * parking-operation services.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.POST,
                                         "/api/parking-slots/**"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
                                 .requestMatchers(
                                         HttpMethod.PUT,
                                         "/api/parking-slots/**"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
                                 .requestMatchers(
                                         HttpMethod.PATCH,
                                         "/api/parking-slots/**"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
                                 .requestMatchers(
                                         HttpMethod.DELETE,
                                         "/api/parking-slots/**"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
-                                /*
-                                 * Parking session APIs.
-                                 */
-                                .requestMatchers(
-                                        "/api/parking-sessions/**"
-                                )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                /* Parking sessions support booking and gate operations. */
+                                .requestMatchers("/api/parking-sessions/**")
+                                .hasAnyRole(ALL_SYSTEM_ROLES)
 
-                                /*
-                                 * Pricing policy APIs.
-                                 */
+                                /* Price list and pricing management. */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/pricing-policies/**"
                                 )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
 
                                 .requestMatchers(
                                         HttpMethod.POST,
                                         "/api/pricing-policies/**"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
                                 .requestMatchers(
                                         HttpMethod.PUT,
                                         "/api/pricing-policies/**"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PATCH,
+                                        "/api/pricing-policies/**"
                                 )
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
                                 .requestMatchers(
                                         HttpMethod.DELETE,
                                         "/api/pricing-policies/**"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                /* Holiday surcharge list and management. */
+                                .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/holidays/**"
                                 )
+                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.POST,
+                                        "/api/holidays/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PUT,
+                                        "/api/holidays/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PATCH,
+                                        "/api/holidays/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.DELETE,
+                                        "/api/holidays/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
                                 /*
-                                 * Personal booking history.
+                                 * Personal booking APIs for DRIVER.
                                  * These rules must stay before /api/bookings/**.
                                  */
                                 .requestMatchers(
@@ -462,135 +402,78 @@ public class SecurityConfig {
                                         "/api/bookings/my-history/**",
                                         "/api/bookings/my-pending-payment"
                                 )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER"
-                                )
+                                .hasRole("DRIVER")
 
-                                /*
-                                 * DRIVER/USER may cancel only their own
-                                 * pending-payment booking.
-                                 */
                                 .requestMatchers(
                                         HttpMethod.PUT,
                                         "/api/bookings/my-history/*/cancel"
                                 )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER"
-                                )
+                                .hasRole("DRIVER")
 
-                                /*
-                                 * Create a new booking.
-                                 */
                                 .requestMatchers(
                                         HttpMethod.POST,
                                         "/api/bookings",
                                         "/api/bookings/"
                                 )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER"
-                                )
+                                .hasRole("DRIVER")
 
-                                /*
-                                 * Booking records are never permanently deleted.
-                                 */
+                                /* Booking records must not be permanently deleted. */
                                 .requestMatchers(
                                         HttpMethod.DELETE,
                                         "/api/bookings/**"
                                 )
                                 .denyAll()
 
-                                /*
-                                 * Remaining booking-management APIs.
-                                 */
-                                .requestMatchers(
-                                        "/api/bookings/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                /* Reservation management page: Manager/Admin only. */
+                                .requestMatchers("/api/bookings/**")
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
-                                /*
-                                 * Driver/User creates the QR only for a personal booking.
-                                 */
+                                /* Personal PayOS booking QR for DRIVER. */
                                 .requestMatchers(
                                         HttpMethod.POST,
                                         "/api/payments/payos/create/*"
                                 )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER"
-                                )
+                                .hasRole("DRIVER")
 
-                                /*
-                                 * Payment status can be checked by the booking user
-                                 * and operational staff.
-                                 */
+                                /* Checkout status is used by drivers and gate roles. */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/payments/payos/checkout-status/*"
                                 )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(ALL_SYSTEM_ROLES)
 
-                                /*
-                                 * Checkout payment at the parking lot is an
-                                 * operational staff action.
-                                 */
+                                /* Gate checkout payment. */
                                 .requestMatchers(
                                         HttpMethod.POST,
                                         "/api/payments/payos/create-checkout"
                                 )
-                                .hasAnyRole(
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
+                                .hasAnyRole(OPERATIONAL_ROLES)
+
+                                /* Remaining payment APIs still require a system role. */
+                                .requestMatchers("/api/payments/**")
+                                .hasAnyRole(ALL_SYSTEM_ROLES)
+
+                                /* OCR and gate operations. */
+                                .requestMatchers("/api/plate-recognition/**")
+                                .hasAnyRole(OPERATIONAL_ROLES)
+
+                                .requestMatchers("/api/parking-operations/**")
+                                .hasAnyRole(OPERATIONAL_ROLES)
+
+                                .requestMatchers("/api/parking/**")
+                                .hasAnyRole(OPERATIONAL_ROLES)
+
+                                /* Dashboard and reports. */
+                                .requestMatchers("/api/dashboard/**")
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers("/api/reports/**")
+                                .hasAnyRole(MANAGEMENT_ROLES)
 
                                 /*
-                                 * Remaining payment/report APIs.
+                                 * Keep authenticated as the final fallback so existing
+                                 * authenticated endpoints not listed above continue to work.
                                  */
-                                .requestMatchers(
-                                        "/api/payments/**"
-                                )
-                                .hasAnyRole(
-                                        "DRIVER",
-                                        "USER",
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                /*
-                                 * Check-in/check-out APIs.
-                                 */
-                                .requestMatchers(
-                                        "/api/parking-operations/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
-                                .requestMatchers(
-                                        "/api/parking/**"
-                                )
-                                .hasAnyRole(
-                                        "PARKING_STAFF",
-                                        "PARKING_MANAGER",
-                                        "SYSTEM_ADMIN"
-                                )
-
                                 .anyRequest()
                                 .authenticated()
                         )
@@ -627,15 +510,12 @@ public class SecurityConfig {
                         )
                 );
 
-                configuration.setAllowedHeaders(
-                        List.of("*")
-                );
-
+                configuration.setAllowedHeaders(List.of("*"));
                 configuration.setExposedHeaders(
                         List.of("Authorization")
                 );
-
                 configuration.setAllowCredentials(true);
+                configuration.setMaxAge(3600L);
 
                 UrlBasedCorsConfigurationSource source =
                         new UrlBasedCorsConfigurationSource();

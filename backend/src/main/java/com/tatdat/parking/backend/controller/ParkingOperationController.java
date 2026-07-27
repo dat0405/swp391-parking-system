@@ -24,7 +24,12 @@ import com.tatdat.parking.backend.repository.VehicleRepository;
 import com.tatdat.parking.backend.repository.VehicleTypeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -33,29 +38,44 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Random;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 
 @RestController
 @RequestMapping("/api/parking-operations")
 @RequiredArgsConstructor
-@CrossOrigin(
-        origins = {
-                "http://localhost:5173",
-                "http://localhost:5174",
-                "http://localhost:3000"
-        },
-        allowedHeaders = "*",
-        methods = {
-                RequestMethod.GET,
-                RequestMethod.POST,
-                RequestMethod.PUT,
-                RequestMethod.PATCH,
-                RequestMethod.DELETE,
-                RequestMethod.OPTIONS
-        },
-        allowCredentials = "true"
-)
 public class ParkingOperationController {
+
+    private static final String SESSION_ACTIVE = "ACTIVE";
+    private static final String SESSION_COMPLETED = "COMPLETED";
+
+    private static final String SLOT_AVAILABLE = "AVAILABLE";
+    private static final String SLOT_RESERVED = "RESERVED";
+    private static final String SLOT_OCCUPIED = "OCCUPIED";
+    private static final String SLOT_MAINTENANCE = "MAINTENANCE";
+
+    private static final String PAYMENT_PAID = "PAID";
+    private static final String PAYMENT_PENDING = "PENDING";
+    private static final String PAYMENT_PAID_BY_BOOKING =
+            "PAID_BY_BOOKING";
+
+    private static final String PAYMENT_METHOD_CASH = "CASH";
+    private static final String PAYMENT_METHOD_QR_CODE = "QR_CODE";
+    private static final String PAYMENT_METHOD_PREPAID =
+            "PREPAID_BOOKING";
+
+    private static final BigDecimal LOST_TICKET_FEE =
+            new BigDecimal("10000.00");
+
+    private static final int MAX_TICKET_GENERATION_ATTEMPTS = 30;
+
+    private static final Set<String> SUPPORTED_PAYMENT_METHODS =
+            Set.of(
+                    PAYMENT_METHOD_CASH,
+                    PAYMENT_METHOD_QR_CODE,
+                    PAYMENT_METHOD_PREPAID
+            );
 
     private final VehicleRepository vehicleRepository;
     private final VehicleTypeRepository vehicleTypeRepository;
@@ -66,602 +86,1545 @@ public class ParkingOperationController {
     private final HolidayRepository holidayRepository;
     private final BookingRepository bookingRepository;
 
-    private static final BigDecimal LOST_TICKET_FEE = new BigDecimal("10000.00");
-
-    private final Random random = new Random();
-
+    /**
+     * Check-in xe tại cổng vào.
+     *
+     * Quy trình:
+     * 1. Kiểm tra biển số và loại xe.
+     * 2. Kiểm tra xe đã ở trong bãi hay chưa.
+     * 3. Tìm booking hợp lệ.
+     * 4. Nếu có booking thì dùng slot đã đặt.
+     * 5. Nếu không có booking thì tự tìm slot trống.
+     * 6. Tạo ParkingSession và chuyển slot thành OCCUPIED.
+     */
     @PostMapping("/check-in")
     @Transactional
-    public CheckInResponse checkIn(@RequestBody CheckInRequest request) {
-        if (request.getLicensePlate() == null || request.getLicensePlate().isBlank()) {
-            throw new RuntimeException("License plate is required");
-        }
+    public CheckInResponse checkIn(
+            @RequestBody CheckInRequest request
+    ) {
+        validateCheckInRequest(request);
 
-        if (request.getVehicleTypeId() == null) {
-            throw new RuntimeException("Vehicle type is required");
-        }
+        String licensePlate = normalizeLicensePlate(
+                request.getLicensePlate()
+        );
 
-        String licensePlate = request.getLicensePlate().trim().toUpperCase();
-        LocalDateTime now = LocalDateTime.now();
+        Integer vehicleTypeId =
+                request.getVehicleTypeId();
 
-        VehicleType vehicleType = vehicleTypeRepository.findById(request.getVehicleTypeId())
-                .orElseThrow(() -> new RuntimeException("Vehicle type not found"));
+        LocalDateTime checkInTime =
+                LocalDateTime.now();
 
-        Vehicle vehicle = vehicleRepository.findByLicensePlate(licensePlate)
-                .orElseGet(() -> {
-                    Vehicle newVehicle = new Vehicle();
-                    newVehicle.setLicensePlate(licensePlate);
-                    newVehicle.setVehicleType(vehicleType);
-                    return vehicleRepository.save(newVehicle);
-                });
+        VehicleType vehicleType =
+                vehicleTypeRepository
+                        .findById(vehicleTypeId)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Vehicle type not found"
+                                )
+                        );
 
-        if (!vehicle.getVehicleType().getId().equals(vehicleType.getId())) {
-            throw new RuntimeException("Vehicle type does not match this license plate");
-        }
+        Vehicle vehicle =
+                findOrCreateVehicle(
+                        licensePlate,
+                        vehicleType
+                );
+
+        validateVehicleType(
+                vehicle,
+                vehicleType
+        );
 
         parkingSessionRepository
-                .findFirstByVehicle_LicensePlateAndStatus(licensePlate, "ACTIVE")
+                .findFirstByVehicle_LicensePlateAndStatus(
+                        licensePlate,
+                        SESSION_ACTIVE
+                )
                 .ifPresent(existingSession -> {
-                    throw new RuntimeException("Vehicle is already checked in");
+                    throw new RuntimeException(
+                            "Vehicle is already checked in"
+                    );
                 });
 
-        Booking validBooking = findValidBookingForCheckIn(licensePlate, now);
+        Booking validBooking =
+                findValidBookingForCheckIn(
+                        licensePlate,
+                        checkInTime
+                );
 
         ParkingSlot slot;
 
         if (validBooking != null) {
-            slot = validBooking.getSlot();
-
-            if (slot == null) {
-                throw new RuntimeException("Booking does not have a parking slot");
-            }
-
-            if (slot.getVehicleType() != null
-                    && !slot.getVehicleType().getId().equals(request.getVehicleTypeId())) {
-                throw new RuntimeException("Booking slot does not match this vehicle type");
-            }
-
-            if ("OCCUPIED".equalsIgnoreCase(slot.getStatus())) {
-                throw new RuntimeException("Booking slot is currently occupied");
-            }
-
-            if ("MAINTENANCE".equalsIgnoreCase(slot.getStatus())) {
-                throw new RuntimeException("Booking slot is currently under maintenance");
-            }
+            slot = validateAndGetBookingSlot(
+                    validBooking,
+                    vehicleTypeId
+            );
         } else {
-            /*
-             * Walk-in customer:
-             * The staff does not select a floor anymore.
-             * The system automatically finds the first AVAILABLE slot
-             * for the selected vehicle type.
-             *
-             * This automatically skips:
-             * - RESERVED
-             * - OCCUPIED
-             * - MAINTENANCE
-             */
-            slot = findFirstAvailableSlotForWalkIn(request.getVehicleTypeId());
+            slot = findFirstAvailableSlotForWalkIn(
+                    vehicleTypeId
+            );
         }
 
-        String ticketId = generateUniqueTicketId();
+        String ticketId =
+                generateUniqueTicketId();
 
-        ParkingSession savedSession = parkingSessionRepository.save(
+        ParkingSession session =
                 ParkingSession.builder()
                         .ticketId(ticketId)
                         .vehicle(vehicle)
                         .slot(slot)
                         .booking(validBooking)
-                        .checkInTime(now)
-                        .status("ACTIVE")
-                        .build()
-        );
+                        .checkInTime(checkInTime)
+                        .status(SESSION_ACTIVE)
+                        .build();
 
-        /*
-         * Booking flow: RESERVED -> OCCUPIED.
-         * Walk-in flow: AVAILABLE -> OCCUPIED.
-         */
-        slot.setStatus("OCCUPIED");
+        ParkingSession savedSession =
+                parkingSessionRepository.save(
+                        session
+                );
+
+        slot.setStatus(SLOT_OCCUPIED);
         parkingSlotRepository.save(slot);
 
         if (validBooking != null) {
-            validBooking.setStatus(Booking.STATUS_CHECKED_IN);
-            validBooking.setCheckedInAt(now);
-            bookingRepository.save(validBooking);
+            validBooking.setStatus(
+                    Booking.STATUS_CHECKED_IN
+            );
+
+            validBooking.setCheckedInAt(
+                    checkInTime
+            );
+
+            bookingRepository.save(
+                    validBooking
+            );
         }
 
         return CheckInResponse.builder()
                 .sessionId(savedSession.getId())
                 .ticketId(savedSession.getTicketId())
-                .licensePlate(vehicle.getLicensePlate())
+                .licensePlate(
+                        vehicle.getLicensePlate()
+                )
                 .slotCode(slot.getSlotCode())
-                .checkInTime(savedSession.getCheckInTime())
+                .checkInTime(
+                        savedSession.getCheckInTime()
+                )
                 .status(savedSession.getStatus())
                 .build();
     }
 
+    /**
+     * Tìm thông tin và tính trước phí checkout.
+     *
+     * Phương thức này chưa thay đổi trạng thái session,
+     * booking hoặc parking slot.
+     */
     @GetMapping("/check-out/search")
     @Transactional(readOnly = true)
     public CheckOutResponse searchCheckOut(
-            @RequestParam(required = false) String ticketId,
-            @RequestParam(required = false) String licensePlate,
-            @RequestParam(required = false, defaultValue = "false") Boolean lostTicket
+            @RequestParam(required = false)
+            String ticketId,
+
+            @RequestParam(required = false)
+            String licensePlate,
+
+            @RequestParam(
+                    required = false,
+                    defaultValue = "false"
+            )
+            Boolean lostTicket
     ) {
-        CheckOutRequest request = new CheckOutRequest();
+        CheckOutRequest request =
+                new CheckOutRequest();
+
         request.setTicketId(ticketId);
         request.setLicensePlate(licensePlate);
-        request.setLostTicket(Boolean.TRUE.equals(lostTicket));
+        request.setLostTicket(
+                Boolean.TRUE.equals(lostTicket)
+        );
 
-        ParkingSession session = findActiveSessionForCheckout(request);
+        ParkingSession session =
+                findActiveSessionForCheckout(
+                        request
+                );
 
-        return buildCheckOutPreview(session, Boolean.TRUE.equals(request.getLostTicket()));
+        LocalDateTime previewTime =
+                LocalDateTime.now();
+
+        return buildCheckOutPreview(
+                session,
+                Boolean.TRUE.equals(
+                        request.getLostTicket()
+                ),
+                previewTime
+        );
     }
 
+    /**
+     * Hoàn tất checkout.
+     *
+     * Frontend chỉ gọi API này sau khi:
+     * - PayOS xác nhận thanh toán;
+     * - nhân viên xác nhận đã nhận tiền mặt;
+     * - hoặc booking đã trả trước và không phát sinh phí.
+     */
     @PostMapping("/check-out")
     @Transactional
-    public CheckOutResponse checkOut(@RequestBody CheckOutRequest request) {
-        ParkingSession session = findActiveSessionForCheckout(request);
-
-        CheckOutResponse preview = buildCheckOutPreview(session, Boolean.TRUE.equals(request.getLostTicket()));
-
-        LocalDateTime checkOutTime = LocalDateTime.now();
-
-        session.setCheckOutTime(checkOutTime);
-        session.setStatus("COMPLETED");
-        parkingSessionRepository.save(session);
-
-        Booking booking = session.getBooking();
-
-        if (booking != null) {
-            booking.setStatus(Booking.STATUS_COMPLETED);
-            booking.setCheckedOutAt(checkOutTime);
-            bookingRepository.save(booking);
+    public CheckOutResponse checkOut(
+            @RequestBody CheckOutRequest request
+    ) {
+        if (request == null) {
+            throw new RuntimeException(
+                    "Checkout request is required"
+            );
         }
 
-        ParkingSlot slot = session.getSlot();
-        slot.setStatus("AVAILABLE");
-        parkingSlotRepository.save(slot);
+        ParkingSession session =
+                findActiveSessionForCheckout(
+                        request
+                );
 
-        boolean prepaidBooking = Boolean.TRUE.equals(preview.getPrepaidBooking());
-        BigDecimal amountDue = safeMoney(preview.getAmountDue());
+        LocalDateTime checkOutTime =
+                LocalDateTime.now();
+
+        CheckOutResponse preview =
+                buildCheckOutPreview(
+                        session,
+                        Boolean.TRUE.equals(
+                                request.getLostTicket()
+                        ),
+                        checkOutTime
+                );
+
+        boolean prepaidBooking =
+                Boolean.TRUE.equals(
+                        preview.getPrepaidBooking()
+                );
+
+        BigDecimal amountDue =
+                safeMoney(
+                        preview.getAmountDue()
+                );
+
+        String paymentMethod =
+                resolvePaymentMethod(
+                        request.getPaymentMethod(),
+                        amountDue,
+                        prepaidBooking
+                );
 
         /*
-         * Revenue rule:
-         * - Walk-in customer: create Payment for the full checkout amount.
-         * - Prepaid booking, no overstay: amountDue = 0, do not create Payment.
-         * - Prepaid booking, overstay: amountDue > 0, create Payment only for the extra overstay fee.
-         *
-         * This avoids charging the original booking fee twice, while still collecting
-         * extra money when the customer leaves after the booked end time.
+         * Hoàn tất parking session.
          */
-        if (amountDue.compareTo(BigDecimal.ZERO) > 0) {
-            Payment payment = Payment.builder()
-                    .parkingSession(session)
-                    .amount(amountDue)
-                    .paymentMethod(
-                            request.getPaymentMethod() == null || request.getPaymentMethod().isBlank()
-                                    ? "CASH"
-                                    : request.getPaymentMethod().trim().toUpperCase()
-                    )
-                    .paymentStatus("PAID")
-                    .paymentTime(checkOutTime)
-                    .build();
+        session.setCheckOutTime(checkOutTime);
+        session.setStatus(SESSION_COMPLETED);
+
+        parkingSessionRepository.save(
+                session
+        );
+
+        /*
+         * Hoàn tất booking nếu session thuộc booking.
+         */
+        Booking booking =
+                session.getBooking();
+
+        if (booking != null) {
+            booking.setStatus(
+                    Booking.STATUS_COMPLETED
+            );
+
+            booking.setCheckedOutAt(
+                    checkOutTime
+            );
+
+            bookingRepository.save(
+                    booking
+            );
+        }
+
+        /*
+         * Trả slot về AVAILABLE.
+         */
+        ParkingSlot slot =
+                session.getSlot();
+
+        if (slot == null) {
+            throw new RuntimeException(
+                    "Parking session does not contain a parking slot"
+            );
+        }
+
+        slot.setStatus(SLOT_AVAILABLE);
+
+        parkingSlotRepository.save(
+                slot
+        );
+
+        /*
+         * Chỉ tạo Payment khi thực sự có số tiền cần trả.
+         *
+         * Booking trả trước và không quá giờ:
+         * amountDue = 0, không tạo payment mới.
+         *
+         * Booking trả trước nhưng quá giờ:
+         * chỉ tạo payment cho phần phí phát sinh.
+         */
+        if (
+                amountDue.compareTo(
+                        BigDecimal.ZERO
+                ) > 0
+        ) {
+            Payment payment =
+                    Payment.builder()
+                            .parkingSession(session)
+                            .amount(amountDue)
+                            .paymentMethod(
+                                    paymentMethod
+                            )
+                            .paymentStatus(
+                                    PAYMENT_PAID
+                            )
+                            .paymentTime(
+                                    checkOutTime
+                            )
+                            .build();
 
             paymentRepository.save(payment);
+        }
+
+        String paymentStatus;
+
+        if (
+                prepaidBooking &&
+                        amountDue.compareTo(
+                                BigDecimal.ZERO
+                        ) <= 0
+        ) {
+            paymentStatus =
+                    PAYMENT_PAID_BY_BOOKING;
+        } else {
+            paymentStatus =
+                    PAYMENT_PAID;
         }
 
         return CheckOutResponse.builder()
                 .sessionId(session.getId())
                 .ticketId(session.getTicketId())
-                .licensePlate(session.getVehicle().getLicensePlate())
-                .slotCode(slot.getSlotCode())
-                .checkInTime(session.getCheckInTime())
-                .checkOutTime(checkOutTime)
-                .durationHours(preview.getDurationHours())
-                .pricePerHour(preview.getPricePerHour())
-                .parkingFee(preview.getParkingFee())
-                .overtimeFee(preview.getOvertimeFee())
-                .overstayFee(preview.getOverstayFee())
-                .holidayName(preview.getHolidayName())
-                .holidaySurcharge(preview.getHolidaySurcharge())
-                .lostTicket(Boolean.TRUE.equals(preview.getLostTicket()))
-                .lostTicketFee(preview.getLostTicketFee())
-                .totalAmount(preview.getTotalAmount())
-                .prepaidBooking(prepaidBooking)
-                .amountDue(amountDue)
-                .paymentStatus(
-                        prepaidBooking && amountDue.compareTo(BigDecimal.ZERO) <= 0
-                                ? "PAID_BY_BOOKING"
-                                : "PAID"
+                .licensePlate(
+                        session
+                                .getVehicle()
+                                .getLicensePlate()
                 )
+                .slotCode(slot.getSlotCode())
+                .checkInTime(
+                        session.getCheckInTime()
+                )
+                .checkOutTime(checkOutTime)
+                .durationHours(
+                        preview.getDurationHours()
+                )
+                .pricePerHour(
+                        preview.getPricePerHour()
+                )
+                .parkingFee(
+                        preview.getParkingFee()
+                )
+                .overtimeFee(
+                        preview.getOvertimeFee()
+                )
+                .overstayFee(
+                        preview.getOverstayFee()
+                )
+                .holidayName(
+                        preview.getHolidayName()
+                )
+                .holidaySurcharge(
+                        preview.getHolidaySurcharge()
+                )
+                .lostTicket(
+                        Boolean.TRUE.equals(
+                                preview.getLostTicket()
+                        )
+                )
+                .lostTicketFee(
+                        preview.getLostTicketFee()
+                )
+                .totalAmount(
+                        preview.getTotalAmount()
+                )
+                .prepaidBooking(
+                        prepaidBooking
+                )
+                .amountDue(amountDue)
+                .paymentStatus(paymentStatus)
                 .build();
     }
 
+    /**
+     * Danh sách xe hiện đang ở trong bãi.
+     */
     @GetMapping("/active")
-    public List<ActiveParkingSessionResponse> getActiveParkingSessions() {
+    @Transactional(readOnly = true)
+    public List<ActiveParkingSessionResponse>
+    getActiveParkingSessions() {
         return parkingSessionRepository
-                .findByStatusOrderByCheckInTimeDesc("ACTIVE")
+                .findByStatusOrderByCheckInTimeDesc(
+                        SESSION_ACTIVE
+                )
                 .stream()
-                .map(session -> ActiveParkingSessionResponse.builder()
-                        .sessionId(session.getId())
-                        .ticketId(session.getTicketId())
-                        .licensePlate(session.getVehicle().getLicensePlate())
-                        .vehicleType(session.getVehicle().getVehicleType().getTypeName())
-                        .slotCode(session.getSlot().getSlotCode())
-                        .checkInTime(session.getCheckInTime())
-                        .status(session.getStatus())
-                        .build())
+                .map(
+                        this::mapToActiveSessionResponse
+                )
                 .toList();
     }
 
+    /**
+     * Thống kê slot theo từng tầng.
+     */
     @GetMapping("/floor-stats")
-    public List<ParkingFloorStatsResponse> getParkingFloorStats() {
-        return parkingSlotRepository.getParkingFloorStats();
+    @Transactional(readOnly = true)
+    public List<ParkingFloorStatsResponse>
+    getParkingFloorStats() {
+        List<ParkingFloorStatsResponse> result =
+                parkingSlotRepository
+                        .getParkingFloorStats();
+
+        return result == null
+                ? List.of()
+                : result;
     }
 
-    private CheckOutResponse buildCheckOutPreview(ParkingSession session, boolean lostTicket) {
-        LocalDateTime currentTime = LocalDateTime.now();
+    /**
+     * Tính trước phí checkout.
+     *
+     * checkOutTime được truyền từ bên ngoài để bảo đảm
+     * thời gian tính phí và thời gian lưu checkout giống nhau.
+     */
+    private CheckOutResponse buildCheckOutPreview(
+            ParkingSession session,
+            boolean lostTicket,
+            LocalDateTime checkOutTime
+    ) {
+        validateSessionForPricing(
+                session,
+                checkOutTime
+        );
 
-        long minutes = Duration.between(session.getCheckInTime(), currentTime).toMinutes();
-        long durationHours = (long) Math.ceil(minutes / 60.0);
+        LocalDateTime checkInTime =
+                session.getCheckInTime();
+
+        long durationMinutes =
+                Duration.between(
+                        checkInTime,
+                        checkOutTime
+                ).toMinutes();
+
+        if (durationMinutes < 0) {
+            throw new RuntimeException(
+                    "Checkout time cannot be before check-in time"
+            );
+        }
+
+        long durationHours =
+                (long) Math.ceil(
+                        durationMinutes / 60.0
+                );
 
         if (durationHours <= 0) {
             durationHours = 1;
         }
 
-        Integer vehicleTypeId = session.getVehicle().getVehicleType().getId();
+        Integer vehicleTypeId =
+                session
+                        .getVehicle()
+                        .getVehicleType()
+                        .getId();
 
-        PricingPolicy pricingPolicy = pricingPolicyRepository
-                .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByUpdatedAtDesc(
-                        vehicleTypeId,
-                        PricingPolicy.STATUS_ACTIVE
-                )
-                .or(() -> pricingPolicyRepository
-                        .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByIdDesc(
+        PricingPolicy pricingPolicy =
+                pricingPolicyRepository
+                        .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByUpdatedAtDesc(
                                 vehicleTypeId,
                                 PricingPolicy.STATUS_ACTIVE
                         )
-                )
-                .orElseThrow(() -> new RuntimeException("Active pricing policy not found"));
+                        .or(
+                                () -> pricingPolicyRepository
+                                        .findFirstByVehicleType_IdAndStatusIgnoreCaseOrderByIdDesc(
+                                                vehicleTypeId,
+                                                PricingPolicy.STATUS_ACTIVE
+                                        )
+                        )
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Active pricing policy not found"
+                                )
+                        );
 
-        BigDecimal pricePerHour = safeMoney(pricingPolicy.getPricePerHour());
-        BigDecimal policyOvertimeFee = safeMoney(pricingPolicy.getOvertimeFee());
-        BigDecimal policyOverstayFee = safeMoney(pricingPolicy.getOverstayFee());
+        BigDecimal pricePerHour =
+                safeMoney(
+                        pricingPolicy.getPricePerHour()
+                );
 
-        BigDecimal parkingFee = pricePerHour
-                .multiply(BigDecimal.valueOf(durationHours))
-                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal policyOvernightFee =
+                safeMoney(
+                        pricingPolicy.getOvertimeFee()
+                );
 
-        BigDecimal overtimeFee = calculateOvertimeFee(
-                session.getCheckInTime(),
-                currentTime,
-                policyOvertimeFee
-        );
+        BigDecimal policyOverstayFee =
+                safeMoney(
+                        pricingPolicy.getOverstayFee()
+                );
 
-        BigDecimal overstayFee = calculateBookingOverstayFee(
-                session.getBooking(),
-                currentTime,
-                policyOverstayFee
-        );
+        BigDecimal parkingFee =
+                pricePerHour
+                        .multiply(
+                                BigDecimal.valueOf(
+                                        durationHours
+                                )
+                        )
+                        .setScale(
+                                2,
+                                RoundingMode.HALF_UP
+                        );
 
-        boolean prepaidBooking = isPrepaidBooking(session.getBooking());
+        BigDecimal overtimeFee =
+                calculateOvertimeFee(
+                        checkInTime,
+                        checkOutTime,
+                        policyOvernightFee
+                );
+
+        BigDecimal overstayFee =
+                calculateBookingOverstayFee(
+                        session.getBooking(),
+                        checkOutTime,
+                        policyOverstayFee
+                );
+
+        boolean prepaidBooking =
+                isPrepaidBooking(
+                        session.getBooking()
+                );
 
         /*
-         * Prepaid booking rule:
-         * - The customer already paid the booked parking time in the booking QR flow.
-         * - Do not charge parkingFee again.
-         * - Do not charge overtimeFee again.
-         * - Keep overstayFee if checkoutTime is after booking.endTime.
-         * - If customer lost ticket, still charge lost ticket fee.
+         * Booking đã thanh toán trước:
+         * - Không thu lại parkingFee.
+         * - Không thu lại overnight/overtime fee thuộc thời gian đặt.
+         * - Chỉ thu phí quá giờ nếu có.
+         * - Phí mất vé vẫn được áp dụng.
          */
         if (prepaidBooking) {
-            overtimeFee = BigDecimal.ZERO;
+            overtimeFee =
+                    zeroMoney();
         }
 
-        Holiday holiday = prepaidBooking ? null : findActiveHoliday(currentTime.toLocalDate());
+        Holiday holiday =
+                prepaidBooking
+                        ? null
+                        : findActiveHoliday(
+                        checkOutTime.toLocalDate()
+                );
 
-        BigDecimal subtotalBeforeHoliday = prepaidBooking
-                ? overstayFee.setScale(2, RoundingMode.HALF_UP)
-                : parkingFee
-                .add(overtimeFee)
-                .add(overstayFee)
-                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal subtotalBeforeHoliday;
 
-        BigDecimal holidaySurcharge = calculateHolidaySurcharge(
-                subtotalBeforeHoliday,
-                holiday
-        );
+        if (prepaidBooking) {
+            subtotalBeforeHoliday =
+                    safeMoney(overstayFee);
+        } else {
+            subtotalBeforeHoliday =
+                    parkingFee
+                            .add(overtimeFee)
+                            .add(overstayFee)
+                            .setScale(
+                                    2,
+                                    RoundingMode.HALF_UP
+                            );
+        }
+
+        BigDecimal holidaySurcharge =
+                calculateHolidaySurcharge(
+                        subtotalBeforeHoliday,
+                        holiday
+                );
 
         /*
-         * Lost-ticket fee is a fixed penalty and is not affected by holiday surcharge.
+         * Phí mất vé là phí phạt cố định,
+         * không chịu phụ phí ngày lễ.
          */
-        BigDecimal lostTicketFee = lostTicket
-                ? LOST_TICKET_FEE.setScale(2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal lostTicketFee =
+                lostTicket
+                        ? safeMoney(
+                        LOST_TICKET_FEE
+                )
+                        : zeroMoney();
 
-        BigDecimal totalAmount = subtotalBeforeHoliday
-                .add(holidaySurcharge)
-                .add(lostTicketFee)
-                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalAmount =
+                subtotalBeforeHoliday
+                        .add(holidaySurcharge)
+                        .add(lostTicketFee)
+                        .setScale(
+                                2,
+                                RoundingMode.HALF_UP
+                        );
 
         return CheckOutResponse.builder()
                 .sessionId(session.getId())
                 .ticketId(session.getTicketId())
-                .licensePlate(session.getVehicle().getLicensePlate())
-                .slotCode(session.getSlot().getSlotCode())
-                .checkInTime(session.getCheckInTime())
-                .checkOutTime(currentTime)
+                .licensePlate(
+                        session
+                                .getVehicle()
+                                .getLicensePlate()
+                )
+                .slotCode(
+                        session
+                                .getSlot()
+                                .getSlotCode()
+                )
+                .checkInTime(checkInTime)
+                .checkOutTime(checkOutTime)
                 .durationHours(durationHours)
                 .pricePerHour(pricePerHour)
                 .parkingFee(parkingFee)
                 .overtimeFee(overtimeFee)
                 .overstayFee(overstayFee)
-                .holidayName(holiday == null ? null : holiday.getHolidayName())
-                .holidaySurcharge(holidaySurcharge)
+                .holidayName(
+                        holiday == null
+                                ? null
+                                : holiday
+                                .getHolidayName()
+                )
+                .holidaySurcharge(
+                        holidaySurcharge
+                )
                 .lostTicket(lostTicket)
-                .lostTicketFee(lostTicketFee)
+                .lostTicketFee(
+                        lostTicketFee
+                )
                 .totalAmount(totalAmount)
-                .prepaidBooking(prepaidBooking)
+                .prepaidBooking(
+                        prepaidBooking
+                )
                 .amountDue(totalAmount)
                 .paymentStatus(
-                        prepaidBooking && totalAmount.compareTo(BigDecimal.ZERO) <= 0
-                                ? "PAID_BY_BOOKING"
-                                : "PENDING"
+                        prepaidBooking &&
+                                totalAmount.compareTo(
+                                        BigDecimal.ZERO
+                                ) <= 0
+                                ? PAYMENT_PAID_BY_BOOKING
+                                : PAYMENT_PENDING
                 )
                 .build();
     }
 
-    private Booking findValidBookingForCheckIn(String licensePlate, LocalDateTime now) {
-        if (licensePlate == null || licensePlate.isBlank()) {
+    /**
+     * Tìm booking hợp lệ của biển số tại thời điểm check-in.
+     */
+    private Booking findValidBookingForCheckIn(
+            String licensePlate,
+            LocalDateTime checkInTime
+    ) {
+        if (
+                licensePlate == null ||
+                        licensePlate.isBlank() ||
+                        checkInTime == null
+        ) {
             return null;
         }
 
-        List<Booking> validBookings = bookingRepository.findValidConfirmedBookingsForCheckIn(
-                licensePlate.trim().toUpperCase(),
-                now
-        );
+        List<Booking> validBookings =
+                bookingRepository
+                        .findValidConfirmedBookingsForCheckIn(
+                                licensePlate,
+                                checkInTime
+                        );
 
-        if (validBookings == null || validBookings.isEmpty()) {
+        if (
+                validBookings == null ||
+                        validBookings.isEmpty()
+        ) {
             return null;
         }
 
         return validBookings.get(0);
     }
 
-    private ParkingSlot findFirstAvailableSlotForWalkIn(Integer vehicleTypeId) {
-        /*
-         * Walk-in auto assignment:
-         * Use repository query instead of findAll() so the database returns
-         * only AVAILABLE slots, ordered from the first floor to the last floor.
-         */
-        return parkingSlotRepository.findAvailableSlotsForAutoCheckIn(vehicleTypeId)
-                .stream()
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("No available slot for this vehicle type"));
+    /**
+     * Kiểm tra và lấy slot từ booking.
+     */
+    private ParkingSlot validateAndGetBookingSlot(
+            Booking booking,
+            Integer vehicleTypeId
+    ) {
+        ParkingSlot slot =
+                booking.getSlot();
+
+        if (slot == null) {
+            throw new RuntimeException(
+                    "Booking does not have a parking slot"
+            );
+        }
+
+        if (
+                slot.getVehicleType() == null ||
+                        slot.getVehicleType().getId() == null
+        ) {
+            throw new RuntimeException(
+                    "Booking slot does not have a vehicle type"
+            );
+        }
+
+        if (
+                !slot
+                        .getVehicleType()
+                        .getId()
+                        .equals(vehicleTypeId)
+        ) {
+            throw new RuntimeException(
+                    "Booking slot does not match this vehicle type"
+            );
+        }
+
+        String slotStatus =
+                normalizeStatus(
+                        slot.getStatus()
+                );
+
+        if (SLOT_OCCUPIED.equals(slotStatus)) {
+            throw new RuntimeException(
+                    "Booking slot is currently occupied"
+            );
+        }
+
+        if (SLOT_MAINTENANCE.equals(slotStatus)) {
+            throw new RuntimeException(
+                    "Booking slot is currently under maintenance"
+            );
+        }
+
+        if (
+                !SLOT_RESERVED.equals(slotStatus) &&
+                        !SLOT_AVAILABLE.equals(slotStatus)
+        ) {
+            throw new RuntimeException(
+                    "Booking slot is not available for check-in"
+            );
+        }
+
+        return slot;
     }
 
-    private boolean isPrepaidBooking(Booking booking) {
+    /**
+     * Tìm slot AVAILABLE đầu tiên cho khách walk-in.
+     */
+    private ParkingSlot findFirstAvailableSlotForWalkIn(
+            Integer vehicleTypeId
+    ) {
+        List<ParkingSlot> availableSlots =
+                parkingSlotRepository
+                        .findAvailableSlotsForAutoCheckIn(
+                                vehicleTypeId
+                        );
+
+        if (
+                availableSlots == null ||
+                        availableSlots.isEmpty()
+        ) {
+            throw new RuntimeException(
+                    "No available slot for this vehicle type"
+            );
+        }
+
+        ParkingSlot slot =
+                availableSlots.get(0);
+
+        if (slot == null) {
+            throw new RuntimeException(
+                    "Available parking slot not found"
+            );
+        }
+
+        if (
+                !SLOT_AVAILABLE.equals(
+                        normalizeStatus(
+                                slot.getStatus()
+                        )
+                )
+        ) {
+            throw new RuntimeException(
+                    "Selected parking slot is no longer available"
+            );
+        }
+
+        if (
+                slot.getVehicleType() == null ||
+                        slot.getVehicleType().getId() == null ||
+                        !slot
+                                .getVehicleType()
+                                .getId()
+                                .equals(vehicleTypeId)
+        ) {
+            throw new RuntimeException(
+                    "Parking slot does not match this vehicle type"
+            );
+        }
+
+        return slot;
+    }
+
+    /**
+     * Tìm hoặc tạo Vehicle từ biển số.
+     */
+    private Vehicle findOrCreateVehicle(
+            String licensePlate,
+            VehicleType vehicleType
+    ) {
+        return vehicleRepository
+                .findByLicensePlate(
+                        licensePlate
+                )
+                .orElseGet(() -> {
+                    Vehicle newVehicle =
+                            new Vehicle();
+
+                    newVehicle.setLicensePlate(
+                            licensePlate
+                    );
+
+                    newVehicle.setVehicleType(
+                            vehicleType
+                    );
+
+                    return vehicleRepository.save(
+                            newVehicle
+                    );
+                });
+    }
+
+    /**
+     * Kiểm tra loại xe đã lưu có khớp loại xe được scan hay không.
+     */
+    private void validateVehicleType(
+            Vehicle vehicle,
+            VehicleType requestedVehicleType
+    ) {
+        if (
+                vehicle == null ||
+                        requestedVehicleType == null ||
+                        requestedVehicleType.getId() == null
+        ) {
+            throw new RuntimeException(
+                    "Invalid vehicle information"
+            );
+        }
+
+        if (
+                vehicle.getVehicleType() == null ||
+                        vehicle.getVehicleType().getId() == null
+        ) {
+            throw new RuntimeException(
+                    "Vehicle does not have a vehicle type"
+            );
+        }
+
+        if (
+                !vehicle
+                        .getVehicleType()
+                        .getId()
+                        .equals(
+                                requestedVehicleType.getId()
+                        )
+        ) {
+            throw new RuntimeException(
+                    "Vehicle type does not match this license plate"
+            );
+        }
+    }
+
+    /**
+     * Xác định booking đã được thanh toán trước hay chưa.
+     */
+    private boolean isPrepaidBooking(
+            Booking booking
+    ) {
         if (booking == null) {
             return false;
         }
 
-        String paymentStatus = booking.getPaymentStatus();
-        String bookingStatus = booking.getStatus();
+        String paymentStatus =
+                normalizeStatus(
+                        booking.getPaymentStatus()
+                );
 
-        return "PAID".equalsIgnoreCase(paymentStatus)
-                || "CONFIRMED".equalsIgnoreCase(bookingStatus)
-                || Booking.STATUS_CHECKED_IN.equalsIgnoreCase(bookingStatus)
-                || Booking.STATUS_COMPLETED.equalsIgnoreCase(bookingStatus);
+        String bookingStatus =
+                normalizeStatus(
+                        booking.getStatus()
+                );
+
+        return PAYMENT_PAID.equals(paymentStatus)
+                || "CONFIRMED".equals(bookingStatus)
+                || Booking.STATUS_CHECKED_IN
+                .equalsIgnoreCase(
+                        bookingStatus
+                )
+                || Booking.STATUS_COMPLETED
+                .equalsIgnoreCase(
+                        bookingStatus
+                );
     }
 
+    /**
+     * Tính phí vượt quá thời gian booking.
+     */
     private BigDecimal calculateBookingOverstayFee(
             Booking booking,
             LocalDateTime checkOutTime,
             BigDecimal policyOverstayFee
     ) {
-        if (booking == null || booking.getEndTime() == null || checkOutTime == null) {
-            return BigDecimal.ZERO;
+        if (
+                booking == null ||
+                        booking.getEndTime() == null ||
+                        checkOutTime == null
+        ) {
+            return zeroMoney();
         }
 
-        if (policyOverstayFee == null || policyOverstayFee.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
+        BigDecimal overstayPrice =
+                safeMoney(
+                        policyOverstayFee
+                );
+
+        if (
+                overstayPrice.compareTo(
+                        BigDecimal.ZERO
+                ) <= 0
+        ) {
+            return zeroMoney();
         }
 
-        if (!checkOutTime.isAfter(booking.getEndTime())) {
-            return BigDecimal.ZERO;
+        if (
+                !checkOutTime.isAfter(
+                        booking.getEndTime()
+                )
+        ) {
+            return zeroMoney();
         }
 
-        long overstayMinutes = Duration.between(booking.getEndTime(), checkOutTime).toMinutes();
-        long overstayHours = (long) Math.ceil(overstayMinutes / 60.0);
+        long overstayMinutes =
+                Duration.between(
+                        booking.getEndTime(),
+                        checkOutTime
+                ).toMinutes();
+
+        long overstayHours =
+                (long) Math.ceil(
+                        overstayMinutes / 60.0
+                );
 
         if (overstayHours <= 0) {
-            return BigDecimal.ZERO;
+            return zeroMoney();
         }
 
-        return policyOverstayFee
-                .multiply(BigDecimal.valueOf(overstayHours))
-                .setScale(2, RoundingMode.HALF_UP);
+        return overstayPrice
+                .multiply(
+                        BigDecimal.valueOf(
+                                overstayHours
+                        )
+                )
+                .setScale(
+                        2,
+                        RoundingMode.HALF_UP
+                );
     }
 
+    /**
+     * Tính phí qua đêm theo số ngày lịch.
+     */
     private BigDecimal calculateOvertimeFee(
             LocalDateTime checkInTime,
             LocalDateTime checkOutTime,
             BigDecimal policyOvertimeFee
     ) {
-        if (checkInTime == null || checkOutTime == null) {
-            return BigDecimal.ZERO;
+        if (
+                checkInTime == null ||
+                        checkOutTime == null
+        ) {
+            return zeroMoney();
         }
 
-        if (policyOvertimeFee == null || policyOvertimeFee.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
+        BigDecimal overtimePrice =
+                safeMoney(
+                        policyOvertimeFee
+                );
+
+        if (
+                overtimePrice.compareTo(
+                        BigDecimal.ZERO
+                ) <= 0
+        ) {
+            return zeroMoney();
         }
 
-        LocalDate checkInDate = checkInTime.toLocalDate();
-        LocalDate checkOutDate = checkOutTime.toLocalDate();
+        LocalDate checkInDate =
+                checkInTime.toLocalDate();
 
-        long overnightDays = ChronoUnit.DAYS.between(checkInDate, checkOutDate);
+        LocalDate checkOutDate =
+                checkOutTime.toLocalDate();
+
+        long overnightDays =
+                ChronoUnit.DAYS.between(
+                        checkInDate,
+                        checkOutDate
+                );
 
         if (overnightDays <= 0) {
-            return BigDecimal.ZERO;
+            return zeroMoney();
         }
 
-        return policyOvertimeFee
-                .multiply(BigDecimal.valueOf(overnightDays))
-                .setScale(2, RoundingMode.HALF_UP);
+        return overtimePrice
+                .multiply(
+                        BigDecimal.valueOf(
+                                overnightDays
+                        )
+                )
+                .setScale(
+                        2,
+                        RoundingMode.HALF_UP
+                );
     }
 
-    private Holiday findActiveHoliday(LocalDate date) {
+    /**
+     * Tìm ngày lễ đang hoạt động.
+     */
+    private Holiday findActiveHoliday(
+            LocalDate date
+    ) {
         if (date == null) {
             return null;
         }
 
-        return holidayRepository.findByHolidayDateAndIsActiveTrue(date)
+        return holidayRepository
+                .findByHolidayDateAndIsActiveTrue(
+                        date
+                )
                 .orElse(null);
     }
 
+    /**
+     * Tính phụ phí ngày lễ.
+     */
     private BigDecimal calculateHolidaySurcharge(
             BigDecimal subtotalBeforeHoliday,
             Holiday holiday
     ) {
-        if (subtotalBeforeHoliday == null || subtotalBeforeHoliday.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
+        BigDecimal subtotal =
+                safeMoney(
+                        subtotalBeforeHoliday
+                );
+
+        if (
+                subtotal.compareTo(
+                        BigDecimal.ZERO
+                ) <= 0 ||
+                        holiday == null
+        ) {
+            return zeroMoney();
         }
 
-        if (holiday == null) {
-            return BigDecimal.ZERO;
+        BigDecimal surchargeValue =
+                safeMoney(
+                        holiday.getSurchargeValue()
+                );
+
+        if (
+                surchargeValue.compareTo(
+                        BigDecimal.ZERO
+                ) <= 0
+        ) {
+            return zeroMoney();
         }
 
-        if (holiday.getSurchargeValue() == null || holiday.getSurchargeValue().compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
-        }
+        String surchargeType =
+                normalizeStatus(
+                        holiday.getSurchargeType()
+                );
 
-        String surchargeType = holiday.getSurchargeType() == null
-                ? "PERCENT"
-                : holiday.getSurchargeType().trim().toUpperCase();
+        if (surchargeType.isBlank()) {
+            surchargeType = "PERCENT";
+        }
 
         if ("FIXED".equals(surchargeType)) {
-            return holiday.getSurchargeValue()
-                    .setScale(2, RoundingMode.HALF_UP);
+            return surchargeValue;
         }
 
-        return subtotalBeforeHoliday
-                .multiply(holiday.getSurchargeValue())
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal safeMoney(BigDecimal value) {
-        if (value == null) {
-            return BigDecimal.ZERO;
+        if (!"PERCENT".equals(surchargeType)) {
+            throw new RuntimeException(
+                    "Invalid holiday surcharge type"
+            );
         }
 
-        return value.setScale(2, RoundingMode.HALF_UP);
+        return subtotal
+                .multiply(surchargeValue)
+                .divide(
+                        BigDecimal.valueOf(100),
+                        2,
+                        RoundingMode.HALF_UP
+                );
     }
 
-    private ParkingSession findActiveSessionForCheckout(CheckOutRequest request) {
+    /**
+     * Tìm session ACTIVE để checkout.
+     *
+     * Checkout thường:
+     * - Bắt buộc có biển số scan ở cổng ra.
+     * - Bắt buộc có QR Ticket.
+     * - Biển số trong ticket phải khớp biển số scan.
+     *
+     * Mất vé:
+     * - Vẫn bắt buộc scan biển số.
+     * - Có thể tìm session bằng biển số.
+     */
+    private ParkingSession findActiveSessionForCheckout(
+            CheckOutRequest request
+    ) {
         if (request == null) {
-            throw new RuntimeException("Checkout request is required");
+            throw new RuntimeException(
+                    "Checkout request is required"
+            );
         }
 
-        String ticketId = normalizeTicketId(request.getTicketId());
-        String scannedLicensePlate = normalizeLicensePlate(request.getLicensePlate());
-        boolean lostTicket = Boolean.TRUE.equals(request.getLostTicket());
+        String ticketId =
+                normalizeTicketId(
+                        request.getTicketId()
+                );
 
-        /*
-         * Security rule for checkout:
-         *
-         * NORMAL checkout:
-         * - Must have scanned exit license plate.
-         * - Must have QR Ticket / ticketId.
-         * - Ticket session license plate must match scanned exit license plate.
-         *
-         * LOST TICKET / QR broken fallback:
-         * - Must still have scanned exit license plate.
-         * - If ticketId is supplied from active list, it must match the scanned plate.
-         * - If ticketId is not supplied, backend finds the active session by scanned plate.
-         *
-         * This prevents staff/frontend/API callers from checking out a vehicle
-         * by ticketId alone or by clicking an active-session card without scanning
-         * the vehicle at the exit gate.
-         */
-        if (scannedLicensePlate == null || scannedLicensePlate.isBlank()) {
-            throw new RuntimeException("Scanned license plate is required for checkout");
+        String scannedLicensePlate =
+                normalizeLicensePlate(
+                        request.getLicensePlate()
+                );
+
+        boolean lostTicket =
+                Boolean.TRUE.equals(
+                        request.getLostTicket()
+                );
+
+        if (
+                scannedLicensePlate == null ||
+                        scannedLicensePlate.isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Scanned license plate is required for checkout"
+            );
         }
 
-        if (!lostTicket && (ticketId == null || ticketId.isBlank())) {
-            throw new RuntimeException("QR Ticket is required for normal checkout");
+        if (
+                !lostTicket &&
+                        (
+                                ticketId == null ||
+                                        ticketId.isBlank()
+                        )
+        ) {
+            throw new RuntimeException(
+                    "QR Ticket is required for normal checkout"
+            );
         }
 
         ParkingSession session;
 
-        if (ticketId != null && !ticketId.isBlank()) {
-            session = parkingSessionRepository
-                    .findFirstByTicketIdAndStatus(ticketId, "ACTIVE")
-                    .orElseThrow(() -> new RuntimeException("Active parking session not found"));
+        if (
+                ticketId != null &&
+                        !ticketId.isBlank()
+        ) {
+            session =
+                    parkingSessionRepository
+                            .findFirstByTicketIdAndStatus(
+                                    ticketId,
+                                    SESSION_ACTIVE
+                            )
+                            .orElseThrow(
+                                    () -> new RuntimeException(
+                                            "Active parking session not found"
+                                    )
+                            );
         } else {
-            session = parkingSessionRepository
-                    .findFirstByVehicle_LicensePlateAndStatus(scannedLicensePlate, "ACTIVE")
-                    .orElseThrow(() -> new RuntimeException("Active parking session not found"));
+            session =
+                    parkingSessionRepository
+                            .findFirstByVehicle_LicensePlateAndStatus(
+                                    scannedLicensePlate,
+                                    SESSION_ACTIVE
+                            )
+                            .orElseThrow(
+                                    () -> new RuntimeException(
+                                            "Active parking session not found"
+                                    )
+                            );
         }
 
-        assertScannedPlateMatchesSession(session, scannedLicensePlate, lostTicket);
+        assertScannedPlateMatchesSession(
+                session,
+                scannedLicensePlate,
+                lostTicket
+        );
 
         return session;
     }
 
+    /**
+     * Đối chiếu biển số scan với biển số trong session.
+     */
     private void assertScannedPlateMatchesSession(
             ParkingSession session,
             String scannedLicensePlate,
             boolean lostTicket
     ) {
-        if (session == null || session.getVehicle() == null) {
-            throw new RuntimeException("Active parking session not found");
+        if (
+                session == null ||
+                        session.getVehicle() == null
+        ) {
+            throw new RuntimeException(
+                    "Active parking session not found"
+            );
         }
 
-        String sessionLicensePlate = normalizeLicensePlate(session.getVehicle().getLicensePlate());
+        String sessionLicensePlate =
+                normalizeLicensePlate(
+                        session
+                                .getVehicle()
+                                .getLicensePlate()
+                );
 
-        if (sessionLicensePlate == null || sessionLicensePlate.isBlank()) {
-            throw new RuntimeException("Parking session does not have a license plate");
+        if (
+                sessionLicensePlate == null ||
+                        sessionLicensePlate.isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Parking session does not have a license plate"
+            );
         }
 
-        if (!normalizePlateForCompare(sessionLicensePlate).equals(normalizePlateForCompare(scannedLicensePlate))) {
+        String normalizedSessionPlate =
+                normalizePlateForCompare(
+                        sessionLicensePlate
+                );
+
+        String normalizedScannedPlate =
+                normalizePlateForCompare(
+                        scannedLicensePlate
+                );
+
+        if (
+                !normalizedSessionPlate.equals(
+                        normalizedScannedPlate
+                )
+        ) {
             if (lostTicket) {
-                throw new RuntimeException("Selected vehicle does not match scanned license plate");
+                throw new RuntimeException(
+                        "Selected vehicle does not match scanned license plate"
+                );
             }
 
-            throw new RuntimeException("QR Ticket does not match scanned license plate");
+            throw new RuntimeException(
+                    "QR Ticket does not match scanned license plate"
+            );
         }
     }
 
-    private String normalizeTicketId(String value) {
-        if (value == null || value.isBlank()) {
+    /**
+     * Chuyển ParkingSession thành response cho danh sách xe đang đỗ.
+     */
+    private ActiveParkingSessionResponse
+    mapToActiveSessionResponse(
+            ParkingSession session
+    ) {
+        if (
+                session == null ||
+                        session.getVehicle() == null ||
+                        session.getVehicle().getVehicleType() == null ||
+                        session.getSlot() == null
+        ) {
+            throw new RuntimeException(
+                    "Invalid active parking session data"
+            );
+        }
+
+        return ActiveParkingSessionResponse.builder()
+                .sessionId(session.getId())
+                .ticketId(session.getTicketId())
+                .licensePlate(
+                        session
+                                .getVehicle()
+                                .getLicensePlate()
+                )
+                .vehicleType(
+                        session
+                                .getVehicle()
+                                .getVehicleType()
+                                .getTypeName()
+                )
+                .slotCode(
+                        session
+                                .getSlot()
+                                .getSlotCode()
+                )
+                .checkInTime(
+                        session.getCheckInTime()
+                )
+                .status(session.getStatus())
+                .build();
+    }
+
+    /**
+     * Kiểm tra session trước khi tính phí.
+     */
+    private void validateSessionForPricing(
+            ParkingSession session,
+            LocalDateTime checkOutTime
+    ) {
+        if (session == null) {
+            throw new RuntimeException(
+                    "Parking session not found"
+            );
+        }
+
+        if (session.getCheckInTime() == null) {
+            throw new RuntimeException(
+                    "Parking session does not have check-in time"
+            );
+        }
+
+        if (checkOutTime == null) {
+            throw new RuntimeException(
+                    "Checkout time is required"
+            );
+        }
+
+        if (
+                session.getVehicle() == null ||
+                        session.getVehicle().getVehicleType() == null ||
+                        session
+                                .getVehicle()
+                                .getVehicleType()
+                                .getId() == null
+        ) {
+            throw new RuntimeException(
+                    "Parking session does not have valid vehicle information"
+            );
+        }
+
+        if (session.getSlot() == null) {
+            throw new RuntimeException(
+                    "Parking session does not have a parking slot"
+            );
+        }
+    }
+
+    /**
+     * Kiểm tra dữ liệu check-in.
+     */
+    private void validateCheckInRequest(
+            CheckInRequest request
+    ) {
+        if (request == null) {
+            throw new RuntimeException(
+                    "Check-in request is required"
+            );
+        }
+
+        if (
+                request.getLicensePlate() == null ||
+                        request.getLicensePlate().isBlank()
+        ) {
+            throw new RuntimeException(
+                    "License plate is required"
+            );
+        }
+
+        if (
+                request.getVehicleTypeId() == null ||
+                        request.getVehicleTypeId() <= 0
+        ) {
+            throw new RuntimeException(
+                    "Vehicle type is required"
+            );
+        }
+    }
+
+    /**
+     * Xác định phương thức thanh toán hợp lệ.
+     */
+    private String resolvePaymentMethod(
+            String requestedPaymentMethod,
+            BigDecimal amountDue,
+            boolean prepaidBooking
+    ) {
+        BigDecimal normalizedAmount =
+                safeMoney(amountDue);
+
+        if (
+                normalizedAmount.compareTo(
+                        BigDecimal.ZERO
+                ) <= 0
+        ) {
+            if (prepaidBooking) {
+                return PAYMENT_METHOD_PREPAID;
+            }
+
+            return PAYMENT_METHOD_CASH;
+        }
+
+        String paymentMethod =
+                normalizeStatus(
+                        requestedPaymentMethod
+                );
+
+        if (paymentMethod.isBlank()) {
+            paymentMethod =
+                    PAYMENT_METHOD_CASH;
+        }
+
+        if (
+                !SUPPORTED_PAYMENT_METHODS.contains(
+                        paymentMethod
+                )
+        ) {
+            throw new RuntimeException(
+                    "Unsupported payment method"
+            );
+        }
+
+        if (
+                PAYMENT_METHOD_PREPAID.equals(
+                        paymentMethod
+                )
+        ) {
+            throw new RuntimeException(
+                    "Prepaid booking cannot be used when an additional payment is required"
+            );
+        }
+
+        return paymentMethod;
+    }
+
+    /**
+     * Chuẩn hóa giá trị tiền và không cho số âm.
+     */
+    private BigDecimal safeMoney(
+            BigDecimal value
+    ) {
+        if (
+                value == null ||
+                        value.compareTo(
+                                BigDecimal.ZERO
+                        ) < 0
+        ) {
+            return zeroMoney();
+        }
+
+        return value.setScale(
+                2,
+                RoundingMode.HALF_UP
+        );
+    }
+
+    private BigDecimal zeroMoney() {
+        return BigDecimal.ZERO.setScale(
+                2,
+                RoundingMode.HALF_UP
+        );
+    }
+
+    private String normalizeTicketId(
+            String value
+    ) {
+        if (
+                value == null ||
+                        value.isBlank()
+        ) {
             return null;
         }
 
-        return value.trim().toUpperCase();
-    }
-
-    private String normalizeLicensePlate(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-
-        return value.trim().toUpperCase();
-    }
-
-    private String normalizePlateForCompare(String value) {
-        return String.valueOf(value == null ? "" : value)
+        return value
                 .trim()
-                .toUpperCase()
-                .replaceAll("[^A-Z0-9]", "");
+                .toUpperCase(Locale.ROOT);
     }
 
+    private String normalizeLicensePlate(
+            String value
+    ) {
+        if (
+                value == null ||
+                        value.isBlank()
+        ) {
+            return null;
+        }
+
+        return value
+                .trim()
+                .toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizePlateForCompare(
+            String value
+    ) {
+        if (value == null) {
+            return "";
+        }
+
+        return value
+                .trim()
+                .toUpperCase(Locale.ROOT)
+                .replaceAll(
+                        "[^A-Z0-9]",
+                        ""
+                );
+    }
+
+    private String normalizeStatus(
+            String value
+    ) {
+        if (
+                value == null ||
+                        value.isBlank()
+        ) {
+            return "";
+        }
+
+        return value
+                .trim()
+                .toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * Sinh ticket ID không trùng.
+     */
     private String generateUniqueTicketId() {
-        String ticketId;
+        for (
+                int attempt = 0;
+                attempt < MAX_TICKET_GENERATION_ATTEMPTS;
+                attempt++
+        ) {
+            int number =
+                    ThreadLocalRandom
+                            .current()
+                            .nextInt(
+                                    100000,
+                                    1000000
+                            );
 
-        do {
-            int number = 100000 + random.nextInt(900000);
-            ticketId = "TK-" + number;
-        } while (parkingSessionRepository.existsByTicketId(ticketId));
+            String ticketId =
+                    "TK-" + number;
 
-        return ticketId;
+            if (
+                    !parkingSessionRepository
+                            .existsByTicketId(
+                                    ticketId
+                            )
+            ) {
+                return ticketId;
+            }
+        }
+
+        throw new RuntimeException(
+                "Cannot generate a unique parking ticket"
+        );
     }
 }

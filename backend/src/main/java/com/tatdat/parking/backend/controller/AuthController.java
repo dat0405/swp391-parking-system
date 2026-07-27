@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -44,14 +45,48 @@ import org.springframework.web.client.RestTemplate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
-    private static final String ACCESS_TOKEN_COOKIE = "access_token";
-    private static final String REFRESH_TOKEN_COOKIE = "refresh_token";
+    private static final String ACCESS_TOKEN_COOKIE =
+            "access_token";
+
+    private static final String REFRESH_TOKEN_COOKIE =
+            "refresh_token";
+
+    private static final String STATUS_ACTIVE =
+            "ACTIVE";
+
+    private static final String STATUS_INACTIVE =
+            "INACTIVE";
+
+    private static final String STATUS_BANNED =
+            "BANNED";
+
+    private static final String DEFAULT_DRIVER_ROLE =
+            "DRIVER";
+
+    /**
+     * Danh sách role hợp lệ phải khớp với:
+     *
+     * - Database
+     * - SecurityConfig
+     * - JwtAuthenticationFilter
+     * - Frontend auth.js
+     */
+    private static final Set<String> SUPPORTED_ROLES =
+            Set.of(
+                    "SYSTEM_ADMIN",
+                    "PARKING_MANAGER",
+                    "PARKING_STAFF",
+                    "DRIVER",
+                    "USER"
+            );
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -72,10 +107,12 @@ public class AuthController {
 
     /*
      * Local development:
+     *
      * app.cookie.secure=false
      * app.cookie.same-site=Lax
      *
-     * Deploy HTTPS, frontend/backend khác domain:
+     * Deploy HTTPS khi frontend/backend khác domain:
+     *
      * app.cookie.secure=true
      * app.cookie.same-site=None
      */
@@ -85,88 +122,94 @@ public class AuthController {
     @Value("${app.cookie.same-site:Lax}")
     private String cookieSameSite;
 
+    /**
+     * Thời gian tồn tại access token tính bằng milliseconds.
+     *
+     * Giá trị này phải giống JwtService.
+     */
+    @Value("${jwt.access-token-expiration}")
+    private Long accessTokenExpiration;
+
+    /**
+     * Thời gian tồn tại refresh token tính bằng milliseconds.
+     *
+     * Nếu application.properties chưa có thì mặc định là 7 ngày.
+     */
+    @Value("${jwt.refresh-token-expiration:604800000}")
+    private Long refreshTokenExpiration;
+
+    /**
+     * Đăng ký tài khoản thông thường.
+     *
+     * Người dùng tự đăng ký luôn được cấp role DRIVER.
+     * Role STAFF/MANAGER/ADMIN chỉ nên do System Admin cấp.
+     */
     @PostMapping("/register")
     public String register(
             @Valid @RequestBody RegisterRequest request
     ) {
-        if (request.getFullName() == null
-                || request.getFullName().isBlank()) {
-            throw new RuntimeException("Full name is required");
-        }
+        validateRegisterRequest(request);
 
-        if (request.getEmail() == null
-                || request.getEmail().isBlank()) {
-            throw new RuntimeException("Email is required");
-        }
+        String email = normalizeEmail(
+                request.getEmail()
+        );
 
-        if (request.getPassword() == null
-                || request.getPassword().isBlank()) {
-            throw new RuntimeException("Password is required");
-        }
-
-        if (request.getConfirmPassword() == null
-                || request.getConfirmPassword().isBlank()) {
-            throw new RuntimeException("Confirm password is required");
-        }
-
-        if (!request.getPassword()
-                .equals(request.getConfirmPassword())) {
-            throw new RuntimeException(
-                    "Password and confirm password do not match"
-            );
-        }
-
-        String email = request.getEmail()
-                .trim()
-                .toLowerCase();
-
-        User existingUser = userRepository.findByEmail(email)
+        User existingUser = userRepository
+                .findByEmail(email)
                 .orElse(null);
 
         if (existingUser != null) {
-            if ("BANNED".equalsIgnoreCase(
+            String existingStatus = normalizeText(
                     existingUser.getStatus()
-            )) {
+            );
+
+            if (STATUS_BANNED.equals(existingStatus)) {
                 throw new RuntimeException(
                         "Email này đã bị vô hiệu hóa và không thể đăng ký lại"
                 );
             }
 
-            throw new RuntimeException("Email already exists");
+            throw new RuntimeException(
+                    "Email already exists"
+            );
         }
 
-        String phone = null;
+        String phone = normalizeOptionalText(
+                request.getPhone()
+        );
 
-        if (request.getPhone() != null
-                && !request.getPhone().isBlank()) {
-            phone = request.getPhone().trim();
-
-            if (userRepository.findByPhone(phone).isPresent()) {
-                throw new RuntimeException(
-                        "Phone number already exists"
-                );
-            }
+        if (
+                phone != null &&
+                        userRepository.findByPhone(phone).isPresent()
+        ) {
+            throw new RuntimeException(
+                    "Phone number already exists"
+            );
         }
 
-        Role driverRole = roleRepository
-                .findByRoleName("DRIVER")
-                .orElseThrow(
-                        () -> new RuntimeException(
-                                "Driver role not found"
-                        )
-                );
+        Role driverRole = findRequiredRole(
+                DEFAULT_DRIVER_ROLE
+        );
 
         Instant now = Instant.now();
 
         User user = new User();
-        user.setFullName(request.getFullName().trim());
-        user.setEmail(email);
-        user.setPassword(
-                passwordEncoder.encode(request.getPassword())
+
+        user.setFullName(
+                request.getFullName().trim()
         );
+
+        user.setEmail(email);
+
+        user.setPassword(
+                passwordEncoder.encode(
+                        request.getPassword()
+                )
+        );
+
         user.setPhone(phone);
         user.setRole(driverRole);
-        user.setStatus("ACTIVE");
+        user.setStatus(STATUS_ACTIVE);
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         user.setLastLoginAt(null);
@@ -177,73 +220,106 @@ public class AuthController {
         return "Register successfully";
     }
 
+    /**
+     * Đăng nhập bằng email và password.
+     */
     @PostMapping("/login")
     public AuthResponse login(
             @Valid @RequestBody LoginRequest request,
             HttpServletResponse response
     ) {
-        String email = request.getEmail()
-                .trim()
-                .toLowerCase();
+        if (
+                request == null ||
+                        request.getEmail() == null ||
+                        request.getEmail().isBlank() ||
+                        request.getPassword() == null ||
+                        request.getPassword().isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Invalid email or password"
+            );
+        }
 
-        User user = userRepository.findByEmail(email)
+        String email = normalizeEmail(
+                request.getEmail()
+        );
+
+        User user = userRepository
+                .findByEmail(email)
                 .orElseThrow(
                         () -> new RuntimeException(
                                 "Invalid email or password"
                         )
                 );
 
-        if (!passwordEncoder.matches(
-                request.getPassword(),
-                user.getPassword()
-        )) {
+        if (
+                user.getPassword() == null ||
+                        !passwordEncoder.matches(
+                                request.getPassword(),
+                                user.getPassword()
+                        )
+        ) {
             throw new RuntimeException(
                     "Invalid email or password"
             );
         }
 
         validateUserCanAuthenticate(user);
+        validateUserRole(user);
 
-        return completeSuccessfulLogin(user, response);
+        return completeSuccessfulLogin(
+                user,
+                response
+        );
     }
 
-    /*
+    /**
      * Google popup/implicit flow cũ.
-     * Giữ lại để tương thích với frontend cũ.
+     *
+     * Giữ lại để tương thích với frontend phiên bản cũ.
      */
     @PostMapping("/google-token")
     public AuthResponse googleLoginWithAccessToken(
-            @Valid @RequestBody GoogleAccessTokenRequest request,
+            @Valid @RequestBody
+            GoogleAccessTokenRequest request,
+
             HttpServletResponse response
     ) {
-        try {
-            String userInfoUrl =
-                    "https://www.googleapis.com/oauth2/v3/userinfo";
+        if (
+                request == null ||
+                        request.getAccessToken() == null ||
+                        request.getAccessToken().isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Google access token is required"
+            );
+        }
 
-            RestTemplate restTemplate = new RestTemplate();
+        try {
+            RestTemplate restTemplate =
+                    new RestTemplate();
 
             ResponseEntity<Map> googleResponse =
                     restTemplate.exchange(
-                            userInfoUrl,
-                            org.springframework.http.HttpMethod.GET,
+                            "https://www.googleapis.com/oauth2/v3/userinfo",
+                            HttpMethod.GET,
                             new HttpEntity<>(
                                     createGoogleAuthHeaders(
-                                            request.getAccessToken()
+                                            request.getAccessToken().trim()
                                     )
                             ),
                             Map.class
                     );
 
-            Map<String, Object> googleUser =
-                    googleResponse.getBody();
-
             return authenticateGoogleUserAndBuildResponse(
-                    googleUser,
+                    googleResponse.getBody(),
                     response,
                     "Google login failed"
             );
+
         } catch (RuntimeException error) {
             throw error;
+
         } catch (Exception error) {
             throw new RuntimeException(
                     "Google login failed"
@@ -251,16 +327,19 @@ public class AuthController {
         }
     }
 
-    /*
-     * Google redirect/auth-code flow mới.
+    /**
+     * Google Authorization Code redirect flow.
      */
     @PostMapping("/google-code")
     public AuthResponse googleLoginWithCode(
             @Valid @RequestBody GoogleCodeRequest request,
             HttpServletResponse response
     ) {
-        if (request.getCode() == null
-                || request.getCode().isBlank()) {
+        if (
+                request == null ||
+                        request.getCode() == null ||
+                        request.getCode().isBlank()
+        ) {
             throw new RuntimeException(
                     "Google authorization code is required"
             );
@@ -269,9 +348,12 @@ public class AuthController {
         validateGoogleCodeConfiguration();
 
         try {
-            RestTemplate restTemplate = new RestTemplate();
+            RestTemplate restTemplate =
+                    new RestTemplate();
 
-            HttpHeaders tokenHeaders = new HttpHeaders();
+            HttpHeaders tokenHeaders =
+                    new HttpHeaders();
+
             tokenHeaders.setContentType(
                     MediaType.APPLICATION_FORM_URLENCODED
             );
@@ -283,18 +365,22 @@ public class AuthController {
                     "code",
                     request.getCode().trim()
             );
+
             tokenBody.add(
                     "client_id",
-                    googleClientId
+                    googleClientId.trim()
             );
+
             tokenBody.add(
                     "client_secret",
-                    googleClientSecret
+                    googleClientSecret.trim()
             );
+
             tokenBody.add(
                     "redirect_uri",
-                    googleRedirectUri
+                    googleRedirectUri.trim()
             );
+
             tokenBody.add(
                     "grant_type",
                     "authorization_code"
@@ -313,8 +399,10 @@ public class AuthController {
             Map<String, Object> tokenData =
                     tokenResponse.getBody();
 
-            if (tokenData == null
-                    || tokenData.get("access_token") == null) {
+            if (
+                    tokenData == null ||
+                            tokenData.get("access_token") == null
+            ) {
                 throw new RuntimeException(
                         "Cannot exchange Google authorization code"
                 );
@@ -323,12 +411,18 @@ public class AuthController {
             String googleAccessToken =
                     String.valueOf(
                             tokenData.get("access_token")
-                    );
+                    ).trim();
+
+            if (googleAccessToken.isBlank()) {
+                throw new RuntimeException(
+                        "Google access token is empty"
+                );
+            }
 
             ResponseEntity<Map> googleResponse =
                     restTemplate.exchange(
                             "https://www.googleapis.com/oauth2/v3/userinfo",
-                            org.springframework.http.HttpMethod.GET,
+                            HttpMethod.GET,
                             new HttpEntity<>(
                                     createGoogleAuthHeaders(
                                             googleAccessToken
@@ -337,16 +431,15 @@ public class AuthController {
                             Map.class
                     );
 
-            Map<String, Object> googleUser =
-                    googleResponse.getBody();
-
             return authenticateGoogleUserAndBuildResponse(
-                    googleUser,
+                    googleResponse.getBody(),
                     response,
                     "Google redirect login failed"
             );
+
         } catch (RuntimeException error) {
             throw error;
+
         } catch (Exception error) {
             throw new RuntimeException(
                     "Google redirect login failed"
@@ -354,6 +447,12 @@ public class AuthController {
         }
     }
 
+    /**
+     * Làm mới access token.
+     *
+     * Ưu tiên refresh token trong HttpOnly cookie.
+     * Request body chỉ giữ để tương thích với frontend cũ.
+     */
     @PostMapping("/refresh-token")
     public AuthResponse refreshToken(
             @CookieValue(
@@ -368,19 +467,23 @@ public class AuthController {
             HttpServletResponse response
     ) {
         String refreshTokenValue =
-                refreshTokenFromCookie;
+                normalizeOptionalText(
+                        refreshTokenFromCookie
+                );
 
-        if ((refreshTokenValue == null
-                || refreshTokenValue.isBlank())
-                && request != null
-                && request.getRefreshToken() != null
-                && !request.getRefreshToken().isBlank()) {
+        if (
+                refreshTokenValue == null &&
+                        request != null
+        ) {
             refreshTokenValue =
-                    request.getRefreshToken();
+                    normalizeOptionalText(
+                            request.getRefreshToken()
+                    );
         }
 
-        if (refreshTokenValue == null
-                || refreshTokenValue.isBlank()) {
+        if (refreshTokenValue == null) {
+            clearAuthCookies(response);
+
             throw new RuntimeException(
                     "Refresh token is required"
             );
@@ -391,10 +494,26 @@ public class AuthController {
                         refreshTokenValue
                 );
 
+        if (
+                oldRefreshToken == null ||
+                        oldRefreshToken.getUser() == null
+        ) {
+            clearAuthCookies(response);
+
+            throw new RuntimeException(
+                    "Refresh token is invalid"
+            );
+        }
+
         User user = oldRefreshToken.getUser();
 
         validateUserCanAuthenticate(user);
+        validateUserRole(user);
 
+        /*
+         * Rotation:
+         * token cũ bị thu hồi và token mới được tạo.
+         */
         refreshTokenService.revokeRefreshToken(
                 oldRefreshToken.getToken()
         );
@@ -412,7 +531,21 @@ public class AuthController {
                 jwtService.generateAccessToken(user);
 
         RefreshToken newRefreshToken =
-                refreshTokenService.createRefreshToken(user);
+                refreshTokenService.createRefreshToken(
+                        user
+                );
+
+        if (
+                newRefreshToken == null ||
+                        newRefreshToken.getToken() == null ||
+                        newRefreshToken.getToken().isBlank()
+        ) {
+            clearAuthCookies(response);
+
+            throw new RuntimeException(
+                    "Cannot create refresh token"
+            );
+        }
 
         addAuthCookies(
                 response,
@@ -420,13 +553,15 @@ public class AuthController {
                 newRefreshToken.getToken()
         );
 
-        return buildAuthResponse(
-                user,
-                null,
-                null
-        );
+        return buildAuthResponse(user);
     }
 
+    /**
+     * Đăng xuất.
+     *
+     * Cookie luôn được xóa, kể cả refresh token đã hết hạn
+     * hoặc không còn tồn tại trong database.
+     */
     @PostMapping("/logout")
     public String logout(
             @CookieValue(
@@ -441,73 +576,64 @@ public class AuthController {
             HttpServletResponse response
     ) {
         String refreshTokenValue =
-                refreshTokenFromCookie;
+                normalizeOptionalText(
+                        refreshTokenFromCookie
+                );
 
-        if ((refreshTokenValue == null
-                || refreshTokenValue.isBlank())
-                && request != null
-                && request.getRefreshToken() != null
-                && !request.getRefreshToken().isBlank()) {
+        if (
+                refreshTokenValue == null &&
+                        request != null
+        ) {
             refreshTokenValue =
-                    request.getRefreshToken();
+                    normalizeOptionalText(
+                            request.getRefreshToken()
+                    );
         }
 
-        if (refreshTokenValue != null
-                && !refreshTokenValue.isBlank()) {
-            try {
-                RefreshToken refreshToken =
-                        refreshTokenService
-                                .verifyRefreshToken(
-                                        refreshTokenValue
-                                );
-
-                User user = refreshToken.getUser();
-
-                Instant now = Instant.now();
-
-                /*
-                 * Khi logout:
-                 * lastActiveAt = null để đánh dấu offline.
-                 * updatedAt lưu thời điểm người dùng logout.
-                 */
-                user.setLastActiveAt(null);
-                user.setUpdatedAt(now);
-
-                userRepository.save(user);
-
-                publishUserStatus(user, false);
-
-                refreshTokenService.revokeRefreshToken(
-                        refreshTokenValue
-                );
-            } catch (Exception error) {
-                refreshTokenService.revokeRefreshToken(
+        try {
+            if (refreshTokenValue != null) {
+                revokeRefreshTokenAndSetUserOffline(
                         refreshTokenValue
                 );
             }
+        } finally {
+            clearAuthCookies(response);
         }
-
-        clearAuthCookies(response);
 
         return "Logout successfully";
     }
 
+    /**
+     * Trả thông tin user đang đăng nhập.
+     *
+     * Frontend sử dụng endpoint này để lấy đúng role:
+     *
+     * SYSTEM_ADMIN
+     * PARKING_MANAGER
+     * PARKING_STAFF
+     * DRIVER
+     * USER
+     */
     @GetMapping("/me")
     public AuthResponse getCurrentUser(
             Authentication authentication
     ) {
-        if (authentication == null
-                || authentication.getName() == null) {
+        if (
+                authentication == null ||
+                        authentication.getName() == null ||
+                        authentication.getName().isBlank()
+        ) {
             throw new RuntimeException(
                     "Unauthenticated"
             );
         }
 
-        String email = authentication.getName()
-                .trim()
-                .toLowerCase();
+        String email = normalizeEmail(
+                authentication.getName()
+        );
 
-        User user = userRepository.findByEmail(email)
+        User user = userRepository
+                .findByEmail(email)
                 .orElseThrow(
                         () -> new RuntimeException(
                                 "User not found"
@@ -515,12 +641,9 @@ public class AuthController {
                 );
 
         validateUserCanAuthenticate(user);
+        validateUserRole(user);
 
-        return buildAuthResponse(
-                user,
-                null,
-                null
-        );
+        return buildAuthResponse(user);
     }
 
     @PostMapping("/forgot-password")
@@ -528,8 +651,20 @@ public class AuthController {
             @Valid @RequestBody
             ForgotPasswordRequest request
     ) {
+        if (
+                request == null ||
+                        request.getEmail() == null ||
+                        request.getEmail().isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Email is required"
+            );
+        }
+
         passwordResetService.forgotPassword(
-                request.getEmail()
+                normalizeEmail(
+                        request.getEmail()
+                )
         );
 
         return "OTP has been sent to your email";
@@ -540,8 +675,16 @@ public class AuthController {
             @Valid @RequestBody
             ResetForgotPasswordRequest request
     ) {
+        if (request == null) {
+            throw new RuntimeException(
+                    "Reset password request is required"
+            );
+        }
+
         passwordResetService.resetPassword(
-                request.getEmail(),
+                normalizeEmail(
+                        request.getEmail()
+                ),
                 request.getOtp(),
                 request.getNewPassword()
         );
@@ -549,6 +692,15 @@ public class AuthController {
         return "Password has been reset successfully";
     }
 
+    /**
+     * Xử lý thông tin tài khoản trả về từ Google.
+     *
+     * Quan trọng:
+     *
+     * - Nếu email đã tồn tại, hệ thống giữ nguyên role hiện tại.
+     * - PARKING_STAFF đăng nhập Google vẫn là PARKING_STAFF.
+     * - Chỉ tài khoản Google mới hoàn toàn được tạo dưới role DRIVER.
+     */
     private AuthResponse authenticateGoogleUserAndBuildResponse(
             Map<String, Object> googleUser,
             HttpServletResponse response,
@@ -560,11 +712,15 @@ public class AuthController {
             );
         }
 
-        String email =
-                (String) googleUser.get("email");
+        String email = getMapString(
+                googleUser,
+                "email"
+        );
 
-        String name =
-                (String) googleUser.get("name");
+        String name = getMapString(
+                googleUser,
+                "name"
+        );
 
         Object emailVerifiedValue =
                 googleUser.get("email_verified");
@@ -591,7 +747,7 @@ public class AuthController {
 
         try {
             String normalizedEmail =
-                    email.trim().toLowerCase();
+                    normalizeEmail(email);
 
             User user = userRepository
                     .findByEmail(normalizedEmail)
@@ -603,13 +759,16 @@ public class AuthController {
                     );
 
             validateUserCanAuthenticate(user);
+            validateUserRole(user);
 
             return completeSuccessfulLogin(
                     user,
                     response
             );
+
         } catch (RuntimeException error) {
             throw error;
+
         } catch (Exception error) {
             throw new RuntimeException(
                     defaultErrorMessage
@@ -617,10 +776,16 @@ public class AuthController {
         }
     }
 
+    /**
+     * Hoàn tất đăng nhập, tạo JWT và refresh token.
+     */
     private AuthResponse completeSuccessfulLogin(
             User user,
             HttpServletResponse response
     ) {
+        validateUserCanAuthenticate(user);
+        validateUserRole(user);
+
         Instant now = Instant.now();
 
         user.setLastLoginAt(now);
@@ -635,7 +800,19 @@ public class AuthController {
                 jwtService.generateAccessToken(user);
 
         RefreshToken refreshToken =
-                refreshTokenService.createRefreshToken(user);
+                refreshTokenService.createRefreshToken(
+                        user
+                );
+
+        if (
+                refreshToken == null ||
+                        refreshToken.getToken() == null ||
+                        refreshToken.getToken().isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Cannot create refresh token"
+            );
+        }
 
         addAuthCookies(
                 response,
@@ -643,47 +820,60 @@ public class AuthController {
                 refreshToken.getToken()
         );
 
-        return buildAuthResponse(
-                user,
-                null,
-                null
-        );
+        return buildAuthResponse(user);
     }
 
+    /**
+     * Tạo tài khoản mới từ Google.
+     *
+     * Chỉ tài khoản chưa tồn tại mới được tạo với role DRIVER.
+     */
     private User createGoogleDriverUser(
             String email,
             String googleName
     ) {
-        Role driverRole = roleRepository
-                .findByRoleName("DRIVER")
-                .orElseThrow(
-                        () -> new RuntimeException(
-                                "Driver role not found"
-                        )
-                );
+        Role driverRole = findRequiredRole(
+                DEFAULT_DRIVER_ROLE
+        );
 
         Instant now = Instant.now();
 
-        String fullName = googleName;
+        String fullName =
+                normalizeOptionalText(
+                        googleName
+                );
 
-        if (fullName == null
-                || fullName.isBlank()) {
-            fullName = email.split("@")[0];
+        if (fullName == null) {
+            String emailPrefix =
+                    email.contains("@")
+                            ? email.substring(
+                            0,
+                            email.indexOf("@")
+                    )
+                            : email;
+
+            fullName = emailPrefix;
         }
 
         User user = new User();
 
-        user.setFullName(fullName.trim());
+        user.setFullName(fullName);
         user.setEmail(email);
+
+        /*
+         * Google user không sử dụng password này để đăng nhập.
+         * UUID giúp tránh password dự đoán được.
+         */
         user.setPassword(
                 passwordEncoder.encode(
-                        "GOOGLE_AUTH_"
-                                + System.currentTimeMillis()
+                        "GOOGLE_AUTH_" +
+                                UUID.randomUUID()
                 )
         );
+
         user.setPhone(null);
         user.setRole(driverRole);
-        user.setStatus("ACTIVE");
+        user.setStatus(STATUS_ACTIVE);
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         user.setLastLoginAt(null);
@@ -695,40 +885,92 @@ public class AuthController {
     private HttpHeaders createGoogleAuthHeaders(
             String accessToken
     ) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(accessToken);
+        if (
+                accessToken == null ||
+                        accessToken.isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Google access token is required"
+            );
+        }
+
+        HttpHeaders headers =
+                new HttpHeaders();
+
+        headers.setBearerAuth(
+                accessToken.trim()
+        );
 
         return headers;
     }
 
     private void validateGoogleCodeConfiguration() {
-        if (googleClientId == null
-                || googleClientId.isBlank()) {
+        if (
+                googleClientId == null ||
+                        googleClientId.isBlank()
+        ) {
             throw new RuntimeException(
                     "Missing google.client-id configuration"
             );
         }
 
-        if (googleClientSecret == null
-                || googleClientSecret.isBlank()) {
+        if (
+                googleClientSecret == null ||
+                        googleClientSecret.isBlank()
+        ) {
             throw new RuntimeException(
                     "Missing google.client-secret configuration"
             );
         }
 
-        if (googleRedirectUri == null
-                || googleRedirectUri.isBlank()) {
+        if (
+                googleRedirectUri == null ||
+                        googleRedirectUri.isBlank()
+        ) {
             throw new RuntimeException(
                     "Missing google.redirect-uri configuration"
             );
         }
     }
 
+    /**
+     * Thêm access token và refresh token dưới dạng HttpOnly cookie.
+     */
     private void addAuthCookies(
             HttpServletResponse response,
             String accessToken,
             String refreshToken
     ) {
+        if (
+                accessToken == null ||
+                        accessToken.isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Access token is required"
+            );
+        }
+
+        if (
+                refreshToken == null ||
+                        refreshToken.isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Refresh token is required"
+            );
+        }
+
+        Duration accessCookieDuration =
+                durationFromMilliseconds(
+                        accessTokenExpiration,
+                        Duration.ofMinutes(15)
+                );
+
+        Duration refreshCookieDuration =
+                durationFromMilliseconds(
+                        refreshTokenExpiration,
+                        Duration.ofDays(7)
+                );
+
         ResponseCookie accessTokenCookie =
                 ResponseCookie
                         .from(
@@ -737,11 +979,11 @@ public class AuthController {
                         )
                         .httpOnly(true)
                         .secure(cookieSecure)
-                        .sameSite(cookieSameSite)
-                        .path("/")
-                        .maxAge(
-                                Duration.ofMinutes(15)
+                        .sameSite(
+                                getNormalizedSameSite()
                         )
+                        .path("/")
+                        .maxAge(accessCookieDuration)
                         .build();
 
         ResponseCookie refreshTokenCookie =
@@ -752,11 +994,11 @@ public class AuthController {
                         )
                         .httpOnly(true)
                         .secure(cookieSecure)
-                        .sameSite(cookieSameSite)
-                        .path("/api/auth")
-                        .maxAge(
-                                Duration.ofDays(7)
+                        .sameSite(
+                                getNormalizedSameSite()
                         )
+                        .path("/api/auth")
+                        .maxAge(refreshCookieDuration)
                         .build();
 
         response.addHeader(
@@ -770,6 +1012,11 @@ public class AuthController {
         );
     }
 
+    /**
+     * Xóa access token và refresh token cookie.
+     *
+     * Path phải giống chính xác path lúc tạo cookie.
+     */
     private void clearAuthCookies(
             HttpServletResponse response
     ) {
@@ -781,9 +1028,11 @@ public class AuthController {
                         )
                         .httpOnly(true)
                         .secure(cookieSecure)
-                        .sameSite(cookieSameSite)
+                        .sameSite(
+                                getNormalizedSameSite()
+                        )
                         .path("/")
-                        .maxAge(0)
+                        .maxAge(Duration.ZERO)
                         .build();
 
         ResponseCookie refreshTokenCookie =
@@ -794,9 +1043,11 @@ public class AuthController {
                         )
                         .httpOnly(true)
                         .secure(cookieSecure)
-                        .sameSite(cookieSameSite)
+                        .sameSite(
+                                getNormalizedSameSite()
+                        )
                         .path("/api/auth")
-                        .maxAge(0)
+                        .maxAge(Duration.ZERO)
                         .build();
 
         response.addHeader(
@@ -810,48 +1061,92 @@ public class AuthController {
         );
     }
 
+    /**
+     * Kiểm tra trạng thái tài khoản.
+     */
     private void validateUserCanAuthenticate(
             User user
     ) {
-        if ("BANNED".equalsIgnoreCase(
+        if (user == null) {
+            throw new RuntimeException(
+                    "User not found"
+            );
+        }
+
+        String status = normalizeText(
                 user.getStatus()
-        )) {
+        );
+
+        if (STATUS_BANNED.equals(status)) {
             throw new AccountBannedException(
                     "Tài khoản của bạn đã bị khóa"
             );
         }
 
-        if ("INACTIVE".equalsIgnoreCase(
-                user.getStatus()
-        )) {
+        if (STATUS_INACTIVE.equals(status)) {
             throw new RuntimeException(
                     "Tài khoản của bạn chưa được kích hoạt"
             );
         }
 
-        if (!"ACTIVE".equalsIgnoreCase(
-                user.getStatus()
-        )) {
+        if (!STATUS_ACTIVE.equals(status)) {
             throw new RuntimeException(
                     "Tài khoản không thể đăng nhập với trạng thái hiện tại"
             );
         }
     }
 
-    private AuthResponse buildAuthResponse(
-            User user,
-            String accessToken,
-            String refreshToken
+    /**
+     * Bảo đảm user có role hợp lệ.
+     */
+    private String validateUserRole(
+            User user
     ) {
+        if (
+                user == null ||
+                        user.getRole() == null ||
+                        user.getRole().getRoleName() == null
+        ) {
+            throw new RuntimeException(
+                    "User role not found"
+            );
+        }
+
+        String roleName = normalizeRole(
+                user.getRole().getRoleName()
+        );
+
+        if (
+                roleName == null ||
+                        !SUPPORTED_ROLES.contains(roleName)
+        ) {
+            throw new RuntimeException(
+                    "User role is not supported"
+            );
+        }
+
+        return roleName;
+    }
+
+    /**
+     * Response dùng cho login, refresh token và /auth/me.
+     *
+     * Vì token nằm trong HttpOnly cookie nên không trả token
+     * về JavaScript.
+     */
+    private AuthResponse buildAuthResponse(
+            User user
+    ) {
+        String roleName =
+                validateUserRole(user);
+
         return AuthResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken)
+                .accessToken(null)
+                .refreshToken(null)
                 .userId(user.getId())
                 .fullName(user.getFullName())
                 .email(user.getEmail())
-                .role(
-                        user.getRole().getRoleName()
-                )
+                .role(roleName)
                 .build();
     }
 
@@ -875,5 +1170,251 @@ public class AuthController {
                         )
                         .build()
         );
+    }
+
+    /**
+     * Thu hồi refresh token và cập nhật user offline.
+     */
+    private void revokeRefreshTokenAndSetUserOffline(
+            String refreshTokenValue
+    ) {
+        try {
+            RefreshToken refreshToken =
+                    refreshTokenService
+                            .verifyRefreshToken(
+                                    refreshTokenValue
+                            );
+
+            if (
+                    refreshToken != null &&
+                            refreshToken.getUser() != null
+            ) {
+                User user =
+                        refreshToken.getUser();
+
+                Instant now = Instant.now();
+
+                user.setLastActiveAt(null);
+                user.setUpdatedAt(now);
+
+                userRepository.save(user);
+
+                publishUserStatus(
+                        user,
+                        false
+                );
+            }
+
+        } catch (Exception ignored) {
+            /*
+             * Refresh token có thể đã hết hạn hoặc bị thu hồi.
+             * Logout vẫn phải tiếp tục xóa cookie.
+             */
+        }
+
+        try {
+            refreshTokenService.revokeRefreshToken(
+                    refreshTokenValue
+            );
+        } catch (Exception ignored) {
+            /*
+             * Không để lỗi revoke ngăn quá trình logout.
+             */
+        }
+    }
+
+    private void validateRegisterRequest(
+            RegisterRequest request
+    ) {
+        if (request == null) {
+            throw new RuntimeException(
+                    "Register request is required"
+            );
+        }
+
+        if (
+                request.getFullName() == null ||
+                        request.getFullName().isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Full name is required"
+            );
+        }
+
+        if (
+                request.getEmail() == null ||
+                        request.getEmail().isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Email is required"
+            );
+        }
+
+        if (
+                request.getPassword() == null ||
+                        request.getPassword().isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Password is required"
+            );
+        }
+
+        if (
+                request.getConfirmPassword() == null ||
+                        request.getConfirmPassword().isBlank()
+        ) {
+            throw new RuntimeException(
+                    "Confirm password is required"
+            );
+        }
+
+        if (
+                !request.getPassword().equals(
+                        request.getConfirmPassword()
+                )
+        ) {
+            throw new RuntimeException(
+                    "Password and confirm password do not match"
+            );
+        }
+    }
+
+    private Role findRequiredRole(
+            String roleName
+    ) {
+        return roleRepository
+                .findByRoleName(roleName)
+                .orElseThrow(
+                        () -> new RuntimeException(
+                                roleName + " role not found"
+                        )
+                );
+    }
+
+    private String normalizeEmail(
+            String email
+    ) {
+        if (email == null || email.isBlank()) {
+            throw new RuntimeException(
+                    "Email is required"
+            );
+        }
+
+        return email
+                .trim()
+                .toLowerCase();
+    }
+
+    private String normalizeRole(
+            String role
+    ) {
+        if (role == null || role.isBlank()) {
+            return null;
+        }
+
+        String normalizedRole =
+                role.trim().toUpperCase();
+
+        if (
+                normalizedRole.startsWith(
+                        "ROLE_"
+                )
+        ) {
+            normalizedRole =
+                    normalizedRole.substring(5);
+        }
+
+        return normalizedRole.isBlank()
+                ? null
+                : normalizedRole;
+    }
+
+    private String normalizeText(
+            String value
+    ) {
+        if (value == null) {
+            return "";
+        }
+
+        return value
+                .trim()
+                .toUpperCase();
+    }
+
+    private String normalizeOptionalText(
+            String value
+    ) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        return value.trim();
+    }
+
+    private String getMapString(
+            Map<String, Object> map,
+            String key
+    ) {
+        if (map == null || key == null) {
+            return null;
+        }
+
+        Object value = map.get(key);
+
+        if (value == null) {
+            return null;
+        }
+
+        String stringValue =
+                String.valueOf(value).trim();
+
+        return stringValue.isBlank()
+                ? null
+                : stringValue;
+    }
+
+    private Duration durationFromMilliseconds(
+            Long milliseconds,
+            Duration fallback
+    ) {
+        if (
+                milliseconds == null ||
+                        milliseconds <= 0
+        ) {
+            return fallback;
+        }
+
+        return Duration.ofMillis(
+                milliseconds
+        );
+    }
+
+    /**
+     * ResponseCookie chỉ nên nhận:
+     *
+     * Lax
+     * Strict
+     * None
+     */
+    private String getNormalizedSameSite() {
+        if (
+                cookieSameSite == null ||
+                        cookieSameSite.isBlank()
+        ) {
+            return "Lax";
+        }
+
+        String value =
+                cookieSameSite.trim();
+
+        if ("none".equalsIgnoreCase(value)) {
+            return "None";
+        }
+
+        if ("strict".equalsIgnoreCase(value)) {
+            return "Strict";
+        }
+
+        return "Lax";
     }
 }
