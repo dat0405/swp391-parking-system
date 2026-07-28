@@ -81,14 +81,42 @@ const getUserRoleValue = (user) => {
 
 /**
  * Phân quyền các trang frontend.
+ *
+ * SYSTEM_ADMIN:
+ * - Toàn bộ chức năng.
+ *
+ * PARKING_MANAGER:
+ * - Dashboard
+ * - Parking Floors
+ * - Reservations
+ * - Pricing Policies
+ * - Reports
+ *
+ * PARKING_STAFF:
+ * - Check-in/out
+ *
+ * DRIVER:
+ * - Booking
+ * - Booking History
+ * - Parking Floors
+ * - Pricing Policies
  */
 export const ROUTE_PERMISSIONS = {
-  // Người dùng thông thường.
-  booking: [ROLES.DRIVER],
+  /**
+   * Người dùng thông thường tạo booking.
+   */
+  booking: [
+    ROLES.DRIVER,
+  ],
 
-  bookingHistory: [ROLES.DRIVER],
+  /**
+   * Người dùng thông thường xem lịch sử booking.
+   */
+  bookingHistory: [
+    ROLES.DRIVER,
+  ],
 
-  /*
+  /**
    * DRIVER:
    * - Chỉ xem tình trạng chỗ đỗ.
    *
@@ -101,24 +129,25 @@ export const ROUTE_PERMISSIONS = {
     ROLES.SYSTEM_ADMIN,
   ],
 
-  /*
-   * PARKING_STAFF không được vào Dashboard.
+  /**
+   * Dashboard chỉ dành cho Manager và Admin.
    */
   dashboard: [
     ROLES.PARKING_MANAGER,
     ROLES.SYSTEM_ADMIN,
   ],
 
-  /*
-   * Trang Check-in/out.
+  /**
+   * Check-in/out chỉ dành cho Staff và Admin.
+   *
+   * PARKING_MANAGER không được truy cập.
    */
   checkInOut: [
     ROLES.PARKING_STAFF,
-    ROLES.PARKING_MANAGER,
     ROLES.SYSTEM_ADMIN,
   ],
 
-  /*
+  /**
    * Quản lý đặt chỗ.
    */
   reservations: [
@@ -126,7 +155,7 @@ export const ROUTE_PERMISSIONS = {
     ROLES.SYSTEM_ADMIN,
   ],
 
-  /*
+  /**
    * DRIVER:
    * - Chỉ xem bảng giá.
    *
@@ -139,11 +168,17 @@ export const ROUTE_PERMISSIONS = {
     ROLES.SYSTEM_ADMIN,
   ],
 
+  /**
+   * Báo cáo hệ thống.
+   */
   reports: [
     ROLES.PARKING_MANAGER,
     ROLES.SYSTEM_ADMIN,
   ],
 
+  /**
+   * Quản lý người dùng chỉ dành cho System Admin.
+   */
   userManagement: [
     ROLES.SYSTEM_ADMIN,
   ],
@@ -153,7 +188,8 @@ export const ROUTE_PERMISSIONS = {
  * Lấy user đã lưu trong localStorage.
  */
 export const getSavedUser = () => {
-  const savedUser = localStorage.getItem('user');
+  const savedUser =
+    localStorage.getItem('user');
 
   if (!savedUser) {
     return null;
@@ -226,10 +262,14 @@ export const getDefaultPathByRole = (role) => {
 };
 
 /**
- * Kiểm tra role hiện tại có nằm trong danh sách được phép.
+ * Kiểm tra role hiện tại có nằm trong
+ * danh sách role được phép hay không.
  */
-export const hasRole = (allowedRoles = []) => {
-  const currentRole = getSavedUserRole();
+export const hasRole = (
+  allowedRoles = []
+) => {
+  const currentRole =
+    getSavedUserRole();
 
   if (
     !currentRole ||
@@ -272,7 +312,8 @@ export const getToken = () => {
 };
 
 /**
- * Xóa toàn bộ dữ liệu xác thực cũ khỏi trình duyệt.
+ * Xóa toàn bộ dữ liệu xác thực cũ
+ * khỏi trình duyệt.
  */
 export const clearLocalAuthData = () => {
   localStorage.removeItem('user');
@@ -281,7 +322,9 @@ export const clearLocalAuthData = () => {
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('accessToken');
   localStorage.removeItem('authToken');
-  localStorage.removeItem('headerUserSyncedAt');
+  localStorage.removeItem(
+    'headerUserSyncedAt'
+  );
 };
 
 /**
@@ -304,8 +347,13 @@ export const setLogoutGuard = () => {
  * Xóa cờ logout.
  */
 export const clearLogoutGuard = () => {
-  localStorage.removeItem('isLoggingOut');
-  localStorage.removeItem('logoutStartedAt');
+  localStorage.removeItem(
+    'isLoggingOut'
+  );
+
+  localStorage.removeItem(
+    'logoutStartedAt'
+  );
 };
 
 /**
@@ -315,12 +363,14 @@ export const clearLogoutGuard = () => {
  */
 export const isLogoutGuardActive = () => {
   const isLoggingOut =
-    localStorage.getItem('isLoggingOut') ===
-    'true';
+    localStorage.getItem(
+      'isLoggingOut'
+    ) === 'true';
 
   const startedAt = Number(
-    localStorage.getItem('logoutStartedAt') ||
-    0
+    localStorage.getItem(
+      'logoutStartedAt'
+    ) || 0
   );
 
   if (!isLoggingOut || !startedAt) {

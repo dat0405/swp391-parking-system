@@ -16,6 +16,7 @@ import {
 } from 'react-router-dom';
 
 import {
+  ROLES,
   ROUTE_PERMISSIONS,
   getSavedUserRole,
   hasRole,
@@ -49,10 +50,37 @@ function Sidebar() {
   };
 
   /**
+   * DRIVER chỉ xem bảng giá.
+   *
+   * PARKING_MANAGER và SYSTEM_ADMIN
+   * quản lý chính sách giá.
+   */
+  const pricingMenuLabel =
+    userRole === ROLES.DRIVER
+      ? 'Price List'
+      : 'Pricing Policies';
+
+  /**
    * Danh sách menu và quyền tương ứng.
    *
-   * PARKING_STAFF chỉ thuộc quyền checkInOut,
-   * do đó chỉ nhìn thấy đúng một mục Check-in/out.
+   * SYSTEM_ADMIN:
+   * - Toàn bộ chức năng.
+   *
+   * PARKING_MANAGER:
+   * - Dashboard
+   * - Parking Floors
+   * - Reservations
+   * - Pricing Policies
+   * - Reports
+   *
+   * PARKING_STAFF:
+   * - Check-in/out
+   *
+   * DRIVER:
+   * - New Booking
+   * - Booking History
+   * - Parking Floors
+   * - Price List
    */
   const menuItems = [
     {
@@ -98,7 +126,7 @@ function Sidebar() {
       permission: ROUTE_PERMISSIONS.userManagement,
     },
     {
-      label: 'Price List',
+      label: pricingMenuLabel,
       path: '/pricing-policies',
       icon: <CircleDollarSign size={18} />,
       permission: ROUTE_PERMISSIONS.pricingPolicies,
@@ -112,18 +140,21 @@ function Sidebar() {
   ];
 
   /**
-   * Chỉ giữ lại menu mà role hiện tại được phép truy cập.
+   * Chỉ giữ lại những menu mà role hiện tại
+   * được phép truy cập.
    */
-  const visibleMenuItems = menuItems.filter((item) => {
-    if (
-      !userRole ||
-      !Array.isArray(item.permission)
-    ) {
-      return false;
-    }
+  const visibleMenuItems = menuItems.filter(
+    (item) => {
+      if (
+        !userRole ||
+        !Array.isArray(item.permission)
+      ) {
+        return false;
+      }
 
-    return hasRole(item.permission);
-  });
+      return hasRole(item.permission);
+    }
+  );
 
   const handleNavigate = (path) => {
     if (location.pathname !== path) {
@@ -132,24 +163,24 @@ function Sidebar() {
   };
 
   /**
-   * Hiển thị tên role dễ đọc hơn trên giao diện.
+   * Hiển thị tên role trên giao diện.
+   *
+   * Dự án chỉ có bốn role chính thức.
+   * DRIVER chính là người dùng thông thường.
    */
   const getRoleDisplayName = (role) => {
     switch (role) {
-      case 'SYSTEM_ADMIN':
+      case ROLES.SYSTEM_ADMIN:
         return 'SYSTEM_ADMIN';
 
-      case 'PARKING_MANAGER':
+      case ROLES.PARKING_MANAGER:
         return 'PARKING_MANAGER';
 
-      case 'PARKING_STAFF':
+      case ROLES.PARKING_STAFF:
         return 'PARKING_STAFF';
 
-      case 'DRIVER':
+      case ROLES.DRIVER:
         return 'DRIVER';
-
-      case 'USER':
-        return 'USER';
 
       default:
         return 'GUEST';
