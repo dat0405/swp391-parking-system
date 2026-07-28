@@ -12,6 +12,7 @@ import com.tatdat.parking.backend.entity.ParkingSession;
 import com.tatdat.parking.backend.entity.ParkingSlot;
 import com.tatdat.parking.backend.entity.Payment;
 import com.tatdat.parking.backend.entity.PricingPolicy;
+import com.tatdat.parking.backend.entity.User;
 import com.tatdat.parking.backend.entity.Vehicle;
 import com.tatdat.parking.backend.entity.VehicleType;
 import com.tatdat.parking.backend.repository.BookingRepository;
@@ -20,9 +21,15 @@ import com.tatdat.parking.backend.repository.ParkingSessionRepository;
 import com.tatdat.parking.backend.repository.ParkingSlotRepository;
 import com.tatdat.parking.backend.repository.PaymentRepository;
 import com.tatdat.parking.backend.repository.PricingPolicyRepository;
+import com.tatdat.parking.backend.repository.UserRepository;
 import com.tatdat.parking.backend.repository.VehicleRepository;
 import com.tatdat.parking.backend.repository.VehicleTypeRepository;
+import com.tatdat.parking.backend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,6 +37,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -47,28 +55,53 @@ import java.util.concurrent.ThreadLocalRandom;
 @RequiredArgsConstructor
 public class ParkingOperationController {
 
-    private static final String SESSION_ACTIVE = "ACTIVE";
-    private static final String SESSION_COMPLETED = "COMPLETED";
+    private static final String SESSION_ACTIVE =
+            "ACTIVE";
 
-    private static final String SLOT_AVAILABLE = "AVAILABLE";
-    private static final String SLOT_RESERVED = "RESERVED";
-    private static final String SLOT_OCCUPIED = "OCCUPIED";
-    private static final String SLOT_MAINTENANCE = "MAINTENANCE";
+    private static final String SESSION_COMPLETED =
+            "COMPLETED";
 
-    private static final String PAYMENT_PAID = "PAID";
-    private static final String PAYMENT_PENDING = "PENDING";
+    private static final String SLOT_AVAILABLE =
+            "AVAILABLE";
+
+    private static final String SLOT_RESERVED =
+            "RESERVED";
+
+    private static final String SLOT_OCCUPIED =
+            "OCCUPIED";
+
+    private static final String SLOT_MAINTENANCE =
+            "MAINTENANCE";
+
+    private static final String PAYMENT_PAID =
+            "PAID";
+
+    private static final String PAYMENT_PENDING =
+            "PENDING";
+
     private static final String PAYMENT_PAID_BY_BOOKING =
             "PAID_BY_BOOKING";
 
-    private static final String PAYMENT_METHOD_CASH = "CASH";
-    private static final String PAYMENT_METHOD_QR_CODE = "QR_CODE";
+    private static final String PAYMENT_METHOD_CASH =
+            "CASH";
+
+    private static final String PAYMENT_METHOD_QR_CODE =
+            "QR_CODE";
+
     private static final String PAYMENT_METHOD_PREPAID =
             "PREPAID_BOOKING";
+
+    private static final String NOTIFICATION_VEHICLE_CHECKED_IN =
+            "VEHICLE_CHECKED_IN";
+
+    private static final String NOTIFICATION_VEHICLE_CHECKED_OUT =
+            "VEHICLE_CHECKED_OUT";
 
     private static final BigDecimal LOST_TICKET_FEE =
             new BigDecimal("10000.00");
 
-    private static final int MAX_TICKET_GENERATION_ATTEMPTS = 30;
+    private static final int MAX_TICKET_GENERATION_ATTEMPTS =
+            30;
 
     private static final Set<String> SUPPORTED_PAYMENT_METHODS =
             Set.of(
@@ -78,13 +111,24 @@ public class ParkingOperationController {
             );
 
     private final VehicleRepository vehicleRepository;
+
     private final VehicleTypeRepository vehicleTypeRepository;
+
     private final ParkingSlotRepository parkingSlotRepository;
+
     private final ParkingSessionRepository parkingSessionRepository;
+
     private final PricingPolicyRepository pricingPolicyRepository;
+
     private final PaymentRepository paymentRepository;
+
     private final HolidayRepository holidayRepository;
+
     private final BookingRepository bookingRepository;
+
+    private final UserRepository userRepository;
+
+    private final NotificationService notificationService;
 
     /**
      * Check-in xe tại cổng vào.
@@ -96,6 +140,7 @@ public class ParkingOperationController {
      * 4. Nếu có booking thì dùng slot đã đặt.
      * 5. Nếu không có booking thì tự tìm slot trống.
      * 6. Tạo ParkingSession và chuyển slot thành OCCUPIED.
+     * 7. Tạo notification riêng cho tài khoản đang thao tác.
      */
     @PostMapping("/check-in")
     @Transactional
@@ -104,9 +149,18 @@ public class ParkingOperationController {
     ) {
         validateCheckInRequest(request);
 
-        String licensePlate = normalizeLicensePlate(
-                request.getLicensePlate()
-        );
+        /*
+         * Lấy đúng tài khoản Staff/Admin đang thao tác.
+         *
+         * Không nhận userId từ frontend.
+         */
+        User currentOperator =
+                getCurrentAuthenticatedUser();
+
+        String licensePlate =
+                normalizeLicensePlate(
+                        request.getLicensePlate()
+                );
 
         Integer vehicleTypeId =
                 request.getVehicleTypeId();
@@ -154,14 +208,16 @@ public class ParkingOperationController {
         ParkingSlot slot;
 
         if (validBooking != null) {
-            slot = validateAndGetBookingSlot(
-                    validBooking,
-                    vehicleTypeId
-            );
+            slot =
+                    validateAndGetBookingSlot(
+                            validBooking,
+                            vehicleTypeId
+                    );
         } else {
-            slot = findFirstAvailableSlotForWalkIn(
-                    vehicleTypeId
-            );
+            slot =
+                    findFirstAvailableSlotForWalkIn(
+                            vehicleTypeId
+                    );
         }
 
         String ticketId =
@@ -183,7 +239,10 @@ public class ParkingOperationController {
                 );
 
         slot.setStatus(SLOT_OCCUPIED);
-        parkingSlotRepository.save(slot);
+
+        parkingSlotRepository.save(
+                slot
+        );
 
         if (validBooking != null) {
             validBooking.setStatus(
@@ -199,18 +258,38 @@ public class ParkingOperationController {
             );
         }
 
-        return CheckInResponse.builder()
-                .sessionId(savedSession.getId())
-                .ticketId(savedSession.getTicketId())
-                .licensePlate(
-                        vehicle.getLicensePlate()
-                )
-                .slotCode(slot.getSlotCode())
-                .checkInTime(
-                        savedSession.getCheckInTime()
-                )
-                .status(savedSession.getStatus())
-                .build();
+        CheckInResponse response =
+                CheckInResponse.builder()
+                        .sessionId(
+                                savedSession.getId()
+                        )
+                        .ticketId(
+                                savedSession.getTicketId()
+                        )
+                        .licensePlate(
+                                vehicle.getLicensePlate()
+                        )
+                        .slotCode(
+                                slot.getSlotCode()
+                        )
+                        .checkInTime(
+                                savedSession.getCheckInTime()
+                        )
+                        .status(
+                                savedSession.getStatus()
+                        )
+                        .build();
+
+        /*
+         * Chỉ tài khoản vừa thực hiện check-in
+         * nhận được thông báo này.
+         */
+        createCheckInNotification(
+                currentOperator,
+                savedSession
+        );
+
+        return response;
     }
 
     /**
@@ -218,6 +297,8 @@ public class ParkingOperationController {
      *
      * Phương thức này chưa thay đổi trạng thái session,
      * booking hoặc parking slot.
+     *
+     * Không tạo notification trong API preview.
      */
     @GetMapping("/check-out/search")
     @Transactional(readOnly = true)
@@ -238,9 +319,15 @@ public class ParkingOperationController {
                 new CheckOutRequest();
 
         request.setTicketId(ticketId);
-        request.setLicensePlate(licensePlate);
+
+        request.setLicensePlate(
+                licensePlate
+        );
+
         request.setLostTicket(
-                Boolean.TRUE.equals(lostTicket)
+                Boolean.TRUE.equals(
+                        lostTicket
+                )
         );
 
         ParkingSession session =
@@ -267,6 +354,9 @@ public class ParkingOperationController {
      * - PayOS xác nhận thanh toán;
      * - nhân viên xác nhận đã nhận tiền mặt;
      * - hoặc booking đã trả trước và không phát sinh phí.
+     *
+     * Sau khi checkout hoàn tất, chỉ tài khoản
+     * Staff/Admin đang thao tác nhận notification.
      */
     @PostMapping("/check-out")
     @Transactional
@@ -278,6 +368,12 @@ public class ParkingOperationController {
                     "Checkout request is required"
             );
         }
+
+        /*
+         * Lấy đúng tài khoản đang thao tác.
+         */
+        User currentOperator =
+                getCurrentAuthenticatedUser();
 
         ParkingSession session =
                 findActiveSessionForCheckout(
@@ -316,8 +412,13 @@ public class ParkingOperationController {
         /*
          * Hoàn tất parking session.
          */
-        session.setCheckOutTime(checkOutTime);
-        session.setStatus(SESSION_COMPLETED);
+        session.setCheckOutTime(
+                checkOutTime
+        );
+
+        session.setStatus(
+                SESSION_COMPLETED
+        );
 
         parkingSessionRepository.save(
                 session
@@ -355,7 +456,9 @@ public class ParkingOperationController {
             );
         }
 
-        slot.setStatus(SLOT_AVAILABLE);
+        slot.setStatus(
+                SLOT_AVAILABLE
+        );
 
         parkingSlotRepository.save(
                 slot
@@ -390,16 +493,18 @@ public class ParkingOperationController {
                             )
                             .build();
 
-            paymentRepository.save(payment);
+            paymentRepository.save(
+                    payment
+            );
         }
 
         String paymentStatus;
 
         if (
-                prepaidBooking &&
-                        amountDue.compareTo(
-                                BigDecimal.ZERO
-                        ) <= 0
+                prepaidBooking
+                        && amountDue.compareTo(
+                        BigDecimal.ZERO
+                ) <= 0
         ) {
             paymentStatus =
                     PAYMENT_PAID_BY_BOOKING;
@@ -408,57 +513,83 @@ public class ParkingOperationController {
                     PAYMENT_PAID;
         }
 
-        return CheckOutResponse.builder()
-                .sessionId(session.getId())
-                .ticketId(session.getTicketId())
-                .licensePlate(
-                        session
-                                .getVehicle()
-                                .getLicensePlate()
-                )
-                .slotCode(slot.getSlotCode())
-                .checkInTime(
-                        session.getCheckInTime()
-                )
-                .checkOutTime(checkOutTime)
-                .durationHours(
-                        preview.getDurationHours()
-                )
-                .pricePerHour(
-                        preview.getPricePerHour()
-                )
-                .parkingFee(
-                        preview.getParkingFee()
-                )
-                .overtimeFee(
-                        preview.getOvertimeFee()
-                )
-                .overstayFee(
-                        preview.getOverstayFee()
-                )
-                .holidayName(
-                        preview.getHolidayName()
-                )
-                .holidaySurcharge(
-                        preview.getHolidaySurcharge()
-                )
-                .lostTicket(
-                        Boolean.TRUE.equals(
-                                preview.getLostTicket()
+        CheckOutResponse response =
+                CheckOutResponse.builder()
+                        .sessionId(
+                                session.getId()
                         )
-                )
-                .lostTicketFee(
-                        preview.getLostTicketFee()
-                )
-                .totalAmount(
-                        preview.getTotalAmount()
-                )
-                .prepaidBooking(
-                        prepaidBooking
-                )
-                .amountDue(amountDue)
-                .paymentStatus(paymentStatus)
-                .build();
+                        .ticketId(
+                                session.getTicketId()
+                        )
+                        .licensePlate(
+                                session
+                                        .getVehicle()
+                                        .getLicensePlate()
+                        )
+                        .slotCode(
+                                slot.getSlotCode()
+                        )
+                        .checkInTime(
+                                session.getCheckInTime()
+                        )
+                        .checkOutTime(
+                                checkOutTime
+                        )
+                        .durationHours(
+                                preview.getDurationHours()
+                        )
+                        .pricePerHour(
+                                preview.getPricePerHour()
+                        )
+                        .parkingFee(
+                                preview.getParkingFee()
+                        )
+                        .overtimeFee(
+                                preview.getOvertimeFee()
+                        )
+                        .overstayFee(
+                                preview.getOverstayFee()
+                        )
+                        .holidayName(
+                                preview.getHolidayName()
+                        )
+                        .holidaySurcharge(
+                                preview.getHolidaySurcharge()
+                        )
+                        .lostTicket(
+                                Boolean.TRUE.equals(
+                                        preview.getLostTicket()
+                                )
+                        )
+                        .lostTicketFee(
+                                preview.getLostTicketFee()
+                        )
+                        .totalAmount(
+                                preview.getTotalAmount()
+                        )
+                        .prepaidBooking(
+                                prepaidBooking
+                        )
+                        .amountDue(
+                                amountDue
+                        )
+                        .paymentStatus(
+                                paymentStatus
+                        )
+                        .build();
+
+        /*
+         * Chỉ tài khoản vừa thực hiện checkout
+         * nhận thông báo này.
+         */
+        createCheckOutNotification(
+                currentOperator,
+                session,
+                response,
+                paymentMethod
+        );
+
+        return response;
     }
 
     /**
@@ -629,7 +760,9 @@ public class ParkingOperationController {
 
         if (prepaidBooking) {
             subtotalBeforeHoliday =
-                    safeMoney(overstayFee);
+                    safeMoney(
+                            overstayFee
+                    );
         } else {
             subtotalBeforeHoliday =
                     parkingFee
@@ -668,8 +801,12 @@ public class ParkingOperationController {
                         );
 
         return CheckOutResponse.builder()
-                .sessionId(session.getId())
-                .ticketId(session.getTicketId())
+                .sessionId(
+                        session.getId()
+                )
+                .ticketId(
+                        session.getTicketId()
+                )
                 .licensePlate(
                         session
                                 .getVehicle()
@@ -680,36 +817,55 @@ public class ParkingOperationController {
                                 .getSlot()
                                 .getSlotCode()
                 )
-                .checkInTime(checkInTime)
-                .checkOutTime(checkOutTime)
-                .durationHours(durationHours)
-                .pricePerHour(pricePerHour)
-                .parkingFee(parkingFee)
-                .overtimeFee(overtimeFee)
-                .overstayFee(overstayFee)
+                .checkInTime(
+                        checkInTime
+                )
+                .checkOutTime(
+                        checkOutTime
+                )
+                .durationHours(
+                        durationHours
+                )
+                .pricePerHour(
+                        pricePerHour
+                )
+                .parkingFee(
+                        parkingFee
+                )
+                .overtimeFee(
+                        overtimeFee
+                )
+                .overstayFee(
+                        overstayFee
+                )
                 .holidayName(
                         holiday == null
                                 ? null
-                                : holiday
-                                .getHolidayName()
+                                : holiday.getHolidayName()
                 )
                 .holidaySurcharge(
                         holidaySurcharge
                 )
-                .lostTicket(lostTicket)
+                .lostTicket(
+                        lostTicket
+                )
                 .lostTicketFee(
                         lostTicketFee
                 )
-                .totalAmount(totalAmount)
+                .totalAmount(
+                        totalAmount
+                )
                 .prepaidBooking(
                         prepaidBooking
                 )
-                .amountDue(totalAmount)
+                .amountDue(
+                        totalAmount
+                )
                 .paymentStatus(
-                        prepaidBooking &&
-                                totalAmount.compareTo(
-                                        BigDecimal.ZERO
-                                ) <= 0
+                        prepaidBooking
+                                && totalAmount.compareTo(
+                                BigDecimal.ZERO
+                        ) <= 0
                                 ? PAYMENT_PAID_BY_BOOKING
                                 : PAYMENT_PENDING
                 )
@@ -724,9 +880,9 @@ public class ParkingOperationController {
             LocalDateTime checkInTime
     ) {
         if (
-                licensePlate == null ||
-                        licensePlate.isBlank() ||
-                        checkInTime == null
+                licensePlate == null
+                        || licensePlate.isBlank()
+                        || checkInTime == null
         ) {
             return null;
         }
@@ -739,8 +895,8 @@ public class ParkingOperationController {
                         );
 
         if (
-                validBookings == null ||
-                        validBookings.isEmpty()
+                validBookings == null
+                        || validBookings.isEmpty()
         ) {
             return null;
         }
@@ -765,8 +921,10 @@ public class ParkingOperationController {
         }
 
         if (
-                slot.getVehicleType() == null ||
-                        slot.getVehicleType().getId() == null
+                slot.getVehicleType() == null
+                        || slot
+                        .getVehicleType()
+                        .getId() == null
         ) {
             throw new RuntimeException(
                     "Booking slot does not have a vehicle type"
@@ -777,7 +935,9 @@ public class ParkingOperationController {
                 !slot
                         .getVehicleType()
                         .getId()
-                        .equals(vehicleTypeId)
+                        .equals(
+                                vehicleTypeId
+                        )
         ) {
             throw new RuntimeException(
                     "Booking slot does not match this vehicle type"
@@ -789,21 +949,33 @@ public class ParkingOperationController {
                         slot.getStatus()
                 );
 
-        if (SLOT_OCCUPIED.equals(slotStatus)) {
+        if (
+                SLOT_OCCUPIED.equals(
+                        slotStatus
+                )
+        ) {
             throw new RuntimeException(
                     "Booking slot is currently occupied"
             );
         }
 
-        if (SLOT_MAINTENANCE.equals(slotStatus)) {
+        if (
+                SLOT_MAINTENANCE.equals(
+                        slotStatus
+                )
+        ) {
             throw new RuntimeException(
                     "Booking slot is currently under maintenance"
             );
         }
 
         if (
-                !SLOT_RESERVED.equals(slotStatus) &&
-                        !SLOT_AVAILABLE.equals(slotStatus)
+                !SLOT_RESERVED.equals(
+                        slotStatus
+                )
+                        && !SLOT_AVAILABLE.equals(
+                        slotStatus
+                )
         ) {
             throw new RuntimeException(
                     "Booking slot is not available for check-in"
@@ -826,8 +998,8 @@ public class ParkingOperationController {
                         );
 
         if (
-                availableSlots == null ||
-                        availableSlots.isEmpty()
+                availableSlots == null
+                        || availableSlots.isEmpty()
         ) {
             throw new RuntimeException(
                     "No available slot for this vehicle type"
@@ -856,12 +1028,16 @@ public class ParkingOperationController {
         }
 
         if (
-                slot.getVehicleType() == null ||
-                        slot.getVehicleType().getId() == null ||
-                        !slot
-                                .getVehicleType()
-                                .getId()
-                                .equals(vehicleTypeId)
+                slot.getVehicleType() == null
+                        || slot
+                        .getVehicleType()
+                        .getId() == null
+                        || !slot
+                        .getVehicleType()
+                        .getId()
+                        .equals(
+                                vehicleTypeId
+                        )
         ) {
             throw new RuntimeException(
                     "Parking slot does not match this vehicle type"
@@ -908,9 +1084,9 @@ public class ParkingOperationController {
             VehicleType requestedVehicleType
     ) {
         if (
-                vehicle == null ||
-                        requestedVehicleType == null ||
-                        requestedVehicleType.getId() == null
+                vehicle == null
+                        || requestedVehicleType == null
+                        || requestedVehicleType.getId() == null
         ) {
             throw new RuntimeException(
                     "Invalid vehicle information"
@@ -918,8 +1094,10 @@ public class ParkingOperationController {
         }
 
         if (
-                vehicle.getVehicleType() == null ||
-                        vehicle.getVehicleType().getId() == null
+                vehicle.getVehicleType() == null
+                        || vehicle
+                        .getVehicleType()
+                        .getId() == null
         ) {
             throw new RuntimeException(
                     "Vehicle does not have a vehicle type"
@@ -960,8 +1138,12 @@ public class ParkingOperationController {
                         booking.getStatus()
                 );
 
-        return PAYMENT_PAID.equals(paymentStatus)
-                || "CONFIRMED".equals(bookingStatus)
+        return PAYMENT_PAID.equals(
+                paymentStatus
+        )
+                || "CONFIRMED".equals(
+                bookingStatus
+        )
                 || Booking.STATUS_CHECKED_IN
                 .equalsIgnoreCase(
                         bookingStatus
@@ -981,9 +1163,9 @@ public class ParkingOperationController {
             BigDecimal policyOverstayFee
     ) {
         if (
-                booking == null ||
-                        booking.getEndTime() == null ||
-                        checkOutTime == null
+                booking == null
+                        || booking.getEndTime() == null
+                        || checkOutTime == null
         ) {
             return zeroMoney();
         }
@@ -1045,8 +1227,8 @@ public class ParkingOperationController {
             BigDecimal policyOvertimeFee
     ) {
         if (
-                checkInTime == null ||
-                        checkOutTime == null
+                checkInTime == null
+                        || checkOutTime == null
         ) {
             return zeroMoney();
         }
@@ -1124,8 +1306,8 @@ public class ParkingOperationController {
         if (
                 subtotal.compareTo(
                         BigDecimal.ZERO
-                ) <= 0 ||
-                        holiday == null
+                ) <= 0
+                        || holiday == null
         ) {
             return zeroMoney();
         }
@@ -1149,23 +1331,36 @@ public class ParkingOperationController {
                 );
 
         if (surchargeType.isBlank()) {
-            surchargeType = "PERCENT";
+            surchargeType =
+                    "PERCENT";
         }
 
-        if ("FIXED".equals(surchargeType)) {
+        if (
+                "FIXED".equals(
+                        surchargeType
+                )
+        ) {
             return surchargeValue;
         }
 
-        if (!"PERCENT".equals(surchargeType)) {
+        if (
+                !"PERCENT".equals(
+                        surchargeType
+                )
+        ) {
             throw new RuntimeException(
                     "Invalid holiday surcharge type"
             );
         }
 
         return subtotal
-                .multiply(surchargeValue)
+                .multiply(
+                        surchargeValue
+                )
                 .divide(
-                        BigDecimal.valueOf(100),
+                        BigDecimal.valueOf(
+                                100
+                        ),
                         2,
                         RoundingMode.HALF_UP
                 );
@@ -1208,8 +1403,8 @@ public class ParkingOperationController {
                 );
 
         if (
-                scannedLicensePlate == null ||
-                        scannedLicensePlate.isBlank()
+                scannedLicensePlate == null
+                        || scannedLicensePlate.isBlank()
         ) {
             throw new RuntimeException(
                     "Scanned license plate is required for checkout"
@@ -1217,11 +1412,11 @@ public class ParkingOperationController {
         }
 
         if (
-                !lostTicket &&
-                        (
-                                ticketId == null ||
-                                        ticketId.isBlank()
-                        )
+                !lostTicket
+                        && (
+                        ticketId == null
+                                || ticketId.isBlank()
+                )
         ) {
             throw new RuntimeException(
                     "QR Ticket is required for normal checkout"
@@ -1231,8 +1426,8 @@ public class ParkingOperationController {
         ParkingSession session;
 
         if (
-                ticketId != null &&
-                        !ticketId.isBlank()
+                ticketId != null
+                        && !ticketId.isBlank()
         ) {
             session =
                     parkingSessionRepository
@@ -1277,8 +1472,8 @@ public class ParkingOperationController {
             boolean lostTicket
     ) {
         if (
-                session == null ||
-                        session.getVehicle() == null
+                session == null
+                        || session.getVehicle() == null
         ) {
             throw new RuntimeException(
                     "Active parking session not found"
@@ -1293,8 +1488,8 @@ public class ParkingOperationController {
                 );
 
         if (
-                sessionLicensePlate == null ||
-                        sessionLicensePlate.isBlank()
+                sessionLicensePlate == null
+                        || sessionLicensePlate.isBlank()
         ) {
             throw new RuntimeException(
                     "Parking session does not have a license plate"
@@ -1336,10 +1531,12 @@ public class ParkingOperationController {
             ParkingSession session
     ) {
         if (
-                session == null ||
-                        session.getVehicle() == null ||
-                        session.getVehicle().getVehicleType() == null ||
-                        session.getSlot() == null
+                session == null
+                        || session.getVehicle() == null
+                        || session
+                        .getVehicle()
+                        .getVehicleType() == null
+                        || session.getSlot() == null
         ) {
             throw new RuntimeException(
                     "Invalid active parking session data"
@@ -1347,8 +1544,12 @@ public class ParkingOperationController {
         }
 
         return ActiveParkingSessionResponse.builder()
-                .sessionId(session.getId())
-                .ticketId(session.getTicketId())
+                .sessionId(
+                        session.getId()
+                )
+                .ticketId(
+                        session.getTicketId()
+                )
                 .licensePlate(
                         session
                                 .getVehicle()
@@ -1368,7 +1569,9 @@ public class ParkingOperationController {
                 .checkInTime(
                         session.getCheckInTime()
                 )
-                .status(session.getStatus())
+                .status(
+                        session.getStatus()
+                )
                 .build();
     }
 
@@ -1385,7 +1588,9 @@ public class ParkingOperationController {
             );
         }
 
-        if (session.getCheckInTime() == null) {
+        if (
+                session.getCheckInTime() == null
+        ) {
             throw new RuntimeException(
                     "Parking session does not have check-in time"
             );
@@ -1398,19 +1603,23 @@ public class ParkingOperationController {
         }
 
         if (
-                session.getVehicle() == null ||
-                        session.getVehicle().getVehicleType() == null ||
-                        session
-                                .getVehicle()
-                                .getVehicleType()
-                                .getId() == null
+                session.getVehicle() == null
+                        || session
+                        .getVehicle()
+                        .getVehicleType() == null
+                        || session
+                        .getVehicle()
+                        .getVehicleType()
+                        .getId() == null
         ) {
             throw new RuntimeException(
                     "Parking session does not have valid vehicle information"
             );
         }
 
-        if (session.getSlot() == null) {
+        if (
+                session.getSlot() == null
+        ) {
             throw new RuntimeException(
                     "Parking session does not have a parking slot"
             );
@@ -1430,8 +1639,10 @@ public class ParkingOperationController {
         }
 
         if (
-                request.getLicensePlate() == null ||
-                        request.getLicensePlate().isBlank()
+                request.getLicensePlate() == null
+                        || request
+                        .getLicensePlate()
+                        .isBlank()
         ) {
             throw new RuntimeException(
                     "License plate is required"
@@ -1439,8 +1650,8 @@ public class ParkingOperationController {
         }
 
         if (
-                request.getVehicleTypeId() == null ||
-                        request.getVehicleTypeId() <= 0
+                request.getVehicleTypeId() == null
+                        || request.getVehicleTypeId() <= 0
         ) {
             throw new RuntimeException(
                     "Vehicle type is required"
@@ -1457,7 +1668,9 @@ public class ParkingOperationController {
             boolean prepaidBooking
     ) {
         BigDecimal normalizedAmount =
-                safeMoney(amountDue);
+                safeMoney(
+                        amountDue
+                );
 
         if (
                 normalizedAmount.compareTo(
@@ -1511,10 +1724,10 @@ public class ParkingOperationController {
             BigDecimal value
     ) {
         if (
-                value == null ||
-                        value.compareTo(
-                                BigDecimal.ZERO
-                        ) < 0
+                value == null
+                        || value.compareTo(
+                        BigDecimal.ZERO
+                ) < 0
         ) {
             return zeroMoney();
         }
@@ -1536,30 +1749,34 @@ public class ParkingOperationController {
             String value
     ) {
         if (
-                value == null ||
-                        value.isBlank()
+                value == null
+                        || value.isBlank()
         ) {
             return null;
         }
 
         return value
                 .trim()
-                .toUpperCase(Locale.ROOT);
+                .toUpperCase(
+                        Locale.ROOT
+                );
     }
 
     private String normalizeLicensePlate(
             String value
     ) {
         if (
-                value == null ||
-                        value.isBlank()
+                value == null
+                        || value.isBlank()
         ) {
             return null;
         }
 
         return value
                 .trim()
-                .toUpperCase(Locale.ROOT);
+                .toUpperCase(
+                        Locale.ROOT
+                );
     }
 
     private String normalizePlateForCompare(
@@ -1571,7 +1788,9 @@ public class ParkingOperationController {
 
         return value
                 .trim()
-                .toUpperCase(Locale.ROOT)
+                .toUpperCase(
+                        Locale.ROOT
+                )
                 .replaceAll(
                         "[^A-Z0-9]",
                         ""
@@ -1582,15 +1801,225 @@ public class ParkingOperationController {
             String value
     ) {
         if (
-                value == null ||
-                        value.isBlank()
+                value == null
+                        || value.isBlank()
         ) {
             return "";
         }
 
         return value
                 .trim()
-                .toUpperCase(Locale.ROOT);
+                .toUpperCase(
+                        Locale.ROOT
+                );
+    }
+
+    /**
+     * Lấy tài khoản đang đăng nhập từ JWT/Spring Security.
+     *
+     * Không nhận userId từ request frontend.
+     */
+    private User getCurrentAuthenticatedUser() {
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        if (
+                authentication == null
+                        || !authentication.isAuthenticated()
+                        || authentication
+                        instanceof AnonymousAuthenticationToken
+        ) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "User is not authenticated"
+            );
+        }
+
+        String email =
+                authentication.getName();
+
+        if (
+                email == null
+                        || email.isBlank()
+        ) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Authenticated user email is missing"
+            );
+        }
+
+        return userRepository
+                .findByEmail(email)
+                .orElseThrow(
+                        () -> new ResponseStatusException(
+                                HttpStatus.UNAUTHORIZED,
+                                "Authenticated user not found"
+                        )
+                );
+    }
+
+    /**
+     * Tạo notification riêng cho tài khoản
+     * vừa thực hiện check-in.
+     */
+    private void createCheckInNotification(
+            User currentOperator,
+            ParkingSession session
+    ) {
+        if (
+                currentOperator == null
+                        || currentOperator.getId() == null
+                        || session == null
+        ) {
+            return;
+        }
+
+        String licensePlate =
+                getSessionLicensePlate(
+                        session
+                );
+
+        String slotCode =
+                getSessionSlotCode(
+                        session
+                );
+
+        String ticketId =
+                session.getTicketId() == null
+                        || session
+                        .getTicketId()
+                        .isBlank()
+                        ? "N/A"
+                        : session.getTicketId();
+
+        String message =
+                "Vehicle "
+                        + licensePlate
+                        + " was checked in successfully at slot "
+                        + slotCode
+                        + ". Ticket: "
+                        + ticketId
+                        + ".";
+
+        notificationService
+                .createPersonalNotification(
+                        currentOperator.getId(),
+                        "Vehicle checked in",
+                        message,
+                        NOTIFICATION_VEHICLE_CHECKED_IN
+                );
+    }
+
+    /**
+     * Tạo notification riêng cho tài khoản
+     * vừa thực hiện checkout.
+     */
+    private void createCheckOutNotification(
+            User currentOperator,
+            ParkingSession session,
+            CheckOutResponse response,
+            String paymentMethod
+    ) {
+        if (
+                currentOperator == null
+                        || currentOperator.getId() == null
+                        || session == null
+                        || response == null
+        ) {
+            return;
+        }
+
+        String licensePlate =
+                getSessionLicensePlate(
+                        session
+                );
+
+        String slotCode =
+                getSessionSlotCode(
+                        session
+                );
+
+        BigDecimal paidAmount =
+                safeMoney(
+                        response.getAmountDue()
+                );
+
+        String safePaymentMethod =
+                paymentMethod == null
+                        || paymentMethod.isBlank()
+                        ? "N/A"
+                        : paymentMethod;
+
+        String message =
+                "Vehicle "
+                        + licensePlate
+                        + " was checked out successfully from slot "
+                        + slotCode
+                        + ". Amount paid: "
+                        + paidAmount.toPlainString()
+                        + " VND. Payment method: "
+                        + safePaymentMethod
+                        + ".";
+
+        notificationService
+                .createPersonalNotification(
+                        currentOperator.getId(),
+                        "Vehicle checked out",
+                        message,
+                        NOTIFICATION_VEHICLE_CHECKED_OUT
+                );
+    }
+
+    /**
+     * Lấy biển số an toàn từ session.
+     */
+    private String getSessionLicensePlate(
+            ParkingSession session
+    ) {
+        if (
+                session == null
+                        || session.getVehicle() == null
+                        || session
+                        .getVehicle()
+                        .getLicensePlate() == null
+                        || session
+                        .getVehicle()
+                        .getLicensePlate()
+                        .isBlank()
+        ) {
+            return "N/A";
+        }
+
+        return session
+                .getVehicle()
+                .getLicensePlate();
+    }
+
+    /**
+     * Lấy mã slot an toàn từ session.
+     */
+    private String getSessionSlotCode(
+            ParkingSession session
+    ) {
+        if (
+                session == null
+                        || session.getSlot() == null
+                        || session
+                        .getSlot()
+                        .getSlotCode() == null
+                        || session
+                        .getSlot()
+                        .getSlotCode()
+                        .isBlank()
+        ) {
+            return "N/A";
+        }
+
+        return session
+                .getSlot()
+                .getSlotCode();
     }
 
     /**

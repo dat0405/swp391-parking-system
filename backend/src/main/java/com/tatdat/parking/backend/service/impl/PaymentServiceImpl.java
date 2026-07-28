@@ -14,6 +14,7 @@ import com.tatdat.parking.backend.repository.BookingRepository;
 import com.tatdat.parking.backend.repository.ParkingSlotRepository;
 import com.tatdat.parking.backend.repository.PricingPolicyRepository;
 import com.tatdat.parking.backend.repository.UserRepository;
+import com.tatdat.parking.backend.service.NotificationService;
 import com.tatdat.parking.backend.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,16 +47,29 @@ public class PaymentServiceImpl implements PaymentService {
     private static final int MINIMUM_PAYMENT_AMOUNT = 1000;
     private static final int PAYMENT_TIMEOUT_MINUTES = 10;
 
-    private static final String SLOT_STATUS_AVAILABLE = "AVAILABLE";
-    private static final String SLOT_STATUS_RESERVED = "RESERVED";
+    private static final String SLOT_STATUS_AVAILABLE =
+            "AVAILABLE";
+
+    private static final String SLOT_STATUS_RESERVED =
+            "RESERVED";
+
+    private static final String NOTIFICATION_BOOKING_CONFIRMED =
+            "BOOKING_CONFIRMED";
 
     private final PayOS payOS;
+
     private final BookingRepository bookingRepository;
+
     private final PricingPolicyRepository pricingPolicyRepository;
+
     private final ParkingSlotRepository parkingSlotRepository;
+
     private final UserRepository userRepository;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final NotificationService notificationService;
+
+    private final ObjectMapper objectMapper =
+            new ObjectMapper();
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -63,60 +77,94 @@ public class PaymentServiceImpl implements PaymentService {
     @Value("${app.business-time-zone:Asia/Ho_Chi_Minh}")
     private String businessTimeZone;
 
+    /**
+     * Tạo link thanh toán PayOS cho booking của Driver.
+     *
+     * Method này chỉ tạo QR/link thanh toán.
+     * Chưa tạo notification booking thành công tại đây.
+     */
     @Override
     @Transactional
     public CreatePayOSPaymentResponse createPayOSPayment(
             Integer bookingId
     ) throws Exception {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Booking not found"
-                ));
+
+        Booking booking =
+                bookingRepository
+                        .findById(bookingId)
+                        .orElseThrow(() ->
+                                new ResponseStatusException(
+                                        HttpStatus.NOT_FOUND,
+                                        "Booking not found"
+                                )
+                        );
 
         validateBookingOwnedByCurrentUser(booking);
         validateBookingCanCreatePayment(booking);
 
+        /*
+         * Nếu booking đã có dữ liệu thanh toán còn hiệu lực,
+         * trả về dữ liệu hiện có thay vì tạo QR mới.
+         */
         if (hasExistingPaymentData(booking)) {
             return buildPaymentResponse(booking);
         }
 
         /*
-         * Thời hạn 10 phút bắt đầu khi backend bắt đầu tạo QR PayOS.
-         * Instant giúp thời gian không phụ thuộc timezone của máy local/Azure.
+         * Thời hạn thanh toán bắt đầu khi backend
+         * thực sự tạo QR PayOS.
          */
-        Instant paymentCreatedAt = Instant.now();
-        Instant paymentExpiredAt = paymentCreatedAt.plus(
-                PAYMENT_TIMEOUT_MINUTES,
-                ChronoUnit.MINUTES
+        Instant paymentCreatedAt =
+                Instant.now();
+
+        Instant paymentExpiredAt =
+                paymentCreatedAt.plus(
+                        PAYMENT_TIMEOUT_MINUTES,
+                        ChronoUnit.MINUTES
+                );
+
+        booking.setPaymentCreatedAt(
+                paymentCreatedAt
         );
 
-        booking.setPaymentCreatedAt(paymentCreatedAt);
-        booking.setPaymentExpiredAt(paymentExpiredAt);
+        booking.setPaymentExpiredAt(
+                paymentExpiredAt
+        );
 
-        Long orderCode = booking.getPaymentOrderCode();
+        Long orderCode =
+                booking.getPaymentOrderCode();
 
         if (orderCode == null) {
-            orderCode = generateOrderCode(booking.getId());
+            orderCode =
+                    generateOrderCode(
+                            booking.getId()
+                    );
         }
 
-        int amount = calculateBookingAmount(booking);
-        String description = buildPaymentDescription(booking);
+        int amount =
+                calculateBookingAmount(booking);
 
-        String returnUrl = frontendUrl
-                + "/user-ui?payment=success&bookingId="
-                + booking.getId();
+        String description =
+                buildPaymentDescription(booking);
 
-        String cancelUrl = frontendUrl
-                + "/user-ui?payment=cancel&bookingId="
-                + booking.getId();
+        String returnUrl =
+                frontendUrl
+                        + "/user-ui?payment=success&bookingId="
+                        + booking.getId();
 
-        var paymentRequestBuilder = CreatePaymentLinkRequest.builder()
-                .orderCode(orderCode)
-                .amount((long) amount)
-                .description(description)
-                .returnUrl(returnUrl)
-                .cancelUrl(cancelUrl);
+        String cancelUrl =
+                frontendUrl
+                        + "/user-ui?payment=cancel&bookingId="
+                        + booking.getId();
+
+        var paymentRequestBuilder =
+                CreatePaymentLinkRequest
+                        .builder()
+                        .orderCode(orderCode)
+                        .amount((long) amount)
+                        .description(description)
+                        .returnUrl(returnUrl)
+                        .cancelUrl(cancelUrl);
 
         applyPayOSExpiredAt(
                 paymentRequestBuilder,
@@ -127,60 +175,114 @@ public class PaymentServiceImpl implements PaymentService {
                 paymentRequestBuilder.build();
 
         CreatePaymentLinkResponse paymentResponse =
-                payOS.paymentRequests().create(paymentRequest);
+                payOS.paymentRequests()
+                        .create(paymentRequest);
 
         booking.setPaymentOrderCode(orderCode);
         booking.setPaymentAmount(amount);
         booking.setPaymentCurrency("VND");
-        booking.setPaymentStatus(Booking.PAYMENT_STATUS_PENDING);
-        booking.setPaymentDescription(description);
-        booking.setPaymentLinkId(paymentResponse.getPaymentLinkId());
-        booking.setCheckoutUrl(paymentResponse.getCheckoutUrl());
-        booking.setQrCode(paymentResponse.getQrCode());
 
-        Booking savedBooking = bookingRepository.save(booking);
+        booking.setPaymentStatus(
+                Booking.PAYMENT_STATUS_PENDING
+        );
 
-        return buildPaymentResponse(savedBooking);
+        booking.setPaymentDescription(
+                description
+        );
+
+        booking.setPaymentLinkId(
+                paymentResponse.getPaymentLinkId()
+        );
+
+        booking.setCheckoutUrl(
+                paymentResponse.getCheckoutUrl()
+        );
+
+        booking.setQrCode(
+                paymentResponse.getQrCode()
+        );
+
+        Booking savedBooking =
+                bookingRepository.save(booking);
+
+        return buildPaymentResponse(
+                savedBooking
+        );
     }
 
+    /**
+     * Tạo QR thanh toán tại bước checkout.
+     *
+     * Method này chỉ tạo link thanh toán.
+     * Notification checkout phải được tạo tại nghiệp vụ
+     * hoàn thành checkout xe.
+     */
     @Override
     @Transactional
     public CreatePayOSPaymentResponse createCheckoutPayOSPayment(
             CreateCheckoutPayOSPaymentRequest request
     ) throws Exception {
+
         if (request == null) {
-            throw new RuntimeException("Payment request is required");
+            throw new RuntimeException(
+                    "Payment request is required"
+            );
         }
 
-        if (request.getTicketId() == null
-                || request.getTicketId().trim().isEmpty()) {
-            throw new RuntimeException("Ticket ID is required");
+        if (
+                request.getTicketId() == null
+                        || request
+                        .getTicketId()
+                        .trim()
+                        .isEmpty()
+        ) {
+            throw new RuntimeException(
+                    "Ticket ID is required"
+            );
         }
 
-        if (request.getAmount() == null
-                || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+        if (
+                request.getAmount() == null
+                        || request
+                        .getAmount()
+                        .compareTo(BigDecimal.ZERO) <= 0
+        ) {
             throw new RuntimeException(
                     "Payment amount must be greater than 0"
             );
         }
 
-        int amount = request.getAmount()
-                .setScale(0, RoundingMode.HALF_UP)
-                .intValue();
+        int amount =
+                request.getAmount()
+                        .setScale(
+                                0,
+                                RoundingMode.HALF_UP
+                        )
+                        .intValue();
 
         if (amount < MINIMUM_PAYMENT_AMOUNT) {
             amount = MINIMUM_PAYMENT_AMOUNT;
         }
 
-        String ticketId = request.getTicketId()
-                .trim()
-                .toUpperCase();
+        String ticketId =
+                request.getTicketId()
+                        .trim()
+                        .toUpperCase();
 
-        Long orderCode = generateCheckoutOrderCode(ticketId);
+        Long orderCode =
+                generateCheckoutOrderCode(
+                        ticketId
+                );
 
-        String description = request.getDescription();
+        String description =
+                request.getDescription();
 
-        if (description == null || description.trim().isEmpty()) {
+        if (
+                description == null
+                        || description
+                        .trim()
+                        .isEmpty()
+        ) {
             description =
                     "CHECKOUT"
                             + ticketId.replaceAll(
@@ -189,32 +291,44 @@ public class PaymentServiceImpl implements PaymentService {
                     );
         }
 
-        description = description.trim();
+        description =
+                description.trim();
 
         if (description.length() > 25) {
-            description = description.substring(0, 25);
+            description =
+                    description.substring(
+                            0,
+                            25
+                    );
         }
 
-        String returnUrl = frontendUrl
-                + "/check-in-out?payment=success&ticketId="
-                + ticketId;
+        String returnUrl =
+                frontendUrl
+                        + "/check-in-out?payment=success&ticketId="
+                        + ticketId;
 
-        String cancelUrl = frontendUrl
-                + "/check-in-out?payment=cancel&ticketId="
-                + ticketId;
+        String cancelUrl =
+                frontendUrl
+                        + "/check-in-out?payment=cancel&ticketId="
+                        + ticketId;
 
-        Instant paymentCreatedAt = Instant.now();
-        Instant paymentExpiredAt = paymentCreatedAt.plus(
-                PAYMENT_TIMEOUT_MINUTES,
-                ChronoUnit.MINUTES
-        );
+        Instant paymentCreatedAt =
+                Instant.now();
 
-        var paymentRequestBuilder = CreatePaymentLinkRequest.builder()
-                .orderCode(orderCode)
-                .amount((long) amount)
-                .description(description)
-                .returnUrl(returnUrl)
-                .cancelUrl(cancelUrl);
+        Instant paymentExpiredAt =
+                paymentCreatedAt.plus(
+                        PAYMENT_TIMEOUT_MINUTES,
+                        ChronoUnit.MINUTES
+                );
+
+        var paymentRequestBuilder =
+                CreatePaymentLinkRequest
+                        .builder()
+                        .orderCode(orderCode)
+                        .amount((long) amount)
+                        .description(description)
+                        .returnUrl(returnUrl)
+                        .cancelUrl(cancelUrl);
 
         applyPayOSExpiredAt(
                 paymentRequestBuilder,
@@ -225,66 +339,98 @@ public class PaymentServiceImpl implements PaymentService {
                 paymentRequestBuilder.build();
 
         CreatePaymentLinkResponse paymentResponse =
-                payOS.paymentRequests().create(paymentRequest);
+                payOS.paymentRequests()
+                        .create(paymentRequest);
 
-        return CreatePayOSPaymentResponse.builder()
+        return CreatePayOSPaymentResponse
+                .builder()
                 .bookingId(null)
                 .orderCode(orderCode)
                 .amount(amount)
                 .currency("VND")
                 .bookingStatus(null)
-                .paymentStatus(Booking.PAYMENT_STATUS_PENDING)
-                .paymentLinkId(paymentResponse.getPaymentLinkId())
-                .checkoutUrl(paymentResponse.getCheckoutUrl())
-                .qrCode(paymentResponse.getQrCode())
-                .paymentCreatedAt(paymentCreatedAt)
-                .paymentExpiredAt(paymentExpiredAt)
+                .paymentStatus(
+                        Booking.PAYMENT_STATUS_PENDING
+                )
+                .paymentLinkId(
+                        paymentResponse.getPaymentLinkId()
+                )
+                .checkoutUrl(
+                        paymentResponse.getCheckoutUrl()
+                )
+                .qrCode(
+                        paymentResponse.getQrCode()
+                )
+                .paymentCreatedAt(
+                        paymentCreatedAt
+                )
+                .paymentExpiredAt(
+                        paymentExpiredAt
+                )
                 .build();
     }
 
+    /**
+     * Kiểm tra trạng thái giao dịch PayOS.
+     */
     @Override
     public PayOSPaymentStatusResponse getPayOSPaymentStatus(
             Long orderCode
     ) throws Exception {
+
         if (orderCode == null) {
-            throw new RuntimeException("Order code is required");
+            throw new RuntimeException(
+                    "Order code is required"
+            );
         }
 
-        Object paymentInfo = payOS.get(
-                "/v2/payment-requests/" + orderCode,
-                Object.class
-        );
+        Object paymentInfo =
+                payOS.get(
+                        "/v2/payment-requests/"
+                                + orderCode,
+                        Object.class
+                );
 
         Map<String, Object> paymentInfoMap =
                 objectMapper.convertValue(
                         paymentInfo,
-                        new TypeReference<Map<String, Object>>() {
+                        new TypeReference<
+                                Map<String, Object>
+                                >() {
                         }
                 );
 
-        Map<String, Object> dataMap = paymentInfoMap;
+        Map<String, Object> dataMap =
+                paymentInfoMap;
 
-        Object dataObject = paymentInfoMap.get("data");
+        Object dataObject =
+                paymentInfoMap.get("data");
 
         if (dataObject instanceof Map<?, ?>) {
-            dataMap = objectMapper.convertValue(
-                    dataObject,
-                    new TypeReference<Map<String, Object>>() {
-                    }
-            );
+            dataMap =
+                    objectMapper.convertValue(
+                            dataObject,
+                            new TypeReference<
+                                    Map<String, Object>
+                                    >() {
+                            }
+                    );
         }
 
-        String status = String.valueOf(
-                dataMap.getOrDefault(
-                        "status",
-                        paymentInfoMap.getOrDefault(
+        String status =
+                String.valueOf(
+                        dataMap.getOrDefault(
                                 "status",
-                                "PENDING"
+                                paymentInfoMap.getOrDefault(
+                                        "status",
+                                        "PENDING"
+                                )
                         )
-                )
-        );
+                );
 
-        Object amountValue = dataMap.get("amount");
+        Object amountValue =
+                dataMap.get("amount");
+
         Integer amount = null;
 
         if (amountValue instanceof Number number) {
@@ -295,10 +441,13 @@ public class PaymentServiceImpl implements PaymentService {
                 dataMap.get("paymentLinkId") == null
                         ? null
                         : String.valueOf(
-                        dataMap.get("paymentLinkId")
+                        dataMap.get(
+                                "paymentLinkId"
+                        )
                 );
 
-        return PayOSPaymentStatusResponse.builder()
+        return PayOSPaymentStatusResponse
+                .builder()
                 .orderCode(orderCode)
                 .paymentStatus(status)
                 .amount(amount)
@@ -306,22 +455,35 @@ public class PaymentServiceImpl implements PaymentService {
                 .build();
     }
 
+    /**
+     * Xử lý webhook từ PayOS.
+     *
+     * Khi thanh toán booking thành công:
+     * - Booking chuyển thành CONFIRMED.
+     * - Payment chuyển thành PAID.
+     * - Slot chuyển thành RESERVED.
+     * - Chỉ chủ booking nhận notification.
+     */
     @Override
     @Transactional
     public void handlePayOSWebhook(
             PayOSWebhookRequest request
     ) throws Exception {
+
         if (request == null) {
             System.out.println(
                     "PayOS webhook ignored. Request is null."
             );
+
             return;
         }
 
         Map<String, Object> webhookBody =
                 objectMapper.convertValue(
                         request,
-                        new TypeReference<Map<String, Object>>() {
+                        new TypeReference<
+                                Map<String, Object>
+                                >() {
                         }
                 );
 
@@ -329,84 +491,118 @@ public class PaymentServiceImpl implements PaymentService {
 
         try {
             webhookData =
-                    payOS.webhooks().verify(webhookBody);
+                    payOS.webhooks()
+                            .verify(webhookBody);
         } catch (Exception exception) {
             System.out.println(
                     "PayOS webhook verify failed or test webhook ignored: "
                             + exception.getMessage()
             );
+
             return;
         }
 
-        if (webhookData == null
-                || webhookData.getOrderCode() == null) {
+        if (
+                webhookData == null
+                        || webhookData
+                        .getOrderCode() == null
+        ) {
             System.out.println(
                     "PayOS webhook ignored. Missing orderCode."
             );
+
             return;
         }
 
-        Booking booking = bookingRepository
-                .findByPaymentOrderCodeForUpdate(
-                        webhookData.getOrderCode()
-                )
-                .orElse(null);
+        Booking booking =
+                bookingRepository
+                        .findByPaymentOrderCodeForUpdate(
+                                webhookData
+                                        .getOrderCode()
+                        )
+                        .orElse(null);
 
         if (booking == null) {
             System.out.println(
                     "PayOS webhook ignored. Booking not found for orderCode: "
                             + webhookData.getOrderCode()
             );
+
             return;
         }
 
         String currentBookingStatus =
-                normalizeText(booking.getStatus());
+                normalizeText(
+                        booking.getStatus()
+                );
 
         String currentPaymentStatus =
-                normalizeText(booking.getPaymentStatus());
+                normalizeText(
+                        booking.getPaymentStatus()
+                );
 
-        if (Booking.STATUS_CONFIRMED.equals(
-                currentBookingStatus
-        )
-                || Booking.PAYMENT_STATUS_PAID.equals(
-                currentPaymentStatus
-        )) {
-            markBookingSlotAsReserved(booking);
+        /*
+         * Chặn webhook được gửi lại nhiều lần.
+         *
+         * Khi booking đã CONFIRMED hoặc PAID,
+         * không tạo notification lần thứ hai.
+         */
+        if (
+                Booking.STATUS_CONFIRMED.equals(
+                        currentBookingStatus
+                )
+                        || Booking.PAYMENT_STATUS_PAID.equals(
+                        currentPaymentStatus
+                )
+        ) {
+            markBookingSlotAsReserved(
+                    booking
+            );
 
             System.out.println(
                     "PayOS webhook ignored. Booking already paid. bookingId="
                             + booking.getId()
             );
+
             return;
         }
 
-        if (!Booking.STATUS_PENDING_PAYMENT.equals(
-                currentBookingStatus
-        )) {
+        if (
+                !Booking.STATUS_PENDING_PAYMENT.equals(
+                        currentBookingStatus
+                )
+        ) {
             System.out.println(
                     "PayOS webhook ignored. Booking is not pending payment. bookingId="
                             + booking.getId()
                             + ", status="
                             + currentBookingStatus
             );
+
             return;
         }
 
         String payosCode =
-                normalizeText(webhookData.getCode());
+                normalizeText(
+                        webhookData.getCode()
+                );
 
-        String payosDesc = webhookData.getDesc();
+        String payosDesc =
+                webhookData.getDesc();
 
-        Instant now = Instant.now();
+        Instant now =
+                Instant.now();
 
         /*
-         * Webhook đến trễ không được phép kích hoạt lại booking đã hết hạn.
+         * Webhook đến sau khi hết hạn không được
+         * kích hoạt lại booking.
          */
-        if (booking.getPaymentExpiredAt() != null
-                && !now.isBefore(
-                booking.getPaymentExpiredAt()
-        )) {
+        if (
+                booking.getPaymentExpiredAt() != null
+                        && !now.isBefore(
+                        booking.getPaymentExpiredAt()
+                )
+        ) {
             expireBookingAsPaymentTimeout(
                     booking,
                     now
@@ -420,14 +616,29 @@ public class PaymentServiceImpl implements PaymentService {
                             + ", orderCode="
                             + webhookData.getOrderCode()
             );
+
             return;
         }
 
+        /*
+         * PayOS trả code 00 khi thanh toán thành công.
+         */
         if ("00".equals(payosCode)) {
-            if (booking.getPaymentAmount() != null
-                    && webhookData.getAmount() != null
-                    && booking.getPaymentAmount().intValue()
-                    != webhookData.getAmount().intValue()) {
+
+            /*
+             * Kiểm tra số tiền PayOS trả về
+             * có trùng với số tiền booking hay không.
+             */
+            if (
+                    booking.getPaymentAmount() != null
+                            && webhookData.getAmount() != null
+                            && booking
+                            .getPaymentAmount()
+                            .intValue()
+                            != webhookData
+                            .getAmount()
+                            .intValue()
+            ) {
                 booking.setPaymentStatus(
                         Booking.PAYMENT_STATUS_FAILED
                 );
@@ -442,6 +653,7 @@ public class PaymentServiceImpl implements PaymentService {
                         "PayOS webhook rejected because amount mismatch. bookingId="
                                 + booking.getId()
                 );
+
                 return;
             }
 
@@ -457,44 +669,79 @@ public class PaymentServiceImpl implements PaymentService {
                     toBusinessLocalDateTime(now)
             );
 
-            if (webhookData.getPaymentLinkId() != null) {
+            if (
+                    webhookData.getPaymentLinkId()
+                            != null
+            ) {
                 booking.setPaymentLinkId(
-                        webhookData.getPaymentLinkId()
+                        webhookData
+                                .getPaymentLinkId()
                 );
             }
 
-            if (webhookData.getAmount() != null) {
+            if (
+                    webhookData.getAmount()
+                            != null
+            ) {
                 booking.setPaymentAmount(
-                        webhookData.getAmount().intValue()
+                        webhookData
+                                .getAmount()
+                                .intValue()
                 );
             }
 
-            markBookingSlotAsReserved(booking);
+            /*
+             * Chuyển slot sang RESERVED.
+             */
+            markBookingSlotAsReserved(
+                    booking
+            );
 
-            bookingRepository.save(booking);
+            Booking savedBooking =
+                    bookingRepository.save(
+                            booking
+                    );
+
+            /*
+             * Chỉ tạo notification cho chủ booking.
+             *
+             * Driver khác, Staff, Manager và Admin
+             * không nhận thông báo này.
+             */
+            createBookingConfirmedNotification(
+                    savedBooking
+            );
 
             System.out.println(
                     "PayOS payment confirmed. bookingId="
-                            + booking.getId()
+                            + savedBooking.getId()
                             + ", orderCode="
                             + webhookData.getOrderCode()
                             + ", slotId="
                             + (
-                            booking.getSlot() == null
+                            savedBooking.getSlot()
+                                    == null
                                     ? null
-                                    : booking.getSlot().getId()
+                                    : savedBooking
+                                    .getSlot()
+                                    .getId()
                     )
                             + " marked as RESERVED"
             );
+
             return;
         }
 
+        /*
+         * Thanh toán PayOS thất bại.
+         */
         booking.setPaymentStatus(
                 Booking.PAYMENT_STATUS_FAILED
         );
 
         booking.setPaymentDescription(
-                payosDesc == null || payosDesc.isBlank()
+                payosDesc == null
+                        || payosDesc.isBlank()
                         ? "PayOS payment failed"
                         : payosDesc
         );
@@ -511,26 +758,37 @@ public class PaymentServiceImpl implements PaymentService {
         );
     }
 
+    /**
+     * Kiểm tra booking có được phép tạo
+     * giao dịch thanh toán hay không.
+     */
     private void validateBookingCanCreatePayment(
             Booking booking
     ) {
         String bookingStatus =
-                normalizeText(booking.getStatus());
+                normalizeText(
+                        booking.getStatus()
+                );
 
-        if (!Booking.STATUS_PENDING_PAYMENT.equals(
-                bookingStatus
-        )) {
+        if (
+                !Booking.STATUS_PENDING_PAYMENT.equals(
+                        bookingStatus
+                )
+        ) {
             throw new RuntimeException(
                     "Only PENDING_PAYMENT booking can create payment"
             );
         }
 
-        Instant now = Instant.now();
+        Instant now =
+                Instant.now();
 
-        if (booking.getPaymentExpiredAt() != null
-                && !now.isBefore(
-                booking.getPaymentExpiredAt()
-        )) {
+        if (
+                booking.getPaymentExpiredAt() != null
+                        && !now.isBefore(
+                        booking.getPaymentExpiredAt()
+                )
+        ) {
             expireBookingAsPaymentTimeout(
                     booking,
                     now
@@ -544,40 +802,62 @@ public class PaymentServiceImpl implements PaymentService {
             );
         }
 
-        if (booking.getStartTime() == null
-                || booking.getEndTime() == null) {
+        if (
+                booking.getStartTime() == null
+                        || booking.getEndTime()
+                        == null
+        ) {
             throw new RuntimeException(
                     "Booking start time and end time are required"
             );
         }
 
-        if (!booking.getEndTime().isAfter(
-                booking.getStartTime()
-        )) {
+        if (
+                !booking.getEndTime()
+                        .isAfter(
+                                booking.getStartTime()
+                        )
+        ) {
             throw new RuntimeException(
                     "Booking end time must be after start time"
             );
         }
 
-        if (booking.getSlot() == null
-                || booking.getSlot().getVehicleType() == null) {
+        if (
+                booking.getSlot() == null
+                        || booking
+                        .getSlot()
+                        .getVehicleType()
+                        == null
+        ) {
             throw new RuntimeException(
                     "Booking slot or vehicle type is missing"
             );
         }
     }
 
+    /**
+     * Xác nhận booking thuộc về tài khoản đang đăng nhập.
+     */
     private void validateBookingOwnedByCurrentUser(
             Booking booking
     ) {
         User currentUser =
                 getCurrentAuthenticatedUser();
 
-        if (booking.getUser() == null
-                || booking.getUser().getId() == null
-                || !booking.getUser()
-                .getId()
-                .equals(currentUser.getId())) {
+        if (
+                booking.getUser() == null
+                        || booking
+                        .getUser()
+                        .getId()
+                        == null
+                        || !booking
+                        .getUser()
+                        .getId()
+                        .equals(
+                                currentUser.getId()
+                        )
+        ) {
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
                     "Booking not found"
@@ -585,23 +865,40 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
+    /**
+     * Lấy tài khoản hiện đang đăng nhập.
+     */
     private User getCurrentAuthenticatedUser() {
         Authentication authentication =
                 SecurityContextHolder
                         .getContext()
                         .getAuthentication();
 
-        if (authentication == null
-                || !authentication.isAuthenticated()
-                || authentication
-                instanceof AnonymousAuthenticationToken) {
+        if (
+                authentication == null
+                        || !authentication
+                        .isAuthenticated()
+                        || authentication
+                        instanceof AnonymousAuthenticationToken
+        ) {
             throw new ResponseStatusException(
                     HttpStatus.UNAUTHORIZED,
                     "User is not authenticated"
             );
         }
 
-        String email = authentication.getName();
+        String email =
+                authentication.getName();
+
+        if (
+                email == null
+                        || email.isBlank()
+        ) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Authenticated user email is missing"
+            );
+        }
 
         return userRepository
                 .findByEmail(email)
@@ -613,6 +910,10 @@ public class PaymentServiceImpl implements PaymentService {
                 );
     }
 
+    /**
+     * Chuyển booking hết hạn thanh toán
+     * sang trạng thái CANCELLED/EXPIRED.
+     */
     private void expireBookingAsPaymentTimeout(
             Booking booking,
             Instant now
@@ -630,20 +931,29 @@ public class PaymentServiceImpl implements PaymentService {
         );
     }
 
+    /**
+     * Gán expiredAt vào PayOS request builder.
+     *
+     * Sử dụng reflection để hỗ trợ nhiều phiên bản SDK.
+     */
     private void applyPayOSExpiredAt(
             Object paymentRequestBuilder,
             Instant paymentExpiredAt
     ) {
-        if (paymentRequestBuilder == null
-                || paymentExpiredAt == null) {
+        if (
+                paymentRequestBuilder == null
+                        || paymentExpiredAt == null
+        ) {
             return;
         }
 
         long epochSeconds =
-                paymentExpiredAt.getEpochSecond();
+                paymentExpiredAt
+                        .getEpochSecond();
 
         Class<?> builderClass =
-                paymentRequestBuilder.getClass();
+                paymentRequestBuilder
+                        .getClass();
 
         Class<?>[] types = {
                 long.class,
@@ -655,10 +965,18 @@ public class PaymentServiceImpl implements PaymentService {
         for (Class<?> type : types) {
             Object value;
 
-            if (type.equals(int.class)
-                    || type.equals(Integer.class)) {
-                if (epochSeconds > Integer.MAX_VALUE
-                        || epochSeconds < Integer.MIN_VALUE) {
+            if (
+                    type.equals(int.class)
+                            || type.equals(
+                            Integer.class
+                    )
+            ) {
+                if (
+                        epochSeconds
+                                > Integer.MAX_VALUE
+                                || epochSeconds
+                                < Integer.MIN_VALUE
+                ) {
                     continue;
                 }
 
@@ -677,9 +995,15 @@ public class PaymentServiceImpl implements PaymentService {
                                 paymentRequestBuilder,
                                 value
                         );
+
                 return;
-            } catch (ReflectiveOperationException ignored) {
-                // Thử kiểu số tiếp theo mà SDK hỗ trợ.
+            } catch (
+                    ReflectiveOperationException ignored
+            ) {
+                /*
+                 * Thử tiếp kiểu số khác
+                 * mà PayOS SDK hỗ trợ.
+                 */
             }
         }
 
@@ -689,43 +1013,72 @@ public class PaymentServiceImpl implements PaymentService {
         );
     }
 
+    /**
+     * Chuyển slot của booking sang RESERVED
+     * sau khi thanh toán thành công.
+     */
     private void markBookingSlotAsReserved(
             Booking booking
     ) {
-        if (booking == null
-                || booking.getSlot() == null
-                || booking.getSlot().getId() == null) {
+        if (
+                booking == null
+                        || booking.getSlot()
+                        == null
+                        || booking
+                        .getSlot()
+                        .getId()
+                        == null
+        ) {
             return;
         }
 
-        ParkingSlot slot = parkingSlotRepository
-                .findById(booking.getSlot().getId())
-                .orElse(null);
+        ParkingSlot slot =
+                parkingSlotRepository
+                        .findById(
+                                booking
+                                        .getSlot()
+                                        .getId()
+                        )
+                        .orElse(null);
 
         if (slot == null) {
             System.out.println(
                     "Cannot mark slot as RESERVED. Slot not found for bookingId="
                             + booking.getId()
             );
+
             return;
         }
 
         String currentSlotStatus =
-                normalizeText(slot.getStatus());
+                normalizeText(
+                        slot.getStatus()
+                );
 
-        if (currentSlotStatus.isBlank()
-                || SLOT_STATUS_AVAILABLE.equals(
-                currentSlotStatus
-        )) {
-            slot.setStatus(SLOT_STATUS_RESERVED);
-            parkingSlotRepository.save(slot);
+        if (
+                currentSlotStatus.isBlank()
+                        || SLOT_STATUS_AVAILABLE.equals(
+                        currentSlotStatus
+                )
+        ) {
+            slot.setStatus(
+                    SLOT_STATUS_RESERVED
+            );
+
+            parkingSlotRepository.save(
+                    slot
+            );
+
             booking.setSlot(slot);
+
             return;
         }
 
-        if (SLOT_STATUS_RESERVED.equals(
-                currentSlotStatus
-        )) {
+        if (
+                SLOT_STATUS_RESERVED.equals(
+                        currentSlotStatus
+                )
+        ) {
             return;
         }
 
@@ -739,60 +1092,96 @@ public class PaymentServiceImpl implements PaymentService {
         );
     }
 
+    /**
+     * Kiểm tra booking đã có QR/link thanh toán hay chưa.
+     */
     private boolean hasExistingPaymentData(
             Booking booking
     ) {
-        return booking.getPaymentOrderCode() != null
-                && booking.getCheckoutUrl() != null
-                && !booking.getCheckoutUrl().isBlank()
-                && booking.getQrCode() != null
-                && !booking.getQrCode().isBlank();
+        return booking.getPaymentOrderCode()
+                != null
+                && booking.getCheckoutUrl()
+                != null
+                && !booking
+                .getCheckoutUrl()
+                .isBlank()
+                && booking.getQrCode()
+                != null
+                && !booking
+                .getQrCode()
+                .isBlank();
     }
 
+    /**
+     * Tính tổng tiền booking.
+     */
     private int calculateBookingAmount(
             Booking booking
     ) {
-        if (booking.getPaymentAmount() != null
-                && booking.getPaymentAmount() > 0) {
-            return booking.getPaymentAmount();
+        if (
+                booking.getPaymentAmount() != null
+                        && booking
+                        .getPaymentAmount()
+                        > 0
+        ) {
+            return booking
+                    .getPaymentAmount();
         }
 
-        long minutes = Duration.between(
-                booking.getStartTime(),
-                booking.getEndTime()
-        ).toMinutes();
+        long minutes =
+                Duration.between(
+                        booking.getStartTime(),
+                        booking.getEndTime()
+                ).toMinutes();
 
         long hours =
-                (long) Math.ceil(minutes / 60.0);
+                (long) Math.ceil(
+                        minutes / 60.0
+                );
 
         if (hours <= 0) {
             hours = 1;
         }
 
         BigDecimal pricePerHour =
-                getActivePricePerHour(booking);
+                getActivePricePerHour(
+                        booking
+                );
 
         BigDecimal totalAmount =
                 pricePerHour.multiply(
-                        BigDecimal.valueOf(hours)
+                        BigDecimal.valueOf(
+                                hours
+                        )
                 );
 
-        int roundedAmount = totalAmount
-                .setScale(0, RoundingMode.HALF_UP)
-                .intValueExact();
+        int roundedAmount =
+                totalAmount
+                        .setScale(
+                                0,
+                                RoundingMode.HALF_UP
+                        )
+                        .intValueExact();
 
-        if (roundedAmount < MINIMUM_PAYMENT_AMOUNT) {
+        if (
+                roundedAmount
+                        < MINIMUM_PAYMENT_AMOUNT
+        ) {
             return MINIMUM_PAYMENT_AMOUNT;
         }
 
         return roundedAmount;
     }
 
+    /**
+     * Lấy giá đỗ xe mặc định theo loại xe.
+     */
     private BigDecimal getActivePricePerHour(
             Booking booking
     ) {
         Integer vehicleTypeId =
-                booking.getSlot()
+                booking
+                        .getSlot()
                         .getVehicleType()
                         .getId();
 
@@ -808,7 +1197,9 @@ public class PaymentServiceImpl implements PaymentService {
                                         PricingPolicy.STATUS_ACTIVE
                                 )
                 )
-                .map(PricingPolicy::getPricePerHour)
+                .map(
+                        PricingPolicy::getPricePerHour
+                )
                 .filter(price ->
                         price != null
                                 && price.compareTo(
@@ -829,12 +1220,19 @@ public class PaymentServiceImpl implements PaymentService {
                 });
     }
 
+    /**
+     * Tạo nội dung mô tả thanh toán.
+     */
     private String buildPaymentDescription(
             Booking booking
     ) {
-        return "BOOKING" + booking.getId();
+        return "BOOKING"
+                + booking.getId();
     }
 
+    /**
+     * Tạo mã giao dịch PayOS cho booking.
+     */
     private Long generateOrderCode(
             Integer bookingId
     ) {
@@ -855,14 +1253,21 @@ public class PaymentServiceImpl implements PaymentService {
                 String.valueOf(bookingId)
                         + shortTimePart;
 
-        return Long.parseLong(rawOrderCode);
+        return Long.parseLong(
+                rawOrderCode
+        );
     }
 
+    /**
+     * Tạo mã giao dịch PayOS cho checkout.
+     */
     private Long generateCheckoutOrderCode(
             String ticketId
     ) {
         String safeTicketId =
-                ticketId == null ? "" : ticketId;
+                ticketId == null
+                        ? ""
+                        : ticketId;
 
         String digits =
                 safeTicketId.replaceAll(
@@ -897,30 +1302,46 @@ public class PaymentServiceImpl implements PaymentService {
                     );
         }
 
-        return Long.parseLong(rawOrderCode);
+        return Long.parseLong(
+                rawOrderCode
+        );
     }
 
+    /**
+     * Chuyển Booking thành response thanh toán.
+     */
     private CreatePayOSPaymentResponse buildPaymentResponse(
             Booking booking
     ) {
-        return CreatePayOSPaymentResponse.builder()
-                .bookingId(booking.getId())
+        return CreatePayOSPaymentResponse
+                .builder()
+                .bookingId(
+                        booking.getId()
+                )
                 .orderCode(
                         booking.getPaymentOrderCode()
                 )
-                .amount(booking.getPaymentAmount())
+                .amount(
+                        booking.getPaymentAmount()
+                )
                 .currency(
                         booking.getPaymentCurrency()
                 )
-                .bookingStatus(booking.getStatus())
+                .bookingStatus(
+                        booking.getStatus()
+                )
                 .paymentStatus(
                         booking.getPaymentStatus()
                 )
                 .paymentLinkId(
                         booking.getPaymentLinkId()
                 )
-                .checkoutUrl(booking.getCheckoutUrl())
-                .qrCode(booking.getQrCode())
+                .checkoutUrl(
+                        booking.getCheckoutUrl()
+                )
+                .qrCode(
+                        booking.getQrCode()
+                )
                 .paymentCreatedAt(
                         booking.getPaymentCreatedAt()
                 )
@@ -930,6 +1351,94 @@ public class PaymentServiceImpl implements PaymentService {
                 .build();
     }
 
+    /**
+     * Tạo notification booking thành công
+     * chỉ dành cho chủ booking.
+     */
+    private void createBookingConfirmedNotification(
+            Booking booking
+    ) {
+        if (
+                booking == null
+                        || booking.getUser()
+                        == null
+                        || booking
+                        .getUser()
+                        .getId()
+                        == null
+        ) {
+            System.out.println(
+                    "Booking confirmed notification skipped. "
+                            + "Booking owner is missing."
+            );
+
+            return;
+        }
+
+        Integer recipientUserId =
+                booking
+                        .getUser()
+                        .getId();
+
+        String licensePlate =
+                "N/A";
+
+        if (
+                booking.getVehicle() != null
+                        && booking
+                        .getVehicle()
+                        .getLicensePlate()
+                        != null
+                        && !booking
+                        .getVehicle()
+                        .getLicensePlate()
+                        .isBlank()
+        ) {
+            licensePlate =
+                    booking
+                            .getVehicle()
+                            .getLicensePlate();
+        }
+
+        String slotText =
+                "N/A";
+
+        if (
+                booking.getSlot() != null
+                        && booking
+                        .getSlot()
+                        .getId()
+                        != null
+        ) {
+            slotText =
+                    String.valueOf(
+                            booking
+                                    .getSlot()
+                                    .getId()
+                    );
+        }
+
+        String message =
+                "Your booking #"
+                        + booking.getId()
+                        + " for vehicle "
+                        + licensePlate
+                        + " at parking slot "
+                        + slotText
+                        + " has been paid and confirmed successfully.";
+
+        notificationService
+                .createPersonalNotification(
+                        recipientUserId,
+                        "Booking confirmed",
+                        message,
+                        NOTIFICATION_BOOKING_CONFIRMED
+                );
+    }
+
+    /**
+     * Chuyển Instant sang giờ kinh doanh.
+     */
     private LocalDateTime toBusinessLocalDateTime(
             Instant instant
     ) {
@@ -940,10 +1449,15 @@ public class PaymentServiceImpl implements PaymentService {
 
         return LocalDateTime.ofInstant(
                 safeInstant,
-                ZoneId.of(businessTimeZone)
+                ZoneId.of(
+                        businessTimeZone
+                )
         );
     }
 
+    /**
+     * Chuẩn hóa chuỗi trạng thái.
+     */
     private String normalizeText(
             String value
     ) {
@@ -951,6 +1465,8 @@ public class PaymentServiceImpl implements PaymentService {
             return "";
         }
 
-        return value.trim().toUpperCase();
+        return value
+                .trim()
+                .toUpperCase();
     }
 }

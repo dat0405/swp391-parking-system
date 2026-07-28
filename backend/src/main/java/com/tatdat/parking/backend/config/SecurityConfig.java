@@ -29,14 +29,15 @@ import java.util.List;
 public class SecurityConfig {
 
         /*
-         * Database roles:
+         * Các role chính thức trong database:
+         *
          * - SYSTEM_ADMIN
          * - PARKING_MANAGER
          * - PARKING_STAFF
          * - DRIVER
          *
-         * DRIVER is the normal end-user role.
-         * There is no separate USER role.
+         * DRIVER chính là người dùng thông thường.
+         * Không tồn tại role USER riêng.
          */
         private static final String[] ALL_SYSTEM_ROLES = {
                 "DRIVER",
@@ -45,19 +46,53 @@ public class SecurityConfig {
                 "SYSTEM_ADMIN"
         };
 
+        /*
+         * Quyền quản lý:
+         *
+         * - Dashboard
+         * - Parking Floors
+         * - Reservations
+         * - Pricing Policies
+         * - Reports
+         */
         private static final String[] MANAGEMENT_ROLES = {
                 "PARKING_MANAGER",
                 "SYSTEM_ADMIN"
         };
 
-        private static final String[] OPERATIONAL_ROLES = {
+        /*
+         * Quyền thao tác tại cổng:
+         *
+         * - Check-in
+         * - Check-out
+         * - Nhận diện biển số
+         * - Thanh toán checkout
+         *
+         * PARKING_MANAGER không thuộc nhóm này.
+         */
+        private static final String[] GATE_ROLES = {
                 "PARKING_STAFF",
+                "SYSTEM_ADMIN"
+        };
+
+        /*
+         * DRIVER được xem dữ liệu dành cho người dùng.
+         * PARKING_MANAGER và SYSTEM_ADMIN được quản lý dữ liệu.
+         */
+        private static final String[] DRIVER_AND_MANAGEMENT_ROLES = {
+                "DRIVER",
                 "PARKING_MANAGER",
                 "SYSTEM_ADMIN"
         };
 
-        private static final String[] DRIVER_AND_MANAGEMENT_ROLES = {
-                "DRIVER",
+        /*
+         * Thống kê tầng được sử dụng bởi:
+         *
+         * - Dashboard của PARKING_MANAGER/SYSTEM_ADMIN.
+         * - Check-in/out của PARKING_STAFF/SYSTEM_ADMIN.
+         */
+        private static final String[] FLOOR_STATS_ROLES = {
+                "PARKING_STAFF",
                 "PARKING_MANAGER",
                 "SYSTEM_ADMIN"
         };
@@ -76,32 +111,43 @@ public class SecurityConfig {
         public SecurityFilterChain securityFilterChain(
                 HttpSecurity http
         ) throws Exception {
+
                 http
                         .cors(Customizer.withDefaults())
                         .csrf(CsrfConfigurer::disable)
+
                         .sessionManagement(session ->
                                 session.sessionCreationPolicy(
                                         SessionCreationPolicy.STATELESS
                                 )
                         )
-                        .exceptionHandling(exception -> exception
-                                .authenticationEntryPoint(
-                                        new HttpStatusEntryPoint(
-                                                HttpStatus.UNAUTHORIZED
+
+                        .exceptionHandling(exception ->
+                                exception
+                                        .authenticationEntryPoint(
+                                                new HttpStatusEntryPoint(
+                                                        HttpStatus.UNAUTHORIZED
+                                                )
                                         )
-                                )
-                                .accessDeniedHandler(
-                                        new AccessDeniedHandlerImpl()
-                                )
+                                        .accessDeniedHandler(
+                                                new AccessDeniedHandlerImpl()
+                                        )
                         )
+
                         .authorizeHttpRequests(auth -> auth
+
+                                /*
+                                 * Cho phép CORS preflight.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.OPTIONS,
                                         "/**"
                                 )
                                 .permitAll()
 
-                                /* Public health check. */
+                                /*
+                                 * Health check công khai.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/health"
@@ -109,8 +155,8 @@ public class SecurityConfig {
                                 .permitAll()
 
                                 /*
-                                 * PayOS calls this webhook from its own server,
-                                 * so it does not contain the user's JWT cookie.
+                                 * PayOS gọi webhook từ server bên ngoài,
+                                 * nên request không có JWT cookie của người dùng.
                                  */
                                 .requestMatchers(
                                         HttpMethod.POST,
@@ -118,10 +164,18 @@ public class SecurityConfig {
                                 )
                                 .permitAll()
 
-                                /* Must stay before /api/auth/**. */
-                                .requestMatchers("/api/auth/me")
+                                /*
+                                 * Phải đặt trước /api/auth/**.
+                                 */
+                                .requestMatchers(
+                                        "/api/auth/me"
+                                )
                                 .authenticated()
 
+                                /*
+                                 * API đăng nhập, đăng ký, quên mật khẩu
+                                 * và tài liệu Swagger.
+                                 */
                                 .requestMatchers(
                                         "/api/auth/**",
                                         "/v3/api-docs/**",
@@ -130,13 +184,17 @@ public class SecurityConfig {
                                 )
                                 .permitAll()
 
-                                /* System administrator APIs. */
-                                .requestMatchers("/api/admin/**")
+                                /*
+                                 * API quản trị cấp cao.
+                                 */
+                                .requestMatchers(
+                                        "/api/admin/**"
+                                )
                                 .hasRole("SYSTEM_ADMIN")
 
                                 /*
-                                 * Every authenticated role may update its own
-                                 * online/offline status.
+                                 * Mọi role đã đăng nhập đều được cập nhật
+                                 * trạng thái online/offline của chính mình.
                                  */
                                 .requestMatchers(
                                         HttpMethod.PUT,
@@ -145,165 +203,226 @@ public class SecurityConfig {
                                 )
                                 .hasAnyRole(ALL_SYSTEM_ROLES)
 
-                                /* User-management live status is admin-only. */
+                                /*
+                                 * Theo dõi trạng thái user chỉ dành cho Admin.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/users/status-stream"
                                 )
                                 .hasRole("SYSTEM_ADMIN")
 
-                                .requestMatchers("/api/users/**")
+                                /*
+                                 * User Management chỉ dành cho Admin.
+                                 */
+                                .requestMatchers(
+                                        "/api/users/**"
+                                )
                                 .hasRole("SYSTEM_ADMIN")
 
-                                .requestMatchers("/api/roles/**")
+                                .requestMatchers(
+                                        "/api/roles/**"
+                                )
                                 .hasRole("SYSTEM_ADMIN")
 
                                 /*
-                                 * DRIVER may manage personal vehicles.
-                                 * Manager/Admin may inspect or manage vehicles.
-                                 * Staff uses parking-operation APIs instead.
+                                 * Notification:
+                                 *
+                                 * Mọi role đã đăng nhập đều được:
+                                 * - Xem notification của chính mình.
+                                 * - Xem số notification chưa đọc.
+                                 * - Đánh dấu notification của chính mình là đã đọc.
+                                 *
+                                 * NotificationController và NotificationService
+                                 * phải lấy user hiện tại từ JWT.
+                                 *
+                                 * Không cho frontend truyền userId tùy ý.
                                  */
-                                .requestMatchers("/api/vehicles/**")
-                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
+                                .requestMatchers(
+                                        "/api/notifications/**"
+                                )
+                                .hasAnyRole(ALL_SYSTEM_ROLES)
 
-                                /* Vehicle types are needed by booking and gate pages. */
+                                /*
+                                 * DRIVER quản lý xe cá nhân.
+                                 * PARKING_MANAGER/SYSTEM_ADMIN có thể xem và quản lý xe.
+                                 *
+                                 * PARKING_STAFF sử dụng API parking-operations,
+                                 * không truy cập trực tiếp API vehicles.
+                                 */
+                                .requestMatchers(
+                                        "/api/vehicles/**"
+                                )
+                                .hasAnyRole(
+                                        DRIVER_AND_MANAGEMENT_ROLES
+                                )
+
+                                /*
+                                 * Tất cả role cần xem danh sách loại xe.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/vehicle-types/**"
                                 )
                                 .hasAnyRole(ALL_SYSTEM_ROLES)
 
-                                .requestMatchers(
-                                        HttpMethod.POST,
-                                        "/api/vehicle-types/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.PUT,
-                                        "/api/vehicle-types/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.PATCH,
-                                        "/api/vehicle-types/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.DELETE,
-                                        "/api/vehicle-types/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                /* Parking facility read-only access. */
-                                .requestMatchers(
-                                        HttpMethod.GET,
-                                        "/api/parking-facilities/**"
-                                )
-                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.POST,
-                                        "/api/parking-facilities/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.PUT,
-                                        "/api/parking-facilities/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.PATCH,
-                                        "/api/parking-facilities/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.DELETE,
-                                        "/api/parking-facilities/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                /* Parking floor read-only access. */
-                                .requestMatchers(
-                                        HttpMethod.GET,
-                                        "/api/parking-floors/**"
-                                )
-                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.POST,
-                                        "/api/parking-floors/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.PUT,
-                                        "/api/parking-floors/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.PATCH,
-                                        "/api/parking-floors/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.DELETE,
-                                        "/api/parking-floors/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                /* Parking zone read-only access. */
-                                .requestMatchers(
-                                        HttpMethod.GET,
-                                        "/api/parking-zones/**"
-                                )
-                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.POST,
-                                        "/api/parking-zones/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.PUT,
-                                        "/api/parking-zones/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.PATCH,
-                                        "/api/parking-zones/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                .requestMatchers(
-                                        HttpMethod.DELETE,
-                                        "/api/parking-zones/**"
-                                )
-                                .hasAnyRole(MANAGEMENT_ROLES)
-
-                                /* Parking slot read-only access. */
-                                .requestMatchers(
-                                        HttpMethod.GET,
-                                        "/api/parking-slots/**"
-                                )
-                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
-
                                 /*
-                                 * Direct slot-management endpoints are reserved for
-                                 * Manager/Admin. Check-in/out changes slot state through
-                                 * parking-operation services.
+                                 * Chỉ Manager/Admin được thay đổi loại xe.
                                  */
                                 .requestMatchers(
                                         HttpMethod.POST,
+                                        "/api/vehicle-types/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PUT,
+                                        "/api/vehicle-types/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PATCH,
+                                        "/api/vehicle-types/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.DELETE,
+                                        "/api/vehicle-types/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                /*
+                                 * Parking Facilities:
+                                 *
+                                 * DRIVER chỉ xem.
+                                 * PARKING_MANAGER/SYSTEM_ADMIN được quản lý.
+                                 */
+                                .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/parking-facilities/**"
+                                )
+                                .hasAnyRole(
+                                        DRIVER_AND_MANAGEMENT_ROLES
+                                )
+
+                                .requestMatchers(
+                                        HttpMethod.POST,
+                                        "/api/parking-facilities/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PUT,
+                                        "/api/parking-facilities/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PATCH,
+                                        "/api/parking-facilities/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.DELETE,
+                                        "/api/parking-facilities/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                /*
+                                 * Parking Floors:
+                                 *
+                                 * DRIVER chỉ xem.
+                                 * PARKING_MANAGER/SYSTEM_ADMIN được quản lý.
+                                 */
+                                .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/parking-floors/**"
+                                )
+                                .hasAnyRole(
+                                        DRIVER_AND_MANAGEMENT_ROLES
+                                )
+
+                                .requestMatchers(
+                                        HttpMethod.POST,
+                                        "/api/parking-floors/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PUT,
+                                        "/api/parking-floors/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PATCH,
+                                        "/api/parking-floors/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.DELETE,
+                                        "/api/parking-floors/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                /*
+                                 * Parking Zones:
+                                 *
+                                 * DRIVER chỉ xem.
+                                 * PARKING_MANAGER/SYSTEM_ADMIN được quản lý.
+                                 */
+                                .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/parking-zones/**"
+                                )
+                                .hasAnyRole(
+                                        DRIVER_AND_MANAGEMENT_ROLES
+                                )
+
+                                .requestMatchers(
+                                        HttpMethod.POST,
+                                        "/api/parking-zones/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PUT,
+                                        "/api/parking-zones/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.PATCH,
+                                        "/api/parking-zones/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                .requestMatchers(
+                                        HttpMethod.DELETE,
+                                        "/api/parking-zones/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                /*
+                                 * Parking Slots:
+                                 *
+                                 * DRIVER chỉ xem.
+                                 * PARKING_MANAGER/SYSTEM_ADMIN được quản lý.
+                                 */
+                                .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/parking-slots/**"
+                                )
+                                .hasAnyRole(
+                                        DRIVER_AND_MANAGEMENT_ROLES
+                                )
+
+                                .requestMatchers(
+                                        HttpMethod.POST,
                                         "/api/parking-slots/**"
                                 )
                                 .hasAnyRole(MANAGEMENT_ROLES)
@@ -326,16 +445,31 @@ public class SecurityConfig {
                                 )
                                 .hasAnyRole(MANAGEMENT_ROLES)
 
-                                /* Parking sessions support booking and gate operations. */
-                                .requestMatchers("/api/parking-sessions/**")
+                                /*
+                                 * Parking Sessions:
+                                 *
+                                 * - DRIVER dùng trong luồng booking.
+                                 * - PARKING_MANAGER/SYSTEM_ADMIN dùng cho báo cáo.
+                                 * - PARKING_STAFF/SYSTEM_ADMIN dùng cho check-in/out.
+                                 */
+                                .requestMatchers(
+                                        "/api/parking-sessions/**"
+                                )
                                 .hasAnyRole(ALL_SYSTEM_ROLES)
 
-                                /* Price list and pricing management. */
+                                /*
+                                 * Pricing Policies:
+                                 *
+                                 * DRIVER chỉ xem bảng giá.
+                                 * PARKING_MANAGER/SYSTEM_ADMIN được quản lý.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/pricing-policies/**"
                                 )
-                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
+                                .hasAnyRole(
+                                        DRIVER_AND_MANAGEMENT_ROLES
+                                )
 
                                 .requestMatchers(
                                         HttpMethod.POST,
@@ -361,12 +495,19 @@ public class SecurityConfig {
                                 )
                                 .hasAnyRole(MANAGEMENT_ROLES)
 
-                                /* Holiday surcharge list and management. */
+                                /*
+                                 * Holiday surcharge:
+                                 *
+                                 * DRIVER chỉ xem.
+                                 * PARKING_MANAGER/SYSTEM_ADMIN được quản lý.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/holidays/**"
                                 )
-                                .hasAnyRole(DRIVER_AND_MANAGEMENT_ROLES)
+                                .hasAnyRole(
+                                        DRIVER_AND_MANAGEMENT_ROLES
+                                )
 
                                 .requestMatchers(
                                         HttpMethod.POST,
@@ -393,8 +534,10 @@ public class SecurityConfig {
                                 .hasAnyRole(MANAGEMENT_ROLES)
 
                                 /*
-                                 * Personal booking APIs for DRIVER.
-                                 * These rules must stay before /api/bookings/**.
+                                 * Booking cá nhân của DRIVER.
+                                 *
+                                 * Các matcher này phải nằm trước
+                                 * matcher tổng quát /api/bookings/**.
                                  */
                                 .requestMatchers(
                                         HttpMethod.GET,
@@ -417,66 +560,136 @@ public class SecurityConfig {
                                 )
                                 .hasRole("DRIVER")
 
-                                /* Booking records must not be permanently deleted. */
+                                /*
+                                 * Không xóa vĩnh viễn lịch sử booking.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.DELETE,
                                         "/api/bookings/**"
                                 )
                                 .denyAll()
 
-                                /* Reservation management page: Manager/Admin only. */
-                                .requestMatchers("/api/bookings/**")
+                                /*
+                                 * Reservations:
+                                 *
+                                 * PARKING_MANAGER/SYSTEM_ADMIN xem và quản lý
+                                 * toàn bộ booking.
+                                 */
+                                .requestMatchers(
+                                        "/api/bookings/**"
+                                )
                                 .hasAnyRole(MANAGEMENT_ROLES)
 
-                                /* Personal PayOS booking QR for DRIVER. */
+                                /*
+                                 * DRIVER tạo QR thanh toán booking.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.POST,
                                         "/api/payments/payos/create/*"
                                 )
                                 .hasRole("DRIVER")
 
-                                /* Checkout status is used by drivers and gate roles. */
+                                /*
+                                 * Kiểm tra trạng thái thanh toán.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.GET,
                                         "/api/payments/payos/checkout-status/*"
                                 )
                                 .hasAnyRole(ALL_SYSTEM_ROLES)
 
-                                /* Gate checkout payment. */
+                                /*
+                                 * Thanh toán tại cổng checkout:
+                                 *
+                                 * Chỉ PARKING_STAFF và SYSTEM_ADMIN.
+                                 * PARKING_MANAGER không được phép.
+                                 */
                                 .requestMatchers(
                                         HttpMethod.POST,
                                         "/api/payments/payos/create-checkout"
                                 )
-                                .hasAnyRole(OPERATIONAL_ROLES)
+                                .hasAnyRole(GATE_ROLES)
 
-                                /* Remaining payment APIs still require a system role. */
-                                .requestMatchers("/api/payments/**")
+                                /*
+                                 * Các API payment còn lại yêu cầu đăng nhập.
+                                 */
+                                .requestMatchers(
+                                        "/api/payments/**"
+                                )
                                 .hasAnyRole(ALL_SYSTEM_ROLES)
 
-                                /* OCR and gate operations. */
-                                .requestMatchers("/api/plate-recognition/**")
-                                .hasAnyRole(OPERATIONAL_ROLES)
+                                /*
+                                 * Nhận diện biển số:
+                                 *
+                                 * Chỉ PARKING_STAFF và SYSTEM_ADMIN.
+                                 * PARKING_MANAGER không có quyền.
+                                 */
+                                .requestMatchers(
+                                        "/api/plate-recognition/**"
+                                )
+                                .hasAnyRole(GATE_ROLES)
 
-                                .requestMatchers("/api/parking-operations/**")
-                                .hasAnyRole(OPERATIONAL_ROLES)
+                                /*
+                                 * Endpoint thống kê tầng.
+                                 *
+                                 * Đặt trước matcher tổng quát:
+                                 * /api/parking-operations/**
+                                 */
+                                .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/api/parking-operations/floor-stats"
+                                )
+                                .hasAnyRole(FLOOR_STATS_ROLES)
 
-                                .requestMatchers("/api/parking/**")
-                                .hasAnyRole(OPERATIONAL_ROLES)
+                                /*
+                                 * Check-in/out và danh sách xe đang đỗ:
+                                 *
+                                 * Chỉ PARKING_STAFF và SYSTEM_ADMIN.
+                                 * PARKING_MANAGER không có quyền.
+                                 */
+                                .requestMatchers(
+                                        "/api/parking-operations/**"
+                                )
+                                .hasAnyRole(GATE_ROLES)
 
-                                /* Dashboard and reports. */
-                                .requestMatchers("/api/dashboard/**")
-                                .hasAnyRole(MANAGEMENT_ROLES)
+                                /*
+                                 * Các API vận hành bãi xe khác:
+                                 *
+                                 * Chỉ PARKING_STAFF và SYSTEM_ADMIN.
+                                 */
+                                .requestMatchers(
+                                        "/api/parking/**"
+                                )
+                                .hasAnyRole(GATE_ROLES)
 
-                                .requestMatchers("/api/reports/**")
+                                /*
+                                 * Dashboard:
+                                 *
+                                 * PARKING_MANAGER và SYSTEM_ADMIN.
+                                 */
+                                .requestMatchers(
+                                        "/api/dashboard/**"
+                                )
                                 .hasAnyRole(MANAGEMENT_ROLES)
 
                                 /*
-                                 * Keep authenticated as the final fallback so existing
-                                 * authenticated endpoints not listed above continue to work.
+                                 * Reports:
+                                 *
+                                 * PARKING_MANAGER và SYSTEM_ADMIN.
+                                 */
+                                .requestMatchers(
+                                        "/api/reports/**"
+                                )
+                                .hasAnyRole(MANAGEMENT_ROLES)
+
+                                /*
+                                 * Các endpoint đã đăng nhập nhưng chưa được
+                                 * liệt kê cụ thể vẫn yêu cầu authentication.
                                  */
                                 .anyRequest()
                                 .authenticated()
                         )
+
                         .addFilterBefore(
                                 jwtAuthenticationFilter,
                                 UsernamePasswordAuthenticationFilter.class
@@ -490,14 +703,19 @@ public class SecurityConfig {
                 CorsConfiguration configuration =
                         new CorsConfiguration();
 
-                List<String> origins = Arrays.stream(
-                                allowedOrigins.split(",")
-                        )
-                        .map(String::trim)
-                        .filter(origin -> !origin.isBlank())
-                        .toList();
+                List<String> origins =
+                        Arrays.stream(
+                                        allowedOrigins.split(",")
+                                )
+                                .map(String::trim)
+                                .filter(origin ->
+                                        !origin.isBlank()
+                                )
+                                .toList();
 
-                configuration.setAllowedOrigins(origins);
+                configuration.setAllowedOrigins(
+                        origins
+                );
 
                 configuration.setAllowedMethods(
                         List.of(
@@ -510,12 +728,23 @@ public class SecurityConfig {
                         )
                 );
 
-                configuration.setAllowedHeaders(List.of("*"));
-                configuration.setExposedHeaders(
-                        List.of("Authorization")
+                configuration.setAllowedHeaders(
+                        List.of("*")
                 );
-                configuration.setAllowCredentials(true);
-                configuration.setMaxAge(3600L);
+
+                configuration.setExposedHeaders(
+                        List.of(
+                                "Authorization"
+                        )
+                );
+
+                configuration.setAllowCredentials(
+                        true
+                );
+
+                configuration.setMaxAge(
+                        3600L
+                );
 
                 UrlBasedCorsConfigurationSource source =
                         new UrlBasedCorsConfigurationSource();
