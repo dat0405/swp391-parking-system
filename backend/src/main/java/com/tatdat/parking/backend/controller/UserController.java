@@ -14,10 +14,12 @@ import com.tatdat.parking.backend.repository.UserRepository;
 import com.tatdat.parking.backend.service.UserStatusEventService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,6 +32,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 @RestController
@@ -37,31 +40,36 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class UserController {
 
+    /**
+     * User được xem là online nếu heartbeat gần nhất
+     * không quá 90 giây.
+     */
     private static final long ONLINE_TIMEOUT_SECONDS = 90;
 
-    private static final String STATUS_ACTIVE = "ACTIVE";
-    private static final String STATUS_INACTIVE = "INACTIVE";
-    private static final String STATUS_BANNED = "BANNED";
+    private static final String STATUS_ACTIVE =
+            "ACTIVE";
 
-    private static final String ROLE_SYSTEM_ADMIN = "SYSTEM_ADMIN";
+    private static final String STATUS_INACTIVE =
+            "INACTIVE";
 
-    /*
-     * Danh sách role hợp lệ.
+    private static final String STATUS_BANNED =
+            "BANNED";
+
+    private static final String ROLE_SYSTEM_ADMIN =
+            "SYSTEM_ADMIN";
+
+    /**
+     * Các role chính thức trong hệ thống.
      *
-     * Phải đồng bộ với:
-     * - Database
-     * - SecurityConfig
-     * - JwtService
-     * - JwtAuthenticationFilter
-     * - Frontend auth.js
+     * DRIVER chính là người dùng thông thường.
+     * Không tồn tại role USER.
      */
     private static final Set<String> SUPPORTED_ROLES =
             Set.of(
                     ROLE_SYSTEM_ADMIN,
                     "PARKING_MANAGER",
                     "PARKING_STAFF",
-                    "DRIVER",
-                    "USER"
+                    "DRIVER"
             );
 
     private static final Set<String> SUPPORTED_STATUSES =
@@ -76,12 +84,13 @@ public class UserController {
     private final PasswordEncoder passwordEncoder;
     private final UserStatusEventService userStatusEventService;
 
-    /*
+    /**
      * Lấy danh sách tất cả tài khoản.
      *
-     * SecurityConfig chỉ cho phép SYSTEM_ADMIN truy cập.
+     * Chỉ SYSTEM_ADMIN được truy cập theo SecurityConfig.
      */
     @GetMapping
+    @Transactional(readOnly = true)
     public List<UserResponse> getAllUsers() {
         return userRepository
                 .findAllByOrderByIdDesc()
@@ -90,118 +99,164 @@ public class UserController {
                 .toList();
     }
 
-    /*
+    /**
      * SSE theo dõi trạng thái online/offline.
-     *
-     * SecurityConfig chỉ cho phép SYSTEM_ADMIN truy cập.
      */
     @GetMapping("/status-stream")
     public SseEmitter streamUserStatus() {
         return userStatusEventService.subscribe();
     }
 
-    /*
-     * Cập nhật thời gian hoạt động gần nhất.
+    /**
+     * Cập nhật heartbeat của chính tài khoản đang đăng nhập.
+     *
+     * Đây là một trong các nghiệp vụ được phép
+     * thay đổi lastActiveAt.
      */
     @PutMapping("/me/heartbeat")
+    @Transactional
     public UserResponse heartbeat() {
-        User currentUser = getCurrentUser();
+        User currentUser =
+                getCurrentUser();
 
-        validateUserIsActive(currentUser);
+        validateUserIsActive(
+                currentUser
+        );
 
-        Instant now = Instant.now();
+        Instant now =
+                Instant.now();
 
-        currentUser.setLastActiveAt(now);
-        currentUser.setUpdatedAt(now);
+        currentUser.setLastActiveAt(
+                now
+        );
 
-        User savedUser = userRepository.save(currentUser);
+        currentUser.setUpdatedAt(
+                now
+        );
 
-        publishUserStatus(savedUser, true);
+        User savedUser =
+                userRepository.save(
+                        currentUser
+                );
 
-        return mapToUserResponse(savedUser);
+        publishUserStatus(
+                savedUser,
+                true
+        );
+
+        return mapToUserResponse(
+                savedUser
+        );
     }
 
-    /*
-     * Đánh dấu tài khoản hiện tại là offline.
+    /**
+     * Đánh dấu chính tài khoản đang đăng nhập là offline.
+     *
+     * lastActiveAt được xóa để trạng thái online
+     * chuyển thành false ngay lập tức.
      */
     @PutMapping("/me/offline")
+    @Transactional
     public UserResponse offline() {
-        User currentUser = getCurrentUser();
+        User currentUser =
+                getCurrentUser();
 
-        currentUser.setLastActiveAt(null);
-        currentUser.setUpdatedAt(Instant.now());
+        currentUser.setLastActiveAt(
+                null
+        );
 
-        User savedUser = userRepository.save(currentUser);
+        currentUser.setUpdatedAt(
+                Instant.now()
+        );
 
-        publishUserStatus(savedUser, false);
+        User savedUser =
+                userRepository.save(
+                        currentUser
+                );
 
-        return mapToUserResponse(savedUser);
+        publishUserStatus(
+                savedUser,
+                false
+        );
+
+        return mapToUserResponse(
+                savedUser
+        );
     }
 
-    /*
+    /**
      * Lấy user theo ID.
      */
     @GetMapping("/{id}")
+    @Transactional(readOnly = true)
     public UserResponse getUserById(
             @PathVariable Integer id
     ) {
         validateUserId(id);
 
-        User user = findUserById(id);
+        User user =
+                findUserById(id);
 
         return mapToUserResponse(user);
     }
 
-    /*
+    /**
      * System Admin tạo tài khoản mới.
-     *
-     * Có thể tạo các role:
-     * - SYSTEM_ADMIN
-     * - PARKING_MANAGER
-     * - PARKING_STAFF
-     * - DRIVER
-     * - USER
      */
     @PostMapping
+    @Transactional
     public UserResponse createUser(
             @Valid @RequestBody
             CreateUserRequest request
     ) {
-        validateCreateUserRequest(request);
-
-        String email = normalizeEmail(
-                request.getEmail()
+        validateCreateUserRequest(
+                request
         );
 
-        if (userRepository.existsByEmail(email)) {
+        String email =
+                normalizeEmail(
+                        request.getEmail()
+                );
+
+        if (
+                userRepository.existsByEmail(
+                        email
+                )
+        ) {
             throw new RuntimeException(
                     "Email already exists"
             );
         }
 
-        String phone = normalizeOptionalText(
-                request.getPhone()
-        );
+        String phone =
+                normalizeOptionalText(
+                        request.getPhone()
+                );
 
         if (
-                phone != null &&
-                        userRepository.existsByPhone(phone)
+                phone != null
+                        && userRepository
+                        .existsByPhone(phone)
         ) {
             throw new RuntimeException(
                     "Phone already exists"
             );
         }
 
-        Role role = findAndValidateRole(
-                request.getRoleId()
-        );
+        Role role =
+                findAndValidateRole(
+                        request.getRoleId()
+                );
 
-        Instant now = Instant.now();
+        Instant now =
+                Instant.now();
 
-        User user = new User();
+        User user =
+                new User();
 
         user.setFullName(
-                request.getFullName().trim()
+                request.getFullName()
+                        .trim()
         );
 
         user.setEmail(email);
@@ -217,20 +272,37 @@ public class UserController {
         user.setStatus(STATUS_ACTIVE);
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
+
+        /*
+         * Tài khoản mới chưa đăng nhập,
+         * vì vậy chưa có thời gian hoạt động.
+         */
         user.setLastLoginAt(null);
         user.setLastActiveAt(null);
 
-        User savedUser = userRepository.save(user);
+        User savedUser =
+                userRepository.save(user);
 
-        publishUserStatus(savedUser, false);
+        publishUserStatus(
+                savedUser,
+                false
+        );
 
-        return mapToUserResponse(savedUser);
+        return mapToUserResponse(
+                savedUser
+        );
     }
 
-    /*
+    /**
      * Cập nhật thông tin cơ bản của user.
+     *
+     * Không thay đổi:
+     * - lastLoginAt
+     * - lastActiveAt
+     * - trạng thái online/offline
      */
     @PutMapping("/{id}")
+    @Transactional
     public UserResponse updateUser(
             @PathVariable Integer id,
             @Valid @RequestBody
@@ -244,93 +316,111 @@ public class UserController {
             );
         }
 
-        User user = findUserById(id);
+        User user =
+                findUserById(id);
 
         if (
-                request.getFullName() != null &&
-                        !request.getFullName().isBlank()
+                request.getFullName() != null
+                        && !request
+                        .getFullName()
+                        .isBlank()
         ) {
             user.setFullName(
-                    request.getFullName().trim()
+                    request.getFullName()
+                            .trim()
             );
         }
 
         if (
-                request.getEmail() != null &&
-                        !request.getEmail().isBlank()
+                request.getEmail() != null
+                        && !request
+                        .getEmail()
+                        .isBlank()
         ) {
-            String email = normalizeEmail(
-                    request.getEmail()
-            );
+            String email =
+                    normalizeEmail(
+                            request.getEmail()
+                    );
 
             userRepository
                     .findByEmail(email)
-                    .ifPresent(existingUser -> {
-                        if (
-                                !existingUser
-                                        .getId()
-                                        .equals(id)
-                        ) {
-                            throw new RuntimeException(
-                                    "Email already exists"
-                            );
-                        }
-                    });
+                    .ifPresent(
+                            existingUser -> {
+                                if (
+                                        !existingUser
+                                                .getId()
+                                                .equals(id)
+                                ) {
+                                    throw new RuntimeException(
+                                            "Email already exists"
+                                    );
+                                }
+                            }
+                    );
 
             user.setEmail(email);
         }
 
         /*
-         * Nếu frontend gửi phone là chuỗi rỗng,
-         * hệ thống sẽ xóa số điện thoại hiện tại.
+         * Chuỗi rỗng nghĩa là xóa số điện thoại.
          */
         if (request.getPhone() != null) {
-            String phone = normalizeOptionalText(
-                    request.getPhone()
-            );
+            String phone =
+                    normalizeOptionalText(
+                            request.getPhone()
+                    );
 
             if (phone != null) {
                 userRepository
                         .findByPhone(phone)
-                        .ifPresent(existingUser -> {
-                            if (
-                                    !existingUser
-                                            .getId()
-                                            .equals(id)
-                            ) {
-                                throw new RuntimeException(
-                                        "Phone already exists"
-                                );
-                            }
-                        });
+                        .ifPresent(
+                                existingUser -> {
+                                    if (
+                                            !existingUser
+                                                    .getId()
+                                                    .equals(id)
+                                    ) {
+                                        throw new RuntimeException(
+                                                "Phone already exists"
+                                        );
+                                    }
+                                }
+                        );
             }
 
             user.setPhone(phone);
         }
 
-        user.setUpdatedAt(Instant.now());
-
-        User savedUser = userRepository.save(user);
-
-        publishUserStatus(
-                savedUser,
-                isUserOnline(savedUser)
+        /*
+         * updatedAt chỉ là thời gian sửa dữ liệu.
+         * Không được dùng để tính trạng thái hoạt động.
+         */
+        user.setUpdatedAt(
+                Instant.now()
         );
 
-        return mapToUserResponse(savedUser);
+        User savedUser =
+                userRepository.save(user);
+
+        /*
+         * Không publish SSE trạng thái vì chỉnh sửa thông tin
+         * không phải login, logout hoặc heartbeat.
+         */
+        return mapToUserResponse(
+                savedUser
+        );
     }
 
-    /*
+    /**
      * Cập nhật role của tài khoản.
      *
-     * Quy tắc:
-     * - Chỉ SYSTEM_ADMIN được đổi role.
-     * - Admin không được tự đổi role chính mình.
-     * - Admin không được đổi role của Admin khác.
-     * - Admin được đổi role của Manager, Staff, Driver và User.
-     * - Admin có thể cấp quyền SYSTEM_ADMIN cho tài khoản chưa phải Admin.
+     * Việc đổi role không được thay đổi:
+     * - lastLoginAt
+     * - lastActiveAt
+     * - trạng thái online/offline hiện tại
      */
     @PutMapping("/{id}/role")
+    @Transactional
     public UserResponse updateUserRole(
             @PathVariable Integer id,
             @Valid @RequestBody
@@ -339,101 +429,128 @@ public class UserController {
         validateUserId(id);
 
         if (
-                request == null ||
-                        request.getRoleId() == null
+                request == null
+                        || request.getRoleId()
+                        == null
         ) {
             throw new RuntimeException(
                     "Role is required"
             );
         }
 
-        User currentUser = getCurrentUser();
-        User targetUser = findUserById(id);
+        User currentUser =
+                getCurrentUser();
 
-        String currentUserRole = normalizeRoleName(
-                currentUser.getRole()
-        );
+        User targetUser =
+                findUserById(id);
 
-        String targetCurrentRole = normalizeRoleName(
-                targetUser.getRole()
-        );
+        String currentUserRole =
+                normalizeRoleName(
+                        currentUser.getRole()
+                );
 
-        /*
-         * Kiểm tra lại quyền ở Controller.
-         *
-         * SecurityConfig cũng đã giới hạn endpoint này
-         * chỉ cho SYSTEM_ADMIN.
-         */
-        if (!ROLE_SYSTEM_ADMIN.equals(currentUserRole)) {
+        String targetCurrentRole =
+                normalizeRoleName(
+                        targetUser.getRole()
+                );
+
+        if (
+                !ROLE_SYSTEM_ADMIN.equals(
+                        currentUserRole
+                )
+        ) {
             throw new RuntimeException(
                     "Only System Admin can change user roles"
             );
         }
 
-        /*
-         * Admin không được tự thay đổi role của chính mình.
+        /**
+         * Admin không được tự đổi role.
          */
         if (
-                currentUser.getId().equals(
-                        targetUser.getId()
-                )
+                currentUser.getId()
+                        .equals(
+                                targetUser.getId()
+                        )
         ) {
             throw new RuntimeException(
                     "You cannot change your own administrator role"
             );
         }
 
-        /*
+        /**
          * Admin không được thay đổi role của Admin khác.
-         *
-         * Ví dụ:
-         * Admin A không thể hạ quyền Admin B xuống
-         * PARKING_MANAGER, PARKING_STAFF, DRIVER hoặc USER.
          */
-        if (ROLE_SYSTEM_ADMIN.equals(targetCurrentRole)) {
+        if (
+                ROLE_SYSTEM_ADMIN.equals(
+                        targetCurrentRole
+                )
+        ) {
             throw new RuntimeException(
                     "You cannot change another administrator's role"
             );
         }
 
-        Role newRole = findAndValidateRole(
-                request.getRoleId()
-        );
+        Role newRole =
+                findAndValidateRole(
+                        request.getRoleId()
+                );
 
-        String newRoleName = normalizeRoleName(
+        String newRoleName =
+                normalizeRoleName(
+                        newRole
+                );
+
+        if (
+                newRoleName.equals(
+                        targetCurrentRole
+                )
+        ) {
+            return mapToUserResponse(
+                    targetUser
+            );
+        }
+
+        /*
+         * Chỉ thay đổi role.
+         *
+         * Tuyệt đối không xóa lastActiveAt và không
+         * cưỡng chế trạng thái offline.
+         */
+        targetUser.setRole(
                 newRole
         );
 
-        /*
-         * Nếu role mới giống role hiện tại
-         * thì không cần ghi lại database.
-         */
-        if (newRoleName.equals(targetCurrentRole)) {
-            return mapToUserResponse(targetUser);
-        }
+        targetUser.setUpdatedAt(
+                Instant.now()
+        );
 
-        targetUser.setRole(newRole);
+        User savedUser =
+                userRepository.save(
+                        targetUser
+                );
 
         /*
-         * Đánh dấu user offline sau khi đổi role.
+         * Không gọi publishUserStatus().
          *
-         * JwtAuthenticationFilter cũng sẽ từ chối JWT cũ
-         * vì role trong token không còn khớp database.
+         * Đổi role không phải là sự kiện hoạt động.
+         * Nếu JWT cũ không còn hợp lệ, heartbeat của user
+         * sẽ dừng và user tự chuyển offline sau timeout.
          */
-        targetUser.setLastActiveAt(null);
-        targetUser.setUpdatedAt(Instant.now());
-
-        User savedUser = userRepository.save(targetUser);
-
-        publishUserStatus(savedUser, false);
-
-        return mapToUserResponse(savedUser);
+        return mapToUserResponse(
+                savedUser
+        );
     }
 
-    /*
-     * Cập nhật trạng thái tài khoản.
+    /**
+     * Cập nhật trạng thái nghiệp vụ của tài khoản:
+     *
+     * - ACTIVE
+     * - INACTIVE
+     * - BANNED
      */
     @PutMapping("/{id}/status")
+    @Transactional
     public UserResponse updateUserStatus(
             @PathVariable Integer id,
             @Valid @RequestBody
@@ -442,39 +559,47 @@ public class UserController {
         validateUserId(id);
 
         if (
-                request == null ||
-                        request.getStatus() == null ||
-                        request.getStatus().isBlank()
+                request == null
+                        || request.getStatus()
+                        == null
+                        || request.getStatus()
+                        .isBlank()
         ) {
             throw new RuntimeException(
                     "Status is required"
             );
         }
 
-        User targetUser = findUserById(id);
+        User targetUser =
+                findUserById(id);
 
-        String status = normalizeStatus(
-                request.getStatus()
-        );
+        String status =
+                normalizeStatus(
+                        request.getStatus()
+                );
 
-        if (!SUPPORTED_STATUSES.contains(status)) {
+        if (
+                !SUPPORTED_STATUSES.contains(
+                        status
+                )
+        ) {
             throw new RuntimeException(
                     "Invalid status"
             );
         }
 
-        User currentUser = getCurrentUser();
+        User currentUser =
+                getCurrentUser();
 
-        /*
-         * Admin không được tự khóa hoặc vô hiệu hóa
-         * chính tài khoản đang sử dụng.
-         */
         if (
-                currentUser.getId().equals(id) &&
-                        (
-                                STATUS_BANNED.equals(status) ||
-                                        STATUS_INACTIVE.equals(status)
+                currentUser.getId()
+                        .equals(id)
+                        && (
+                        STATUS_BANNED.equals(status)
+                                || STATUS_INACTIVE.equals(
+                                status
                         )
+                )
         ) {
             throw new RuntimeException(
                     "You cannot disable your own account"
@@ -482,33 +607,49 @@ public class UserController {
         }
 
         targetUser.setStatus(status);
-        targetUser.setUpdatedAt(Instant.now());
+
+        targetUser.setUpdatedAt(
+                Instant.now()
+        );
 
         /*
          * Tài khoản bị khóa hoặc vô hiệu hóa
-         * không còn được xem là online.
+         * phải được chuyển offline ngay.
          */
         if (
-                STATUS_BANNED.equals(status) ||
-                        STATUS_INACTIVE.equals(status)
+                STATUS_BANNED.equals(status)
+                        || STATUS_INACTIVE.equals(
+                        status
+                )
         ) {
-            targetUser.setLastActiveAt(null);
+            targetUser.setLastActiveAt(
+                    null
+            );
         }
 
-        User savedUser = userRepository.save(targetUser);
+        User savedUser =
+                userRepository.save(
+                        targetUser
+                );
 
         publishUserStatus(
                 savedUser,
                 isUserOnline(savedUser)
         );
 
-        return mapToUserResponse(savedUser);
+        return mapToUserResponse(
+                savedUser
+        );
     }
 
-    /*
-     * System Admin đặt lại mật khẩu cho tài khoản.
+    /**
+     * System Admin đặt lại mật khẩu.
+     *
+     * Reset mật khẩu không được tự động thay đổi
+     * thời gian hoạt động của tài khoản.
      */
     @PutMapping("/{id}/reset-password")
+    @Transactional
     public UserResponse resetPassword(
             @PathVariable Integer id,
             @Valid @RequestBody
@@ -517,16 +658,19 @@ public class UserController {
         validateUserId(id);
 
         if (
-                request == null ||
-                        request.getNewPassword() == null ||
-                        request.getNewPassword().isBlank()
+                request == null
+                        || request.getNewPassword()
+                        == null
+                        || request.getNewPassword()
+                        .isBlank()
         ) {
             throw new RuntimeException(
                     "New password is required"
             );
         }
 
-        User user = findUserById(id);
+        User user =
+                findUserById(id);
 
         user.setPassword(
                 passwordEncoder.encode(
@@ -534,24 +678,24 @@ public class UserController {
                 )
         );
 
+        user.setUpdatedAt(
+                Instant.now()
+        );
+
+        User savedUser =
+                userRepository.save(user);
+
         /*
-         * Đánh dấu offline sau khi reset mật khẩu.
+         * Không xóa lastActiveAt.
+         * Không publish sự kiện offline.
          */
-        user.setLastActiveAt(null);
-        user.setUpdatedAt(Instant.now());
-
-        User savedUser = userRepository.save(user);
-
-        publishUserStatus(savedUser, false);
-
-        return mapToUserResponse(savedUser);
+        return mapToUserResponse(
+                savedUser
+        );
     }
 
-    /*
-     * Lấy user đang đăng nhập từ Security Context.
-     *
-     * JwtAuthenticationFilter hiện đặt principal
-     * là email dạng String.
+    /**
+     * Lấy user hiện tại từ Security Context.
      */
     private User getCurrentUser() {
         Authentication authentication =
@@ -560,15 +704,19 @@ public class UserController {
                         .getAuthentication();
 
         if (
-                authentication == null ||
-                        !authentication.isAuthenticated()
+                authentication == null
+                        || !authentication
+                        .isAuthenticated()
+                        || authentication
+                        instanceof AnonymousAuthenticationToken
         ) {
             throw new RuntimeException(
                     "Current user not found"
             );
         }
 
-        Object principal = authentication.getPrincipal();
+        Object principal =
+                authentication.getPrincipal();
 
         String email = null;
 
@@ -576,34 +724,45 @@ public class UserController {
             return currentUser;
         }
 
-        if (principal instanceof UserDetails userDetails) {
-            email = userDetails.getUsername();
-        } else if (principal instanceof String principalString) {
-            email = principalString;
-        }
-
         if (
-                email == null ||
-                        email.isBlank() ||
-                        "anonymousUser".equalsIgnoreCase(email)
+                principal instanceof
+                        UserDetails userDetails
         ) {
-            email = authentication.getName();
+            email =
+                    userDetails.getUsername();
+        } else if (
+                principal instanceof
+                        String principalString
+        ) {
+            email =
+                    principalString;
         }
 
         if (
-                email == null ||
-                        email.isBlank() ||
-                        "anonymousUser".equalsIgnoreCase(email)
+                email == null
+                        || email.isBlank()
+                        || "anonymousUser"
+                        .equalsIgnoreCase(email)
+        ) {
+            email =
+                    authentication.getName();
+        }
+
+        if (
+                email == null
+                        || email.isBlank()
+                        || "anonymousUser"
+                        .equalsIgnoreCase(email)
         ) {
             throw new RuntimeException(
                     "Current user not found"
             );
         }
 
-        String normalizedEmail = normalizeEmail(email);
-
         return userRepository
-                .findByEmail(normalizedEmail)
+                .findByEmail(
+                        normalizeEmail(email)
+                )
                 .orElseThrow(
                         () -> new RuntimeException(
                                 "Current user not found"
@@ -611,8 +770,8 @@ public class UserController {
                 );
     }
 
-    /*
-     * Chuyển User entity thành response gửi frontend.
+    /**
+     * Chuyển User entity thành response.
      */
     private UserResponse mapToUserResponse(
             User user
@@ -627,11 +786,13 @@ public class UserController {
         String roleName = null;
 
         if (user.getRole() != null) {
-            roleId = user.getRole().getId();
+            roleId =
+                    user.getRole().getId();
 
-            roleName = normalizeRoleName(
-                    user.getRole()
-            );
+            roleName =
+                    normalizeRoleName(
+                            user.getRole()
+                    );
         }
 
         return UserResponse.builder()
@@ -646,8 +807,12 @@ public class UserController {
                 )
                 .roleId(roleId)
                 .roleName(roleName)
-                .createdAt(user.getCreatedAt())
-                .updatedAt(user.getUpdatedAt())
+                .createdAt(
+                        user.getCreatedAt()
+                )
+                .updatedAt(
+                        user.getUpdatedAt()
+                )
                 .lastLoginAt(
                         user.getLastLoginAt()
                 )
@@ -660,11 +825,12 @@ public class UserController {
                 .build();
     }
 
-    /*
+    /**
      * User chỉ được xem là online khi:
+     *
      * - status là ACTIVE;
      * - lastActiveAt khác null;
-     * - heartbeat gần nhất không quá 90 giây.
+     * - heartbeat không quá 90 giây.
      */
     private boolean isUserOnline(
             User user
@@ -695,51 +861,62 @@ public class UserController {
             return false;
         }
 
-        long seconds = Duration.between(
-                lastActiveAt,
-                Instant.now()
-        ).getSeconds();
+        long seconds =
+                Duration.between(
+                                lastActiveAt,
+                                Instant.now()
+                        )
+                        .getSeconds();
 
         return seconds >= 0
-                && seconds <= ONLINE_TIMEOUT_SECONDS;
+                && seconds
+                <= ONLINE_TIMEOUT_SECONDS;
     }
 
+    /**
+     * Chỉ dùng cho sự kiện trạng thái thật:
+     *
+     * - heartbeat;
+     * - logout/offline;
+     * - khóa/vô hiệu hóa tài khoản;
+     * - tạo tài khoản mới.
+     */
     private void publishUserStatus(
             User user,
             boolean online
     ) {
         if (
-                user == null ||
-                        user.getId() == null
+                user == null
+                        || user.getId() == null
         ) {
             return;
         }
 
-        userStatusEventService.publishUserStatus(
-                UserStatusEvent.builder()
-                        .userId(user.getId())
-                        .status(
-                                normalizeStatus(
-                                        user.getStatus()
+        userStatusEventService
+                .publishUserStatus(
+                        UserStatusEvent.builder()
+                                .userId(
+                                        user.getId()
                                 )
-                        )
-                        .online(online)
-                        .lastLoginAt(
-                                user.getLastLoginAt()
-                        )
-                        .lastActiveAt(
-                                user.getLastActiveAt()
-                        )
-                        .updatedAt(
-                                user.getUpdatedAt()
-                        )
-                        .build()
-        );
+                                .status(
+                                        normalizeStatus(
+                                                user.getStatus()
+                                        )
+                                )
+                                .online(online)
+                                .lastLoginAt(
+                                        user.getLastLoginAt()
+                                )
+                                .lastActiveAt(
+                                        user.getLastActiveAt()
+                                )
+                                .updatedAt(
+                                        user.getUpdatedAt()
+                                )
+                                .build()
+                );
     }
 
-    /*
-     * Tìm user theo ID.
-     */
     private User findUserById(
             Integer id
     ) {
@@ -752,9 +929,6 @@ public class UserController {
                 );
     }
 
-    /*
-     * Tìm role theo role ID và kiểm tra role hợp lệ.
-     */
     private Role findAndValidateRole(
             Integer roleId
     ) {
@@ -764,17 +938,24 @@ public class UserController {
             );
         }
 
-        Role role = roleRepository
-                .findById(roleId)
-                .orElseThrow(
-                        () -> new RuntimeException(
-                                "Role not found"
-                        )
-                );
+        Role role =
+                roleRepository
+                        .findById(roleId)
+                        .orElseThrow(
+                                () ->
+                                        new RuntimeException(
+                                                "Role not found"
+                                        )
+                        );
 
-        String roleName = normalizeRoleName(role);
+        String roleName =
+                normalizeRoleName(role);
 
-        if (!SUPPORTED_ROLES.contains(roleName)) {
+        if (
+                !SUPPORTED_ROLES.contains(
+                        roleName
+                )
+        ) {
             throw new RuntimeException(
                     "Role is not supported"
             );
@@ -783,9 +964,6 @@ public class UserController {
         return role;
     }
 
-    /*
-     * Kiểm tra dữ liệu tạo user.
-     */
     private void validateCreateUserRequest(
             CreateUserRequest request
     ) {
@@ -796,8 +974,9 @@ public class UserController {
         }
 
         if (
-                request.getFullName() == null ||
-                        request.getFullName().isBlank()
+                request.getFullName() == null
+                        || request.getFullName()
+                        .isBlank()
         ) {
             throw new RuntimeException(
                     "Full name is required"
@@ -805,8 +984,9 @@ public class UserController {
         }
 
         if (
-                request.getEmail() == null ||
-                        request.getEmail().isBlank()
+                request.getEmail() == null
+                        || request.getEmail()
+                        .isBlank()
         ) {
             throw new RuntimeException(
                     "Email is required"
@@ -814,15 +994,19 @@ public class UserController {
         }
 
         if (
-                request.getPassword() == null ||
-                        request.getPassword().isBlank()
+                request.getPassword() == null
+                        || request.getPassword()
+                        .isBlank()
         ) {
             throw new RuntimeException(
                     "Password is required"
             );
         }
 
-        if (request.getRoleId() == null) {
+        if (
+                request.getRoleId()
+                        == null
+        ) {
             throw new RuntimeException(
                     "Role is required"
             );
@@ -832,7 +1016,10 @@ public class UserController {
     private void validateUserId(
             Integer id
     ) {
-        if (id == null || id <= 0) {
+        if (
+                id == null
+                        || id <= 0
+        ) {
             throw new RuntimeException(
                     "Invalid user ID"
             );
@@ -865,8 +1052,8 @@ public class UserController {
             String email
     ) {
         if (
-                email == null ||
-                        email.isBlank()
+                email == null
+                        || email.isBlank()
         ) {
             throw new RuntimeException(
                     "Email is required"
@@ -875,50 +1062,62 @@ public class UserController {
 
         return email
                 .trim()
-                .toLowerCase();
+                .toLowerCase(
+                        Locale.ROOT
+                );
     }
 
     private String normalizeStatus(
             String status
     ) {
         if (
-                status == null ||
-                        status.isBlank()
+                status == null
+                        || status.isBlank()
         ) {
             return "";
         }
 
         return status
                 .trim()
-                .toUpperCase();
+                .toUpperCase(
+                        Locale.ROOT
+                );
     }
 
-    /*
-     * Chuẩn hóa role.
-     *
+    /**
      * Ví dụ:
+     *
      * ROLE_PARKING_STAFF -> PARKING_STAFF
      */
     private String normalizeRoleName(
             Role role
     ) {
         if (
-                role == null ||
-                        role.getRoleName() == null ||
-                        role.getRoleName().isBlank()
+                role == null
+                        || role.getRoleName()
+                        == null
+                        || role.getRoleName()
+                        .isBlank()
         ) {
             throw new RuntimeException(
                     "Role name is missing"
             );
         }
 
-        String roleName = role
-                .getRoleName()
-                .trim()
-                .toUpperCase();
+        String roleName =
+                role.getRoleName()
+                        .trim()
+                        .toUpperCase(
+                                Locale.ROOT
+                        );
 
-        if (roleName.startsWith("ROLE_")) {
-            roleName = roleName.substring(5);
+        if (
+                roleName.startsWith(
+                        "ROLE_"
+                )
+        ) {
+            roleName =
+                    roleName.substring(5);
         }
 
         if (roleName.isBlank()) {
@@ -934,8 +1133,8 @@ public class UserController {
             String value
     ) {
         if (
-                value == null ||
-                        value.isBlank()
+                value == null
+                        || value.isBlank()
         ) {
             return null;
         }
