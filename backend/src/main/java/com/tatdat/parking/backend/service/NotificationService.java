@@ -12,12 +12,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -31,19 +27,18 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
-    private final NotificationEventService notificationEventService;
 
     /**
      * Tạo notification cá nhân.
      *
      * Dùng cho:
-     * - Driver booking thành công.
-     * - Driver hủy booking.
-     * - Staff/Admin check-in.
+     * - Driver booking thành công;
+     * - Driver hủy booking;
+     * - Staff/Admin check-in;
      * - Staff/Admin checkout.
      *
-     * Sau khi transaction lưu database thành công,
-     * notification sẽ được đẩy realtime đến đúng user qua SSE.
+     * Notification được lưu trong database.
+     * Frontend sẽ lấy dữ liệu bằng API thông thường hoặc polling.
      */
     @Transactional
     public NotificationResponse createPersonalNotification(
@@ -78,24 +73,13 @@ public class NotificationService {
                 );
 
         Notification savedNotification =
-                notificationRepository.save(notification);
-
-        NotificationResponse response =
-                NotificationResponse.fromEntity(
-                        savedNotification
+                notificationRepository.save(
+                        notification
                 );
 
-        /*
-         * Chỉ publish sau khi transaction commit thành công.
-         * Điều này tránh frontend nhận SSE trước khi dữ liệu
-         * thực sự tồn tại trong database.
-         */
-        publishAfterCommit(
-                recipientUserId,
-                response
+        return NotificationResponse.fromEntity(
+                savedNotification
         );
-
-        return response;
     }
 
     /**
@@ -104,13 +88,13 @@ public class NotificationService {
      * Mỗi user nhận một bản ghi Notification riêng,
      * do đó trạng thái đã đọc của các user không ảnh hưởng nhau.
      *
-     * Sau khi saveAll commit thành công, mỗi user đang mở website
-     * sẽ nhận notification realtime qua SSE.
-     *
      * Dùng khi Manager/Admin thay đổi:
      * - Price per hour;
      * - Overtime fee;
      * - Overstay fee.
+     *
+     * Notification được lưu trong database.
+     * Frontend sẽ đồng bộ bằng API hoặc polling.
      */
     @Transactional
     public void broadcastNotification(
@@ -137,15 +121,14 @@ public class NotificationService {
                         notificationType
                 );
 
-        /*
-         * Broadcast đến toàn bộ account trong database.
-         * Mỗi account có một row notification riêng.
-         */
         List<User> recipients =
                 userRepository
                         .findAllByOrderByIdDesc();
 
-        if (recipients == null || recipients.isEmpty()) {
+        if (
+                recipients == null
+                        || recipients.isEmpty()
+        ) {
             return;
         }
 
@@ -174,65 +157,9 @@ public class NotificationService {
             return;
         }
 
-        List<Notification> savedNotifications =
-                notificationRepository.saveAll(
-                        notifications
-                );
-
-        /*
-         * Chuẩn bị dữ liệu SSE ngay trong transaction
-         * để không phụ thuộc lazy-loading sau khi commit.
-         */
-        List<PendingRealtimeNotification> pendingEvents =
-                new ArrayList<>();
-
-        for (Notification savedNotification : savedNotifications) {
-            if (
-                    savedNotification == null
-                            || savedNotification.getRecipient() == null
-                            || savedNotification.getRecipient().getId() == null
-            ) {
-                continue;
-            }
-
-            NotificationResponse response =
-                    NotificationResponse.fromEntity(
-                            savedNotification
-                    );
-
-            pendingEvents.add(
-                    new PendingRealtimeNotification(
-                            savedNotification
-                                    .getRecipient()
-                                    .getId(),
-                            response
-                    )
-            );
-        }
-
-        publishAllAfterCommit(
-                pendingEvents
+        notificationRepository.saveAll(
+                notifications
         );
-    }
-
-    /**
-     * Mở kết nối SSE cho tài khoản đang đăng nhập.
-     *
-     * NotificationController gọi method này tại:
-     * GET /api/notifications/stream
-     *
-     * User ID được lấy từ JWT/Security Context,
-     * frontend không được truyền userId.
-     */
-    @Transactional(readOnly = true)
-    public SseEmitter subscribeToMyNotifications() {
-        User currentUser =
-                getCurrentAuthenticatedUser();
-
-        return notificationEventService
-                .subscribe(
-                        currentUser.getId()
-                );
     }
 
     /**
@@ -278,7 +205,10 @@ public class NotificationService {
     public NotificationResponse markMyNotificationAsRead(
             Long notificationId
     ) {
-        if (notificationId == null || notificationId <= 0) {
+        if (
+                notificationId == null
+                        || notificationId <= 0
+        ) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Notification ID is required"
@@ -353,7 +283,10 @@ public class NotificationService {
             String message,
             String notificationType
     ) {
-        if (recipient == null || recipient.getId() == null) {
+        if (
+                recipient == null
+                        || recipient.getId() == null
+        ) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Notification recipient is required"
@@ -391,108 +324,6 @@ public class NotificationService {
     }
 
     /**
-     * Publish một notification sau khi transaction commit.
-     */
-    private void publishAfterCommit(
-            Integer recipientUserId,
-            NotificationResponse response
-    ) {
-        if (
-                recipientUserId == null
-                        || recipientUserId <= 0
-                        || response == null
-        ) {
-            return;
-        }
-
-        if (
-                TransactionSynchronizationManager
-                        .isSynchronizationActive()
-        ) {
-            TransactionSynchronizationManager
-                    .registerSynchronization(
-                            new TransactionSynchronization() {
-                                @Override
-                                public void afterCommit() {
-                                    notificationEventService.publish(
-                                            recipientUserId,
-                                            response
-                                    );
-                                }
-                            }
-                    );
-
-            return;
-        }
-
-        /*
-         * Trường hợp method được gọi ngoài transaction.
-         */
-        notificationEventService.publish(
-                recipientUserId,
-                response
-        );
-    }
-
-    /**
-     * Publish danh sách notification sau khi transaction commit.
-     */
-    private void publishAllAfterCommit(
-            List<PendingRealtimeNotification> pendingEvents
-    ) {
-        if (
-                pendingEvents == null
-                        || pendingEvents.isEmpty()
-        ) {
-            return;
-        }
-
-        List<PendingRealtimeNotification> safeEvents =
-                List.copyOf(
-                        pendingEvents
-                );
-
-        Runnable publisher = () -> {
-            for (
-                    PendingRealtimeNotification pendingEvent
-                    : safeEvents
-            ) {
-                if (
-                        pendingEvent == null
-                                || pendingEvent.getRecipientUserId() == null
-                                || pendingEvent.getResponse() == null
-                ) {
-                    continue;
-                }
-
-                notificationEventService.publish(
-                        pendingEvent.getRecipientUserId(),
-                        pendingEvent.getResponse()
-                );
-            }
-        };
-
-        if (
-                TransactionSynchronizationManager
-                        .isSynchronizationActive()
-        ) {
-            TransactionSynchronizationManager
-                    .registerSynchronization(
-                            new TransactionSynchronization() {
-                                @Override
-                                public void afterCommit() {
-                                    publisher.run();
-                                }
-                            }
-                    );
-
-            return;
-        }
-
-        publisher.run();
-    }
-
-    /**
      * Lấy tài khoản hiện tại từ JWT/Spring Security.
      *
      * authentication.getName() trong hệ thống hiện tại
@@ -519,7 +350,10 @@ public class NotificationService {
         String email =
                 authentication.getName();
 
-        if (email == null || email.isBlank()) {
+        if (
+                email == null
+                        || email.isBlank()
+        ) {
             throw new ResponseStatusException(
                     HttpStatus.UNAUTHORIZED,
                     "Authenticated user email is missing"
@@ -547,7 +381,10 @@ public class NotificationService {
             String fieldName,
             int maximumLength
     ) {
-        if (value == null || value.isBlank()) {
+        if (
+                value == null
+                        || value.isBlank()
+        ) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     fieldName + " is required"
@@ -600,33 +437,5 @@ public class NotificationService {
         }
 
         return normalizedType;
-    }
-
-    /**
-     * Dữ liệu chờ publish realtime sau commit.
-     *
-     * Dùng class thông thường để tương thích tốt
-     * với các phiên bản Java cũ hơn.
-     */
-    private static final class PendingRealtimeNotification {
-
-        private final Integer recipientUserId;
-        private final NotificationResponse response;
-
-        private PendingRealtimeNotification(
-                Integer recipientUserId,
-                NotificationResponse response
-        ) {
-            this.recipientUserId = recipientUserId;
-            this.response = response;
-        }
-
-        private Integer getRecipientUserId() {
-            return recipientUserId;
-        }
-
-        private NotificationResponse getResponse() {
-            return response;
-        }
     }
 }

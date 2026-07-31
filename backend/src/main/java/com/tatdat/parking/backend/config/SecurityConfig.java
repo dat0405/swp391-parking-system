@@ -204,15 +204,6 @@ public class SecurityConfig {
                                 .hasAnyRole(ALL_SYSTEM_ROLES)
 
                                 /*
-                                 * Theo dõi trạng thái user chỉ dành cho Admin.
-                                 */
-                                .requestMatchers(
-                                        HttpMethod.GET,
-                                        "/api/users/status-stream"
-                                )
-                                .hasRole("SYSTEM_ADMIN")
-
-                                /*
                                  * User Management chỉ dành cho Admin.
                                  */
                                 .requestMatchers(

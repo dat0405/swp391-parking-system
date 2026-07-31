@@ -9,7 +9,6 @@ import com.tatdat.parking.backend.dto.LogoutRequest;
 import com.tatdat.parking.backend.dto.RefreshTokenRequest;
 import com.tatdat.parking.backend.dto.RegisterRequest;
 import com.tatdat.parking.backend.dto.ResetForgotPasswordRequest;
-import com.tatdat.parking.backend.dto.UserStatusEvent;
 import com.tatdat.parking.backend.entity.RefreshToken;
 import com.tatdat.parking.backend.entity.Role;
 import com.tatdat.parking.backend.entity.User;
@@ -19,7 +18,6 @@ import com.tatdat.parking.backend.repository.UserRepository;
 import com.tatdat.parking.backend.security.JwtService;
 import com.tatdat.parking.backend.security.RefreshTokenService;
 import com.tatdat.parking.backend.service.PasswordResetService;
-import com.tatdat.parking.backend.service.UserStatusEventService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +51,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthController {
 
+    /*
+     * Realtime SSE đã được loại bỏ để tránh giữ kết nối dài hạn.
+     *
+     * Login, refresh token và logout vẫn cập nhật lastLoginAt/
+     * lastActiveAt trong database. Frontend sẽ đồng bộ trạng thái
+     * người dùng bằng polling định kỳ.
+     */
+
     private static final String ACCESS_TOKEN_COOKIE =
             "access_token";
 
@@ -84,8 +90,7 @@ public class AuthController {
                     "SYSTEM_ADMIN",
                     "PARKING_MANAGER",
                     "PARKING_STAFF",
-                    "DRIVER",
-                    "USER"
+                    "DRIVER"
             );
 
     private final UserRepository userRepository;
@@ -94,7 +99,6 @@ public class AuthController {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final PasswordResetService passwordResetService;
-    private final UserStatusEventService userStatusEventService;
 
     @Value("${google.client-id:}")
     private String googleClientId;
@@ -525,8 +529,6 @@ public class AuthController {
 
         userRepository.save(user);
 
-        publishUserStatus(user, true);
-
         String newAccessToken =
                 jwtService.generateAccessToken(user);
 
@@ -612,7 +614,6 @@ public class AuthController {
      * PARKING_MANAGER
      * PARKING_STAFF
      * DRIVER
-     * USER
      */
     @GetMapping("/me")
     public AuthResponse getCurrentUser(
@@ -777,7 +778,8 @@ public class AuthController {
     }
 
     /**
-     * Hoàn tất đăng nhập, tạo JWT và refresh token.
+     * Hoàn tất đăng nhập, cập nhật hoạt động,
+     * tạo JWT và refresh token.
      */
     private AuthResponse completeSuccessfulLogin(
             User user,
@@ -793,8 +795,6 @@ public class AuthController {
         user.setUpdatedAt(now);
 
         userRepository.save(user);
-
-        publishUserStatus(user, true);
 
         String accessToken =
                 jwtService.generateAccessToken(user);
@@ -1150,28 +1150,6 @@ public class AuthController {
                 .build();
     }
 
-    private void publishUserStatus(
-            User user,
-            boolean online
-    ) {
-        userStatusEventService.publishUserStatus(
-                UserStatusEvent.builder()
-                        .userId(user.getId())
-                        .status(user.getStatus())
-                        .online(online)
-                        .lastLoginAt(
-                                user.getLastLoginAt()
-                        )
-                        .lastActiveAt(
-                                user.getLastActiveAt()
-                        )
-                        .updatedAt(
-                                user.getUpdatedAt()
-                        )
-                        .build()
-        );
-    }
-
     /**
      * Thu hồi refresh token và cập nhật user offline.
      */
@@ -1199,10 +1177,6 @@ public class AuthController {
 
                 userRepository.save(user);
 
-                publishUserStatus(
-                        user,
-                        false
-                );
             }
 
         } catch (Exception ignored) {

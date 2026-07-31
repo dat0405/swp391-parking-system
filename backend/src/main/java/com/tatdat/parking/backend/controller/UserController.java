@@ -6,12 +6,10 @@ import com.tatdat.parking.backend.dto.UpdateUserRequest;
 import com.tatdat.parking.backend.dto.UpdateUserRoleRequest;
 import com.tatdat.parking.backend.dto.UpdateUserStatusRequest;
 import com.tatdat.parking.backend.dto.UserResponse;
-import com.tatdat.parking.backend.dto.UserStatusEvent;
 import com.tatdat.parking.backend.entity.Role;
 import com.tatdat.parking.backend.entity.User;
 import com.tatdat.parking.backend.repository.RoleRepository;
 import com.tatdat.parking.backend.repository.UserRepository;
-import com.tatdat.parking.backend.service.UserStatusEventService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -27,7 +25,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -39,6 +36,13 @@ import java.util.Set;
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
 public class UserController {
+
+    /*
+     * SSE đã được loại bỏ để tránh giữ kết nối dài hạn.
+     *
+     * Trạng thái online/offline vẫn được xác định từ lastActiveAt.
+     * Frontend sẽ tải lại danh sách user theo chu kỳ polling.
+     */
 
     /**
      * User được xem là online nếu heartbeat gần nhất
@@ -82,7 +86,6 @@ public class UserController {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
-    private final UserStatusEventService userStatusEventService;
 
     /**
      * Lấy danh sách tất cả tài khoản.
@@ -97,14 +100,6 @@ public class UserController {
                 .stream()
                 .map(this::mapToUserResponse)
                 .toList();
-    }
-
-    /**
-     * SSE theo dõi trạng thái online/offline.
-     */
-    @GetMapping("/status-stream")
-    public SseEmitter streamUserStatus() {
-        return userStatusEventService.subscribe();
     }
 
     /**
@@ -139,11 +134,6 @@ public class UserController {
                         currentUser
                 );
 
-        publishUserStatus(
-                savedUser,
-                true
-        );
-
         return mapToUserResponse(
                 savedUser
         );
@@ -173,11 +163,6 @@ public class UserController {
                 userRepository.save(
                         currentUser
                 );
-
-        publishUserStatus(
-                savedUser,
-                false
-        );
 
         return mapToUserResponse(
                 savedUser
@@ -282,11 +267,6 @@ public class UserController {
 
         User savedUser =
                 userRepository.save(user);
-
-        publishUserStatus(
-                savedUser,
-                false
-        );
 
         return mapToUserResponse(
                 savedUser
@@ -403,8 +383,8 @@ public class UserController {
                 userRepository.save(user);
 
         /*
-         * Không publish SSE trạng thái vì chỉnh sửa thông tin
-         * không phải login, logout hoặc heartbeat.
+         * Chỉnh sửa thông tin không thay đổi lastActiveAt
+         * và không làm thay đổi trạng thái online/offline.
          */
         return mapToUserResponse(
                 savedUser
@@ -531,11 +511,10 @@ public class UserController {
                 );
 
         /*
-         * Không gọi publishUserStatus().
-         *
          * Đổi role không phải là sự kiện hoạt động.
-         * Nếu JWT cũ không còn hợp lệ, heartbeat của user
-         * sẽ dừng và user tự chuyển offline sau timeout.
+         *
+         * Không thay đổi lastActiveAt. Nếu heartbeat của user
+         * dừng, trạng thái sẽ tự chuyển offline sau timeout.
          */
         return mapToUserResponse(
                 savedUser
@@ -632,11 +611,6 @@ public class UserController {
                         targetUser
                 );
 
-        publishUserStatus(
-                savedUser,
-                isUserOnline(savedUser)
-        );
-
         return mapToUserResponse(
                 savedUser
         );
@@ -686,8 +660,8 @@ public class UserController {
                 userRepository.save(user);
 
         /*
-         * Không xóa lastActiveAt.
-         * Không publish sự kiện offline.
+         * Không xóa lastActiveAt và không làm thay đổi
+         * trạng thái online/offline hiện tại.
          */
         return mapToUserResponse(
                 savedUser
@@ -871,50 +845,6 @@ public class UserController {
         return seconds >= 0
                 && seconds
                 <= ONLINE_TIMEOUT_SECONDS;
-    }
-
-    /**
-     * Chỉ dùng cho sự kiện trạng thái thật:
-     *
-     * - heartbeat;
-     * - logout/offline;
-     * - khóa/vô hiệu hóa tài khoản;
-     * - tạo tài khoản mới.
-     */
-    private void publishUserStatus(
-            User user,
-            boolean online
-    ) {
-        if (
-                user == null
-                        || user.getId() == null
-        ) {
-            return;
-        }
-
-        userStatusEventService
-                .publishUserStatus(
-                        UserStatusEvent.builder()
-                                .userId(
-                                        user.getId()
-                                )
-                                .status(
-                                        normalizeStatus(
-                                                user.getStatus()
-                                        )
-                                )
-                                .online(online)
-                                .lastLoginAt(
-                                        user.getLastLoginAt()
-                                )
-                                .lastActiveAt(
-                                        user.getLastActiveAt()
-                                )
-                                .updatedAt(
-                                        user.getUpdatedAt()
-                                )
-                                .build()
-                );
     }
 
     private User findUserById(
