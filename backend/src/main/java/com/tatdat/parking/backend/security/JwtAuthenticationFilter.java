@@ -43,8 +43,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     "SYSTEM_ADMIN",
                     "PARKING_MANAGER",
                     "PARKING_STAFF",
-                    "DRIVER",
-                    "USER"
+                    "DRIVER"
             );
 
     private final JwtService jwtService;

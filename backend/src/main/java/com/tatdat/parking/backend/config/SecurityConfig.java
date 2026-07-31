@@ -68,7 +68,8 @@ public class SecurityConfig {
          * - Nhận diện biển số
          * - Thanh toán checkout
          *
-         * PARKING_MANAGER không thuộc nhóm này.
+         * Chỉ PARKING_STAFF và SYSTEM_ADMIN.
+         * PARKING_MANAGER không được truy cập các chức năng tại cổng.
          */
         private static final String[] GATE_ROLES = {
                 "PARKING_STAFF",
