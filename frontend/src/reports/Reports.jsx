@@ -17,7 +17,10 @@ import {
   Bike,
   CheckCircle2,
   XCircle,
-  Clock
+  Clock,
+  TrendingUp,
+  TrendingDown,
+  Minus
 } from "lucide-react";
 
 const emptyReport = {
@@ -178,6 +181,48 @@ const normalizeChartData = (rows = []) => {
   }));
 };
 
+const normalizeMonthlyComparison = (rows = []) => {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+
+  return rows.map((item) => ({
+    year: Number(item.year || 0),
+    month: Number(item.month || 0),
+    monthLabel: String(item.monthLabel || "N/A"),
+    totalRevenue: Number(item.totalRevenue || 0),
+    totalSessions: Number(item.totalSessions || 0),
+    totalReservations: Number(item.totalReservations || 0),
+    completedReservations: Number(item.completedReservations || 0),
+    cancelledReservations: Number(item.cancelledReservations || 0),
+    averageOccupancy: Number(item.averageOccupancy || 0),
+    paymentCount: Number(item.paymentCount || 0),
+    revenueGrowthPercent: Number(item.revenueGrowthPercent || 0),
+    sessionGrowthPercent: Number(item.sessionGrowthPercent || 0),
+    reservationGrowthPercent: Number(
+      item.reservationGrowthPercent || 0
+    )
+  }));
+};
+
+const calculateGrowthPercent = (previousValue, currentValue) => {
+  const previous = Number(previousValue || 0);
+  const current = Number(currentValue || 0);
+
+  if (previous === 0) {
+    return current === 0 ? 0 : 100;
+  }
+
+  return ((current - previous) / Math.abs(previous)) * 100;
+};
+
+const formatGrowthPercent = (value) => {
+  const number = Number(value || 0);
+  const sign = number > 0 ? "+" : "";
+
+  return `${sign}${number.toFixed(1)}%`;
+};
+
 const styles = {
   card: {
     background: "var(--bg-card)",
@@ -218,10 +263,15 @@ function ProgressBar({ percent, colorClass, height = 9 }) {
 
 const Reports = () => {
   const [timeRange, setTimeRange] = useState("Week");
+  const [comparisonMonths, setComparisonMonths] = useState(6);
+  const [monthlyComparison, setMonthlyComparison] = useState([]);
   const [report, setReport] = useState(emptyReport);
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  const isMonthlyComparison =
+    timeRange === "Monthly Comparison";
 
   const apiRange = rangeToApiValue[timeRange] || "WEEK";
 
@@ -236,32 +286,61 @@ const Reports = () => {
         setLoading(true);
         setErrorMessage("");
 
-        const response = await reportDashboardApi.getReportDashboard(apiRange);
+        if (isMonthlyComparison) {
+          const response =
+            await reportDashboardApi.getMonthlyComparison(
+              comparisonMonths
+            );
 
-        if (!isMounted) return;
+          if (!isMounted) return;
 
-        setReport({
-          ...emptyReport,
-          ...(response.data || {}),
-          summary: {
-            ...emptyReport.summary,
-            ...(response.data?.summary || {})
-          },
-          revenueChart: response.data?.revenueChart || [],
-          vehicleDistribution: response.data?.vehicleDistribution || [],
-          reservationStatusBreakdown:
-            response.data?.reservationStatusBreakdown || [],
-          slotStatusBreakdown: response.data?.slotStatusBreakdown || [],
-          operationalLog: response.data?.operationalLog || []
-        });
+          setMonthlyComparison(
+            normalizeMonthlyComparison(response.data)
+          );
+        } else {
+          const response =
+            await reportDashboardApi.getReportDashboard(
+              apiRange
+            );
+
+          if (!isMounted) return;
+
+          setReport({
+            ...emptyReport,
+            ...(response.data || {}),
+            summary: {
+              ...emptyReport.summary,
+              ...(response.data?.summary || {})
+            },
+            revenueChart:
+              response.data?.revenueChart || [],
+            vehicleDistribution:
+              response.data?.vehicleDistribution || [],
+            reservationStatusBreakdown:
+              response.data?.reservationStatusBreakdown || [],
+            slotStatusBreakdown:
+              response.data?.slotStatusBreakdown || [],
+            operationalLog:
+              response.data?.operationalLog || []
+          });
+        }
       } catch (error) {
         if (!isMounted) return;
 
-        console.error("Failed to load report dashboard:", error);
-        setErrorMessage("Failed to load report data from server.");
+        console.error("Failed to load report data:", error);
+
+        setErrorMessage(
+          isMonthlyComparison
+            ? "Failed to load monthly comparison data from server."
+            : "Failed to load report data from server."
+        );
 
         if (!hasLoadedOnce) {
-          setReport(emptyReport);
+          if (isMonthlyComparison) {
+            setMonthlyComparison([]);
+          } else {
+            setReport(emptyReport);
+          }
         }
       } finally {
         if (isMounted) {
@@ -276,7 +355,7 @@ const Reports = () => {
     return () => {
       isMounted = false;
     };
-  }, [apiRange]);
+  }, [apiRange, comparisonMonths, isMonthlyComparison]);
 
   const chartData = useMemo(() => {
     return normalizeChartData(report.revenueChart);
@@ -298,6 +377,69 @@ const Reports = () => {
   const summary = report.summary || emptyReport.summary;
 
   const handleExportCSV = () => {
+    if (isMonthlyComparison) {
+      const headers = [
+        "Month",
+        "Revenue",
+        "Payments",
+        "Sessions",
+        "Reservations",
+        "Completed",
+        "Cancelled",
+        "Average occupancy",
+        "Revenue growth",
+        "Session growth",
+        "Reservation growth"
+      ];
+
+      const rows = monthlyComparison.map((item) => [
+        item.monthLabel,
+        item.totalRevenue,
+        item.paymentCount,
+        item.totalSessions,
+        item.totalReservations,
+        item.completedReservations,
+        item.cancelledReservations,
+        item.averageOccupancy,
+        item.revenueGrowthPercent,
+        item.sessionGrowthPercent,
+        item.reservationGrowthPercent
+      ]);
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) =>
+          row
+            .map((value) =>
+              `"${String(value).replace(/"/g, '""')}"`
+            )
+            .join(",")
+        )
+      ].join("\n");
+
+      const blob = new Blob(
+        [`\ufeff${csvContent}`],
+        {
+          type: "text/csv;charset=utf-8;"
+        }
+      );
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.setAttribute("href", url);
+      link.setAttribute(
+        "download",
+        `Monthly_Comparison_${comparisonMonths}_Months.csv`
+      );
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      return;
+    }
+
     const headers = [
       "Session ID",
       "Ticket ID",
@@ -519,7 +661,7 @@ const Reports = () => {
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             <button
               onClick={handleExportCSV}
-              disabled={isInitialLoading}
+              disabled={loading}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -529,10 +671,10 @@ const Reports = () => {
                 border: "1px solid #1e293b",
                 borderRadius: "0.5rem",
                 color: "#ffffff",
-                cursor: isInitialLoading ? "not-allowed" : "pointer",
+                cursor: loading ? "not-allowed" : "pointer",
                 fontSize: "0.85rem",
                 fontWeight: "700",
-                opacity: isInitialLoading ? 0.6 : 1
+                opacity: loading ? 0.6 : 1
               }}
             >
               <Download size={16} />
@@ -573,7 +715,7 @@ const Reports = () => {
               TIME RANGE
             </span>
 
-            {["Today", "Week", "Month"].map((tab) => {
+            {["Today", "Week", "Month", "Monthly Comparison"].map((tab) => {
               const isSelected = timeRange === tab;
 
               return (
@@ -603,19 +745,65 @@ const Reports = () => {
             })}
           </div>
 
-          <span
+          <div
             style={{
-              color: "var(--text-main)",
-              fontSize: "0.78rem",
-              fontWeight: "800",
-              display: "inline-flex",
+              display: "flex",
               alignItems: "center",
-              minWidth: "120px",
-              justifyContent: "flex-end"
+              justifyContent: "flex-end",
+              gap: "0.75rem",
+              flexWrap: "wrap"
             }}
           >
-            {isInitialLoading ? "Loading..." : `Range: ${apiRange}`}
-          </span>
+            {isMonthlyComparison && (
+              <select
+                value={comparisonMonths}
+                onChange={(event) =>
+                  setComparisonMonths(
+                    Number(event.target.value)
+                  )
+                }
+                disabled={loading}
+                style={{
+                  background: "var(--bg-input)",
+                  border:
+                    "1px solid var(--border-color)",
+                  color: "var(--text-main)",
+                  borderRadius: "0.45rem",
+                  padding: "0.45rem 0.7rem",
+                  fontSize: "0.8rem",
+                  fontWeight: "700",
+                  cursor: loading
+                    ? "not-allowed"
+                    : "pointer"
+                }}
+              >
+                <option value={6}>
+                  Last 6 months
+                </option>
+                <option value={12}>
+                  Last 12 months
+                </option>
+              </select>
+            )}
+
+            <span
+              style={{
+                color: "var(--text-main)",
+                fontSize: "0.78rem",
+                fontWeight: "800",
+                display: "inline-flex",
+                alignItems: "center",
+                minWidth: "120px",
+                justifyContent: "flex-end"
+              }}
+            >
+              {isInitialLoading
+                ? "Loading..."
+                : isMonthlyComparison
+                  ? `Range: ${comparisonMonths} months`
+                  : `Range: ${apiRange}`}
+            </span>
+          </div>
         </div>
 
         {errorMessage && (
@@ -635,6 +823,14 @@ const Reports = () => {
           </div>
         )}
 
+        {isMonthlyComparison ? (
+          <MonthlyComparisonSection
+            data={monthlyComparison}
+            loading={loading && monthlyComparison.length === 0}
+            months={comparisonMonths}
+          />
+        ) : (
+          <>
         <div
           style={{
             display: "grid",
@@ -1441,10 +1637,684 @@ const Reports = () => {
             </div>
           </div>
         </div>
+          </>
+        )}
+
       </main>
     </div>
   );
 };
+
+function MonthlyComparisonSection({
+  data,
+  loading,
+  months
+}) {
+  const latestMonth =
+    data.length > 0
+      ? data[data.length - 1]
+      : null;
+
+  const previousMonth =
+    data.length > 1
+      ? data[data.length - 2]
+      : null;
+
+  const maxRevenue = Math.max(
+    ...data.map((item) => item.totalRevenue),
+    1
+  );
+
+  const maxActivity = Math.max(
+    ...data.flatMap((item) => [
+      item.totalSessions,
+      item.totalReservations
+    ]),
+    1
+  );
+
+  const occupancyGrowth = latestMonth
+    ? calculateGrowthPercent(
+        previousMonth?.averageOccupancy || 0,
+        latestMonth.averageOccupancy
+      )
+    : 0;
+
+  const cards = [
+    {
+      label: "CURRENT MONTH REVENUE",
+      value: formatCurrency(
+        latestMonth?.totalRevenue || 0
+      ),
+      growth:
+        latestMonth?.revenueGrowthPercent || 0,
+      hint: latestMonth?.monthLabel || "No data",
+      icon: DollarSign
+    },
+    {
+      label: "PARKING SESSIONS",
+      value: formatNumber(
+        latestMonth?.totalSessions || 0
+      ),
+      growth:
+        latestMonth?.sessionGrowthPercent || 0,
+      hint: "Compared with previous month",
+      icon: Activity
+    },
+    {
+      label: "RESERVATIONS",
+      value: formatNumber(
+        latestMonth?.totalReservations || 0
+      ),
+      growth:
+        latestMonth?.reservationGrowthPercent || 0,
+      hint: "Compared with previous month",
+      icon: Calendar
+    },
+    {
+      label: "AVERAGE OCCUPANCY",
+      value: formatPercent(
+        latestMonth?.averageOccupancy || 0
+      ),
+      growth: occupancyGrowth,
+      hint: "Monthly average occupancy",
+      icon: Percent
+    }
+  ];
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          ...styles.card,
+          borderRadius: "0.75rem",
+          minHeight: "340px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--text-muted)",
+          fontWeight: "700"
+        }}
+      >
+        Loading monthly comparison...
+      </div>
+    );
+  }
+
+  if (data.length === 0) {
+    return (
+      <div
+        style={{
+          ...styles.card,
+          borderRadius: "0.75rem",
+          minHeight: "260px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--text-muted)",
+          fontWeight: "700"
+        }}
+      >
+        No monthly comparison data.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: "1.25rem",
+          marginBottom: "2rem"
+        }}
+      >
+        {cards.map((card) => {
+          const Icon = card.icon;
+
+          return (
+            <div
+              key={card.label}
+              style={{
+                ...styles.card,
+                padding: "1.25rem",
+                borderRadius: "0.75rem",
+                minHeight: "142px",
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "1rem"
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <span
+                  style={{
+                    color: "var(--text-muted)",
+                    fontSize: "0.72rem",
+                    fontWeight: "800"
+                  }}
+                >
+                  {card.label}
+                </span>
+
+                <p
+                  style={{
+                    margin: "0.65rem 0 0",
+                    color: "var(--text-main)",
+                    fontSize: getMetricValueFontSize(
+                      card.value
+                    ),
+                    lineHeight: 1.08,
+                    fontWeight: "800",
+                    overflowWrap: "anywhere"
+                  }}
+                >
+                  {card.value}
+                </p>
+
+                <div
+                  style={{
+                    marginTop: "0.55rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.45rem",
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <GrowthBadge value={card.growth} />
+
+                  <span
+                    style={{
+                      color: "var(--text-muted)",
+                      fontSize: "0.72rem"
+                    }}
+                  >
+                    {card.hint}
+                  </span>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  width: "46px",
+                  height: "46px",
+                  flexShrink: 0,
+                  borderRadius: "0.75rem",
+                  background:
+                    "rgba(59, 130, 246, 0.12)",
+                  border:
+                    "1px solid rgba(59, 130, 246, 0.18)",
+                  color: "var(--primary-blue)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}
+              >
+                <Icon size={21} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(420px, 1fr))",
+          gap: "1.5rem",
+          marginBottom: "1.5rem"
+        }}
+      >
+        <div
+          style={{
+            ...styles.card,
+            borderRadius: "0.75rem",
+            padding: "1.5rem",
+            minWidth: 0
+          }}
+        >
+          <div style={{ marginBottom: "1.25rem" }}>
+            <h3
+              style={{
+                margin: 0,
+                color: "var(--text-main)",
+                fontSize: "1.15rem"
+              }}
+            >
+              Monthly revenue trend
+            </h3>
+
+            <p
+              style={{
+                margin: "0.35rem 0 0",
+                color: "var(--text-muted)",
+                fontSize: "0.78rem"
+              }}
+            >
+              Revenue comparison across the last {months} months.
+            </p>
+          </div>
+
+          <div
+            className="report-chart-grid"
+            style={{
+              minHeight: "270px",
+              display: "grid",
+              gridTemplateColumns: `repeat(${data.length}, minmax(44px, 1fr))`,
+              alignItems: "end",
+              gap: "0.75rem",
+              padding: "1rem 0.5rem 0",
+              overflowX: "auto"
+            }}
+          >
+            {data.map((item) => {
+              const height = Math.max(
+                (item.totalRevenue / maxRevenue) * 100,
+                item.totalRevenue > 0 ? 5 : 0
+              );
+
+              return (
+                <div
+                  key={`${item.year}-${item.month}-revenue`}
+                  style={{
+                    height: "100%",
+                    minWidth: "44px",
+                    display: "grid",
+                    gridTemplateRows: "1fr auto",
+                    gap: "0.55rem"
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "end",
+                      justifyContent: "center"
+                    }}
+                  >
+                    <div
+                      className="report-revenue-bar"
+                      title={`${item.monthLabel}: ${formatCurrency(item.totalRevenue)}`}
+                      style={{
+                        width: "30px",
+                        height: `${height}%`,
+                        minHeight:
+                          item.totalRevenue > 0
+                            ? "6px"
+                            : "0",
+                        borderRadius:
+                          "8px 8px 0 0",
+                        boxShadow:
+                          "0 0 14px rgba(59, 130, 246, 0.28)"
+                      }}
+                    />
+                  </div>
+
+                  <span
+                    style={{
+                      color: "var(--text-muted)",
+                      fontSize: "0.68rem",
+                      fontWeight: "700",
+                      textAlign: "center",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    {item.monthLabel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div
+          style={{
+            ...styles.card,
+            borderRadius: "0.75rem",
+            padding: "1.5rem",
+            minWidth: 0
+          }}
+        >
+          <div style={{ marginBottom: "1.25rem" }}>
+            <h3
+              style={{
+                margin: 0,
+                color: "var(--text-main)",
+                fontSize: "1.15rem"
+              }}
+            >
+              Sessions and reservations
+            </h3>
+
+            <p
+              style={{
+                margin: "0.35rem 0 0",
+                color: "var(--text-muted)",
+                fontSize: "0.78rem"
+              }}
+            >
+              Monthly activity volume comparison.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: "1rem",
+              marginBottom: "0.75rem",
+              color: "var(--text-muted)",
+              fontSize: "0.75rem",
+              fontWeight: "700"
+            }}
+          >
+            <span style={{ color: reportColors.green }}>
+              ● Sessions
+            </span>
+            <span style={{ color: reportColors.yellow }}>
+              ● Reservations
+            </span>
+          </div>
+
+          <div
+            className="report-chart-grid"
+            style={{
+              minHeight: "245px",
+              display: "grid",
+              gridTemplateColumns: `repeat(${data.length}, minmax(54px, 1fr))`,
+              alignItems: "end",
+              gap: "0.75rem",
+              padding: "1rem 0.5rem 0",
+              overflowX: "auto"
+            }}
+          >
+            {data.map((item) => {
+              const sessionHeight = Math.max(
+                (item.totalSessions / maxActivity) * 100,
+                item.totalSessions > 0 ? 5 : 0
+              );
+
+              const reservationHeight = Math.max(
+                (item.totalReservations / maxActivity) * 100,
+                item.totalReservations > 0 ? 5 : 0
+              );
+
+              return (
+                <div
+                  key={`${item.year}-${item.month}-activity`}
+                  style={{
+                    height: "100%",
+                    minWidth: "54px",
+                    display: "grid",
+                    gridTemplateRows: "1fr auto",
+                    gap: "0.55rem"
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "end",
+                      justifyContent: "center",
+                      gap: "5px"
+                    }}
+                  >
+                    <div
+                      title={`${item.monthLabel}: ${formatNumber(item.totalSessions)} sessions`}
+                      style={{
+                        width: "18px",
+                        height: `${sessionHeight}%`,
+                        minHeight:
+                          item.totalSessions > 0
+                            ? "6px"
+                            : "0",
+                        background: reportColors.green,
+                        borderRadius: "6px 6px 0 0"
+                      }}
+                    />
+
+                    <div
+                      title={`${item.monthLabel}: ${formatNumber(item.totalReservations)} reservations`}
+                      style={{
+                        width: "18px",
+                        height: `${reservationHeight}%`,
+                        minHeight:
+                          item.totalReservations > 0
+                            ? "6px"
+                            : "0",
+                        background: reportColors.yellow,
+                        borderRadius: "6px 6px 0 0"
+                      }}
+                    />
+                  </div>
+
+                  <span
+                    style={{
+                      color: "var(--text-muted)",
+                      fontSize: "0.68rem",
+                      fontWeight: "700",
+                      textAlign: "center",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    {item.monthLabel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          ...styles.card,
+          borderRadius: "0.75rem",
+          overflow: "hidden"
+        }}
+      >
+        <div
+          style={{
+            padding: "1.25rem 1.5rem",
+            borderBottom:
+              "1px solid var(--border-color)"
+          }}
+        >
+          <h3
+            style={{
+              margin: 0,
+              color: "var(--text-main)",
+              fontSize: "1.1rem"
+            }}
+          >
+            Monthly comparison details
+          </h3>
+
+          <p
+            style={{
+              margin: "0.35rem 0 0",
+              color: "var(--text-muted)",
+              fontSize: "0.78rem"
+            }}
+          >
+            The current month may contain partial data.
+          </p>
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              minWidth: "1100px",
+              borderCollapse: "collapse",
+              color: "var(--text-main)",
+              fontSize: "0.82rem"
+            }}
+          >
+            <thead>
+              <tr
+                style={{
+                  color: "var(--text-muted)",
+                  textAlign: "left",
+                  background:
+                    "rgba(148, 163, 184, 0.14)"
+                }}
+              >
+                <th style={{ padding: "0.9rem 1rem" }}>
+                  MONTH
+                </th>
+                <th style={{ padding: "0.9rem 1rem" }}>
+                  REVENUE
+                </th>
+                <th style={{ padding: "0.9rem 1rem" }}>
+                  PAYMENTS
+                </th>
+                <th style={{ padding: "0.9rem 1rem" }}>
+                  SESSIONS
+                </th>
+                <th style={{ padding: "0.9rem 1rem" }}>
+                  RESERVATIONS
+                </th>
+                <th style={{ padding: "0.9rem 1rem" }}>
+                  COMPLETED
+                </th>
+                <th style={{ padding: "0.9rem 1rem" }}>
+                  CANCELLED
+                </th>
+                <th style={{ padding: "0.9rem 1rem" }}>
+                  OCCUPANCY
+                </th>
+                <th style={{ padding: "0.9rem 1rem" }}>
+                  REVENUE CHANGE
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {data.map((item) => (
+                <tr
+                  key={`${item.year}-${item.month}-row`}
+                  style={{
+                    borderTop:
+                      "1px solid var(--border-color)",
+                    background:
+                      "var(--bg-table-row)"
+                  }}
+                >
+                  <td
+                    style={{
+                      padding: "0.9rem 1rem",
+                      fontWeight: "800"
+                    }}
+                  >
+                    {item.monthLabel}
+                  </td>
+
+                  <td style={{ padding: "0.9rem 1rem" }}>
+                    {formatCurrency(item.totalRevenue)}
+                  </td>
+
+                  <td style={{ padding: "0.9rem 1rem" }}>
+                    {formatNumber(item.paymentCount)}
+                  </td>
+
+                  <td style={{ padding: "0.9rem 1rem" }}>
+                    {formatNumber(item.totalSessions)}
+                  </td>
+
+                  <td style={{ padding: "0.9rem 1rem" }}>
+                    {formatNumber(item.totalReservations)}
+                  </td>
+
+                  <td
+                    style={{
+                      padding: "0.9rem 1rem",
+                      color: reportColors.green,
+                      fontWeight: "700"
+                    }}
+                  >
+                    {formatNumber(
+                      item.completedReservations
+                    )}
+                  </td>
+
+                  <td
+                    style={{
+                      padding: "0.9rem 1rem",
+                      color: reportColors.red,
+                      fontWeight: "700"
+                    }}
+                  >
+                    {formatNumber(
+                      item.cancelledReservations
+                    )}
+                  </td>
+
+                  <td style={{ padding: "0.9rem 1rem" }}>
+                    {formatPercent(
+                      item.averageOccupancy
+                    )}
+                  </td>
+
+                  <td style={{ padding: "0.9rem 1rem" }}>
+                    <GrowthBadge
+                      value={
+                        item.revenueGrowthPercent
+                      }
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function GrowthBadge({ value }) {
+  const number = Number(value || 0);
+
+  const isPositive = number > 0;
+  const isNegative = number < 0;
+
+  const color = isPositive
+    ? reportColors.green
+    : isNegative
+      ? reportColors.red
+      : "var(--text-muted)";
+
+  const Icon = isPositive
+    ? TrendingUp
+    : isNegative
+      ? TrendingDown
+      : Minus;
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "0.25rem",
+        color,
+        background: isPositive
+          ? "rgba(16, 185, 129, 0.12)"
+          : isNegative
+            ? "rgba(239, 68, 68, 0.12)"
+            : "rgba(148, 163, 184, 0.14)",
+        border: `1px solid ${color}`,
+        borderRadius: "999px",
+        padding: "0.18rem 0.48rem",
+        fontSize: "0.7rem",
+        fontWeight: "800",
+        whiteSpace: "nowrap"
+      }}
+    >
+      <Icon size={12} />
+      {formatGrowthPercent(number)}
+    </span>
+  );
+}
 
 function SimpleBreakdownTable({ title, headers, rows, emptyText }) {
   return (
