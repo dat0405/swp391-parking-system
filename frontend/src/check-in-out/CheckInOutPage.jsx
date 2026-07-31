@@ -215,7 +215,7 @@ function CheckInOutPage() {
     const requireGatePlate = options.requireGatePlate !== false;
 
     if (!normalizedTicket) {
-      alert("Không đọc được mã vé từ QR Ticket.");
+      alert("Unable to read the ticket code from the QR ticket.");
       return;
     }
 
@@ -252,7 +252,7 @@ function CheckInOutPage() {
         });
 
         alert(
-          `QR Ticket không khớp với biển số xe tại cổng.\n\nBiển số tại cổng: ${searchPlate}\nBiển số trong vé: ${responseData.licensePlate}`
+          `The QR ticket does not match the vehicle plate at the exit gate.\n\nExit gate plate: ${searchPlate}\nTicket plate: ${responseData.licensePlate}`
         );
         return;
       }
@@ -268,7 +268,7 @@ function CheckInOutPage() {
       alert(
         getApiErrorMessage(
           error,
-          "QR Ticket không hợp lệ hoặc xe không còn trong bãi."
+          "The QR ticket is invalid or the vehicle is no longer in the parking area."
         )
       );
       setCheckoutData(null);
@@ -368,12 +368,12 @@ function CheckInOutPage() {
 
   const ensureCheckoutPlateWasScanned = () => {
     if (checkOutOcrLoading) {
-      alert("Hệ thống đang OCR biển số xe tại cổng ra. Vui lòng chờ OCR hoàn tất.");
+      alert("The system is recognizing the exit gate license plate. Please wait for OCR to finish.");
       return false;
     }
 
     if (!checkoutPlateScanned || !getScannedCheckoutPlate()) {
-      alert("Vui lòng scan/upload ảnh biển số xe tại cổng ra trước khi tìm vé hoặc checkout.");
+      alert("Please scan or upload the exit gate license plate before searching for a ticket or checking out.");
       return false;
     }
 
@@ -390,7 +390,7 @@ function CheckInOutPage() {
 
     if (!selectedPlate || scannedPlate !== selectedPlate) {
       alert(
-        `Xe được chọn không khớp với biển số đã scan.\n\nBiển số đã scan: ${searchPlate || "N/A"}\nBiển số xe được chọn: ${session?.licensePlate || "N/A"}`
+        `The selected vehicle does not match the scanned license plate.\n\nScanned plate: ${searchPlate || "N/A"}\nSelected vehicle plate: ${session?.licensePlate || "N/A"}`
       );
       return false;
     }
@@ -419,7 +419,7 @@ function CheckInOutPage() {
 
   const validateCheckoutBeforeFinalizing = () => {
     if (!checkoutData) {
-      alert("Vui lòng search tìm một xe cụ thể trước khi thực hiện Check-out!");
+      alert("Please search for a specific vehicle before checking out.");
       return false;
     }
 
@@ -432,13 +432,13 @@ function CheckInOutPage() {
 
     if (checkoutPlate && scannedPlate !== checkoutPlate) {
       alert(
-        `Biển số đã scan không khớp với thông tin checkout.\n\nBiển số đã scan: ${searchPlate}\nBiển số checkout: ${checkoutData.licensePlate}`
+        `The scanned license plate does not match the checkout information.\n\nScanned plate: ${searchPlate}\nCheckout plate: ${checkoutData.licensePlate}`
       );
       return false;
     }
 
     if (!checkoutFeeDetails.lostTicket && !checkoutData.ticketId) {
-      alert("Vui lòng quét QR Ticket hoặc chọn vé dự phòng hợp lệ trước khi checkout.");
+      alert("Please scan the QR ticket or select a valid backup ticket before checkout.");
       return false;
     }
 
@@ -543,17 +543,17 @@ function CheckInOutPage() {
       : [];
 
     const alternativeText = alternatives.length
-      ? ` Gợi ý khác: ${alternatives.join(", ")}.`
+      ? ` Other suggestions: ${alternatives.join(", ")}.`
       : "";
 
     if (detectedPlate && !validateVietnamPlate(detectedPlate, detectedType)) {
-      return `OCR đọc chưa đủ hoặc sai format: ${detectedPlate}.${alternativeText} Vui lòng nhập/sửa thủ công.`;
+      return `OCR could not fully read the plate or the format is invalid: ${detectedPlate}.${alternativeText} Please enter or correct it manually.`;
     }
 
     return `${
       data?.message ||
-      "OCR chưa đủ chắc chắn để tự điền biển số."
-    }${alternativeText} Vui lòng kiểm tra và nhập/sửa thủ công.`;
+      "OCR confidence is too low to fill in the license plate automatically."
+    }${alternativeText} Please verify and correct it manually.`;
   };
 
   const buildOcrSuccessMessage = (prefix, detectedPlate, uiDetectedType, data) => {
@@ -561,10 +561,10 @@ function CheckInOutPage() {
     const confidencePercent = Math.round(confidence * 100);
     const reviewHint =
       confidence > 0 && confidence < 0.75
-        ? " | Độ tin cậy chưa cao, vui lòng kiểm tra lại biển số."
+        ? " | Confidence is low. Please verify the license plate."
         : "";
 
-    return `${prefix}: ${detectedPlate} | Loại xe: ${uiDetectedType} | Độ tin cậy: ${confidencePercent}%${reviewHint}`;
+    return `${prefix}: ${detectedPlate} | Vehicle type: ${uiDetectedType} | Confidence: ${confidencePercent}%${reviewHint}`;
   };
 
   const formatDetectedPlateByCompactText = (compactText) => {
@@ -696,7 +696,7 @@ function CheckInOutPage() {
     setCheckInPlateImage({
       previewUrl,
       fileName,
-      message: "Đang gửi ảnh sang OCR service..."
+      message: "Sending the image to the OCR service..."
     });
 
     try {
@@ -740,7 +740,7 @@ function CheckInOutPage() {
         previewUrl,
         fileName,
         message: buildOcrSuccessMessage(
-          "OCR nhận diện",
+          "OCR detected",
           detectedPlate,
           uiDetectedType,
           data
@@ -753,7 +753,7 @@ function CheckInOutPage() {
         fileName,
         message: getApiErrorMessage(
           error,
-          "Không kết nối được OCR service. Hãy kiểm tra Python OCR service đang chạy ở port 8001 hoặc nhập biển số thủ công."
+          "Unable to connect to the OCR service. Check that the Python OCR service is running on port 8001, or enter the license plate manually."
         )
       });
     } finally {
@@ -769,7 +769,7 @@ function CheckInOutPage() {
     setCheckOutPlateImage({
       previewUrl,
       fileName,
-      message: "Đang gửi ảnh checkout sang OCR service..."
+      message: "Sending the checkout image to the OCR service..."
     });
 
     setCheckoutData(null);
@@ -815,7 +815,7 @@ function CheckInOutPage() {
         previewUrl,
         fileName,
         message: buildOcrSuccessMessage(
-          "OCR checkout nhận diện",
+          "Checkout OCR detected",
           detectedPlate,
           uiDetectedType,
           data
@@ -829,7 +829,7 @@ function CheckInOutPage() {
         fileName,
         message: getApiErrorMessage(
           error,
-          "Không kết nối được OCR service cho checkout. Hãy kiểm tra Python OCR service ở port 8001."
+          "Unable to connect to the checkout OCR service. Check that the Python OCR service is running on port 8001."
         )
       });
     } finally {
@@ -846,7 +846,7 @@ function CheckInOutPage() {
     }
 
     if (!file.type.startsWith("image/")) {
-      alert("Vui lòng chọn đúng file ảnh biển số.");
+      alert("Please select a valid license plate image file.");
       event.target.value = "";
       return;
     }
@@ -854,7 +854,7 @@ function CheckInOutPage() {
     const maximumFileSize = 10 * 1024 * 1024;
 
     if (file.size > maximumFileSize) {
-      alert("Ảnh biển số không được vượt quá 10 MB.");
+      alert("The license plate image must not exceed 10 MB.");
       event.target.value = "";
       return;
     }
@@ -887,7 +887,7 @@ function CheckInOutPage() {
 
         setCheckInPlateImage({
           ...commonData,
-          message: `DEV fallback từ tên file: ${extractedPlate} | Loại xe: ${detectedType}`
+          message: `DEV fallback from file name: ${extractedPlate} | Vehicle type: ${detectedType}`
         });
 
         setLicensePlateIn(extractedPlate);
@@ -905,7 +905,7 @@ function CheckInOutPage() {
       setCheckoutData(null);
       setCheckOutPlateImage({
         ...commonData,
-        message: `DEV fallback biển số cổng ra từ tên file: ${extractedPlate}`
+        message: `DEV exit gate plate fallback from file name: ${extractedPlate}`
       });
       return;
     }
@@ -1077,7 +1077,7 @@ function CheckInOutPage() {
     e.preventDefault();
 
     if (checkInOcrLoading) {
-      alert("Hệ thống đang OCR biển số. Vui lòng chờ OCR hoàn tất hoặc nhập biển số thủ công.");
+      alert("The system is recognizing the license plate. Please wait for OCR to finish or enter the plate manually.");
       return;
     }
 
@@ -1154,7 +1154,7 @@ function CheckInOutPage() {
 
       resetCheckoutWorkingState();
     } catch (error) {
-      alert(getApiErrorMessage(error, "Check-in thất bại"));
+      alert(getApiErrorMessage(error, "Check-in failed."));
     }
   };
 
@@ -1164,7 +1164,7 @@ function CheckInOutPage() {
     const ticket = searchTicketId.trim().toUpperCase();
 
     if (checkOutOcrLoading) {
-      alert("Hệ thống đang OCR biển số xe tại cổng ra. Vui lòng chờ OCR hoàn tất.");
+      alert("The system is recognizing the exit gate license plate. Please wait for OCR to finish.");
       return;
     }
 
@@ -1173,7 +1173,7 @@ function CheckInOutPage() {
     }
 
     if (!ticket) {
-      alert("Vui lòng nhập Mã vé hoặc quét QR Ticket.");
+      alert("Please enter the ticket ID or scan the QR ticket.");
       return;
     }
 
@@ -1204,7 +1204,7 @@ function CheckInOutPage() {
       if (!validateCheckoutBeforeFinalizing()) {
         setCheckoutFinalized(false);
         setCheckoutPaymentStatus("ERROR");
-        setCheckoutPaymentMessage("Không thể hoàn tất check-out vì thiếu scan biển số hợp lệ.");
+        setCheckoutPaymentMessage("Checkout cannot be completed because a valid license plate scan is missing.");
         return;
       }
 
@@ -1222,7 +1222,7 @@ function CheckInOutPage() {
       });
 
       setCheckoutPaymentStatus("PAID");
-      setCheckoutPaymentMessage("Đã thanh toán thành công");
+      setCheckoutPaymentMessage("Payment completed successfully.");
 
       window.dispatchEvent(
         new CustomEvent("dispatchParkingNotification", {
@@ -1243,7 +1243,7 @@ function CheckInOutPage() {
       setCheckoutPaymentMessage(
         getApiErrorMessage(
           error,
-          "Đã nhận thanh toán nhưng không thể hoàn tất check-out. Vui lòng thử lại."
+          "Payment was received, but checkout could not be completed. Please try again."
         )
       );
     }
@@ -1255,7 +1255,7 @@ function CheckInOutPage() {
     }
 
     const confirmed = window.confirm(
-      "Xác nhận nhân viên đã nhận đủ tiền mặt từ khách?"
+      "Confirm that the staff member has received the full cash payment from the customer?"
     );
 
     if (!confirmed) {
@@ -1285,7 +1285,7 @@ function CheckInOutPage() {
 
       setCheckoutPaymentData(null);
       setCheckoutPaymentStatus("PAID");
-      setCheckoutPaymentMessage("Đã thanh toán thành công bằng tiền mặt");
+      setCheckoutPaymentMessage("Cash payment completed successfully.");
 
       window.dispatchEvent(
         new CustomEvent("dispatchParkingNotification", {
@@ -1306,7 +1306,7 @@ function CheckInOutPage() {
       setCheckoutPaymentMessage(
         getApiErrorMessage(
           error,
-          "Không thể hoàn tất check-out bằng tiền mặt. Vui lòng thử lại."
+          "Unable to complete checkout with cash. Please try again."
         )
       );
     }
@@ -1342,7 +1342,7 @@ function CheckInOutPage() {
 
         setCheckoutPaymentData(null);
         setCheckoutPaymentStatus("PAID");
-        setCheckoutPaymentMessage("Đã thanh toán thành công");
+        setCheckoutPaymentMessage("Payment completed successfully.");
         setCheckoutFinalized(true);
         setShowPaymentModal(true);
 
@@ -1387,14 +1387,14 @@ function CheckInOutPage() {
        * releases the slot and records the checkout payment.
        */
       setCheckoutPaymentStatus("PENDING");
-      setCheckoutPaymentMessage("Đang chờ khách quét QR và chuyển khoản...");
+      setCheckoutPaymentMessage("Waiting for the customer to scan the QR code and complete the transfer...");
       setCheckoutFinalized(false);
       setShowPaymentModal(true);
     } catch (error) {
       alert(
         getApiErrorMessage(
           error,
-          "Tạo QR thanh toán hoặc Check-out thất bại"
+          "Failed to create the payment QR code or complete checkout."
         )
       );
     }
@@ -1438,23 +1438,23 @@ function CheckInOutPage() {
 
         if (isPaymentSuccessStatus(status)) {
           setCheckoutPaymentStatus("PAID");
-          setCheckoutPaymentMessage("Đã thanh toán thành công");
+          setCheckoutPaymentMessage("Payment completed successfully.");
           await finalizeCheckoutAfterPayment();
           return;
         }
 
         if (["CANCELLED", "CANCELED", "EXPIRED", "FAILED"].includes(status)) {
           setCheckoutPaymentStatus(status);
-          setCheckoutPaymentMessage("Thanh toán chưa thành công hoặc đã bị hủy.");
+          setCheckoutPaymentMessage("Payment was unsuccessful or was cancelled.");
           return;
         }
 
         setCheckoutPaymentStatus("PENDING");
-        setCheckoutPaymentMessage("Đang chờ khách quét QR và chuyển khoản...");
+        setCheckoutPaymentMessage("Waiting for the customer to scan the QR code and complete the transfer...");
       } catch (error) {
         if (!stopped) {
           setCheckoutPaymentStatus("PENDING");
-          setCheckoutPaymentMessage("Đang chờ xác nhận thanh toán từ PayOS...");
+          setCheckoutPaymentMessage("Waiting for payment confirmation from PayOS...");
         }
       }
     };
@@ -1519,7 +1519,7 @@ function CheckInOutPage() {
             ...prev,
             status: "ERROR",
             error:
-              "Không tìm thấy camera. Vui lòng kiểm tra camera hoặc nhập mã vé thủ công."
+              "No camera was found. Check the camera connection or enter the ticket ID manually."
           }));
           return;
         }
@@ -1562,7 +1562,7 @@ function CheckInOutPage() {
           ...prev,
           status: "ERROR",
           error:
-            "Không thể mở camera để quét QR. Hãy cấp quyền camera cho trình duyệt hoặc nhập mã vé thủ công."
+            "Unable to open the camera for QR scanning. Allow camera access in the browser or enter the ticket ID manually."
         }));
       }
     };
@@ -1582,7 +1582,7 @@ function CheckInOutPage() {
   const handleCloseModal = () => {
     if (checkoutPaymentStatus === "PENDING" && !checkoutFinalized) {
       const confirmed = window.confirm(
-        "Thanh toán PayOS vẫn đang chờ xác nhận. Nếu đóng cửa sổ, hệ thống sẽ ngừng theo dõi giao dịch này. Bạn vẫn muốn đóng?"
+        "PayOS payment is still awaiting confirmation. Closing this window will stop tracking the transaction. Do you still want to close it?"
       );
 
       if (!confirmed) {
@@ -1822,7 +1822,7 @@ function CheckInOutPage() {
                     lineHeight: 1.45
                   }}
                 >
-                  Upload ảnh biển số để giả lập camera cổng vào. OCR sẽ tự điền biển số và tự chọn loại xe. Nhân viên vẫn có thể nhập tay để phòng trường hợp scan sai. Nếu có booking hợp lệ, hệ thống dùng slot đã đặt; nếu không, tự gán slot còn trống.
+                  Upload a license plate image to simulate the entry gate camera. OCR will fill in the plate and select the vehicle type automatically. Staff can still enter the plate manually if the scan is incorrect. If a valid booking exists, the reserved slot is used; otherwise, the system assigns an available slot automatically.
                 </div>
               </div>
 
@@ -1929,8 +1929,8 @@ function CheckInOutPage() {
               }}
             >
               {checkoutPlateScanned
-                ? `Đã scan biển số cổng ra: ${searchPlate}. Bây giờ có thể quét QR Ticket hoặc chọn đúng xe trong danh sách.`
-                : "Bắt buộc scan/upload biển số xe ở cổng ra trước khi quét QR Ticket, chọn xe mất vé hoặc xác nhận checkout."}
+                ? `Exit gate plate scanned: ${searchPlate}. You can now scan the QR ticket or select the matching vehicle from the list.`
+                : "You must scan or upload the exit gate license plate before scanning the QR ticket, selecting a lost-ticket vehicle, or confirming checkout."}
             </div>
 
             <form
@@ -1940,7 +1940,7 @@ function CheckInOutPage() {
               <TextInput
                 type="text"
                 value={searchTicketId}
-                placeholder="Mã vé (TK-926006)"
+                placeholder="Ticket ID (TK-926006)"
                 onChange={(e) => setSearchTicketId(formatTicket(e.target.value))}
                 style={{ flex: "1 1 280px", minWidth: "240px" }}
               />
@@ -2044,8 +2044,8 @@ function CheckInOutPage() {
                 >
                   <InfoItem label="ENTRY TIME">{formatDateTime(checkoutData.checkInTime)}</InfoItem>
                   <InfoItem label="CURRENT TIME">{formatDateTime(checkoutFeeDetails.checkOutTime)}</InfoItem>
-                  <InfoItem label="DURATION">{checkoutData.durationHours ? `${checkoutData.durationHours} giờ` : "N/A"}</InfoItem>
-                  <InfoItem label="PRICE PER HOUR">{checkoutData.pricePerHour ? `${formatCurrency(checkoutData.pricePerHour)} / giờ` : "N/A"}</InfoItem>
+                  <InfoItem label="DURATION">{checkoutData.durationHours ? `${checkoutData.durationHours} hours` : "N/A"}</InfoItem>
+                  <InfoItem label="PRICE PER HOUR">{checkoutData.pricePerHour ? `${formatCurrency(checkoutData.pricePerHour)} / hour` : "N/A"}</InfoItem>
                 </div>
 
                 <div style={{ fontSize: "0.85rem", color: theme.muted, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -2131,7 +2131,7 @@ function CheckInOutPage() {
         <div style={{ background: theme.card, padding: "1.5rem", borderRadius: "0.85rem", border: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
           <h3 style={{ color: theme.text, fontSize: "1rem", margin: "0 0 1rem 0", display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <ReceiptText size={18} style={{ color: theme.blue }} />
-            Danh Sách Xe Đang Đỗ Trong Hệ Thống ({activeSessions.length} xe)
+            Vehicles Currently Parked ({activeSessions.length} vehicles)
           </h3>
 
           <div
@@ -2146,23 +2146,23 @@ function CheckInOutPage() {
             <TextInput
               type="text"
               value={activeVehicleSearch}
-              placeholder="Tìm biển số xe đang đỗ..."
+              placeholder="Search parked vehicle plates..."
               onChange={(event) => setActiveVehicleSearch(event.target.value)}
               style={{ maxWidth: "320px" }}
             />
 
             <span style={{ color: theme.muted, fontSize: "0.78rem" }}>
-              Bắt buộc scan biển số xe tại cổng ra trước. Sau đó mới được chọn đúng xe trong danh sách để xử lý QR lỗi hoặc mất vé +10.000đ.
+              Scan the vehicle plate at the exit gate first. Then select the matching vehicle from the list to handle an invalid QR ticket or a lost ticket fee of 10,000 VND.
             </span>
           </div>
 
           {activeSessions.length === 0 ? (
             <p style={{ color: theme.muted, fontSize: "0.85rem", margin: 0 }}>
-              Bãi xe trống trơn, hãy thực hiện check-in thêm xe mới.
+              The parking area is empty. Check in a new vehicle.
             </p>
           ) : filteredActiveSessions.length === 0 ? (
             <p style={{ color: theme.muted, fontSize: "0.85rem", margin: 0 }}>
-              Không tìm thấy xe đang đỗ phù hợp với từ khóa.
+              No parked vehicle matches the search term.
             </p>
           ) : (
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
@@ -2191,7 +2191,7 @@ function CheckInOutPage() {
 
                       window.scrollTo({ top: 0, behavior: "smooth" });
                     } catch (error) {
-                      alert(getApiErrorMessage(error, "Không lấy được thông tin checkout"));
+                      alert(getApiErrorMessage(error, "Unable to retrieve checkout information."));
                       setCheckoutData(null);
                     }
                   }}
@@ -2206,7 +2206,7 @@ function CheckInOutPage() {
                     gap: "4px",
                     minWidth: "190px"
                   }}
-                  title="Phải scan biển số ở cổng ra trước, sau đó mới được chọn xe này"
+                  title="Scan the exit gate license plate before selecting this vehicle."
                 >
                   <span style={{ color: theme.text, fontWeight: "800", fontSize: "0.9rem" }}>
                     {session.licensePlate}
@@ -2271,7 +2271,7 @@ function CheckInOutPage() {
 
                           window.scrollTo({ top: 0, behavior: "smooth" });
                         } catch (error) {
-                          alert(getApiErrorMessage(error, "Không lấy được thông tin checkout mất vé"));
+                          alert(getApiErrorMessage(error, "Unable to retrieve lost-ticket checkout information."));
                           setCheckoutData(null);
                         }
                       }}
@@ -2286,7 +2286,7 @@ function CheckInOutPage() {
                         cursor: "pointer"
                       }}
                     >
-                      Mất vé +10K
+                      Lost Ticket +10K
                     </button>
                   </div>
                 </div>
@@ -2350,7 +2350,7 @@ function CheckInOutPage() {
                     pointerEvents: "auto",
                     boxShadow: "0 8px 20px rgba(0,0,0,0.35)"
                   }}
-                  title="Đóng"
+                  title="Close"
                 >
                   <X size={18} />
                 </button>
@@ -2427,10 +2427,10 @@ function CheckInOutPage() {
 
                 <DashedLine />
 
-                <TicketInfoRow label="Biển số / License Plate" value={ticketQrModal.data.licensePlate} />
-                <TicketInfoRow label="Vị trí / Slot" value={ticketQrModal.data.slotCode} />
-                <TicketInfoRow label="Giờ vào / Check-in" value={formatDateTime(ticketQrModal.data.checkInTime)} />
-                <TicketInfoRow label="Loại vé / Type" value="PARKING SESSION" />
+                <TicketInfoRow label="License Plate" value={ticketQrModal.data.licensePlate} />
+                <TicketInfoRow label="Parking Slot" value={ticketQrModal.data.slotCode} />
+                <TicketInfoRow label="Check-in Time" value={formatDateTime(ticketQrModal.data.checkInTime)} />
+                <TicketInfoRow label="Ticket Type" value="PARKING SESSION" />
 
                 <DashedLine />
 
@@ -2458,7 +2458,7 @@ function CheckInOutPage() {
                     fontWeight: 750
                   }}
                 >
-                  Khách vui lòng chụp màn hình vé này. Khi check-out, đưa mã QR cho nhân viên quét để tìm xe.
+                  Please save a screenshot of this ticket. At checkout, show the QR code to the staff for vehicle lookup.
                 </div>
 
                 <button
@@ -2477,7 +2477,7 @@ function CheckInOutPage() {
                     fontFamily: "system-ui, -apple-system, sans-serif"
                   }}
                 >
-                  Đóng vé
+                  Close Ticket
                 </button>
               </div>
 
@@ -2490,7 +2490,7 @@ function CheckInOutPage() {
                   lineHeight: 1.4
                 }}
               >
-                Click ra ngoài hoặc nhấn ESC để đóng. QR này chỉ dùng để tìm vé khi check-out.
+                Click outside the window or press ESC to close. This QR code is only used to find the ticket during checkout.
               </div>
             </div>
           </div>
@@ -2563,7 +2563,7 @@ function CheckInOutPage() {
                   lineHeight: 1.45
                 }}
               >
-                Bắt buộc scan biển số xe ở cổng ra trước. Sau đó đưa ảnh QR Ticket của khách trước camera để hệ thống đối chiếu đúng xe.
+                Scan the vehicle plate at the exit gate first. Then show the customer's QR ticket to the camera so the system can verify the correct vehicle.
               </p>
 
               <div
@@ -2615,7 +2615,7 @@ function CheckInOutPage() {
                   textAlign: "center"
                 }}
               >
-                Nếu QR Ticket bị lỗi, nhân viên chỉ được chọn xe trong danh sách sau khi biển số đã scan khớp với xe đó.
+                If the QR ticket is invalid, staff may select a vehicle from the list only after the scanned plate matches that vehicle.
               </div>
             </div>
           </div>
@@ -2697,13 +2697,13 @@ function CheckInOutPage() {
                     <div>
                       <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>DURATION</div>
                       <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
-                        {checkoutData.durationHours ? `${checkoutData.durationHours} giờ` : "N/A"}
+                        {checkoutData.durationHours ? `${checkoutData.durationHours} hours` : "N/A"}
                       </div>
                     </div>
                     <div>
                       <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>PRICE PER HOUR</div>
                       <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
-                        {checkoutData.pricePerHour ? `${formatCurrency(checkoutData.pricePerHour)} / giờ` : "N/A"}
+                        {checkoutData.pricePerHour ? `${formatCurrency(checkoutData.pricePerHour)} / hour` : "N/A"}
                       </div>
                     </div>
                   </div>
@@ -2768,8 +2768,8 @@ function CheckInOutPage() {
                     {isPrepaidWithoutExtraFee
                       ? "Booking already paid"
                       : checkoutFeeDetails.prepaidBooking
-                        ? "Thanh toán phí quá giờ"
-                        : "Thanh toán bằng QR hoặc tiền mặt"}
+                        ? "Pay Overstay Fee"
+                        : "Pay by QR Code or Cash"}
                   </div>
 
                   {isPrepaidWithoutExtraFee ? (
@@ -2824,8 +2824,8 @@ function CheckInOutPage() {
 
                       <div className="pm-text-subrow" style={{ fontSize: "0.78rem", textAlign: "center", marginTop: "1rem", maxWidth: "220px", lineHeight: "1.4" }}>
                         {checkoutFeeDetails.prepaidBooking
-                          ? "Vui lòng quét mã QR PayOS để thanh toán phí quá giờ."
-                          : "Khách có thể quét QR PayOS hoặc trả tiền mặt cho nhân viên."}
+                          ? "Scan the PayOS QR code to pay the overstay fee."
+                          : "The customer can scan the PayOS QR code or pay cash to the staff."}
                       </div>
 
                       {checkoutPaymentData?.orderCode && (
@@ -2858,10 +2858,10 @@ function CheckInOutPage() {
                         {checkoutPaymentStatus === "PAID" ? (
                           <span style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem" }}>
                             <CheckCircle2 size={18} />
-                            {checkoutPaymentMessage || "Đã thanh toán thành công"}
+                            {checkoutPaymentMessage || "Payment completed successfully."}
                           </span>
                         ) : (
-                          checkoutPaymentMessage || "Đang chờ thanh toán..."
+                          checkoutPaymentMessage || "Waiting for payment..."
                         )}
                       </div>
 
@@ -2883,7 +2883,7 @@ function CheckInOutPage() {
                               lineHeight: 1.4
                             }}
                           >
-                            Nếu khách trả tiền mặt, nhân viên nhận đủ tiền rồi bấm nút bên dưới để hoàn tất check-out.
+                            For cash payment, receive the full amount before clicking the button below to complete checkout.
                           </div>
 
                           <button
@@ -2902,7 +2902,7 @@ function CheckInOutPage() {
                               cursor: checkoutFinalized ? "not-allowed" : "pointer"
                             }}
                           >
-                            Đã nhận tiền mặt
+                            Cash Payment Received
                           </button>
                         </div>
                       )}
@@ -2934,7 +2934,7 @@ function CheckInOutPage() {
                             cursor: "pointer"
                           }}
                         >
-                          Mở PayOS dự phòng
+                          Open PayOS Backup
                         </button>
                       )}
                     </>
@@ -2942,10 +2942,10 @@ function CheckInOutPage() {
 
                   <div style={{ display: "flex", gap: "1rem", marginTop: "1.5rem", borderTop: "1px solid rgba(128,128,128,0.2)", paddingTop: "1rem", width: "100%", justifyContent: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: "#60a5fa", fontSize: "0.72rem", fontWeight: "600" }}>
-                      <Zap size={13} fill="#60a5fa" /> Xác nhận tức thì
+                      <Zap size={13} fill="#60a5fa" /> Instant Confirmation
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", color: "#60a5fa", fontSize: "0.72rem", fontWeight: "600" }}>
-                      <ShieldCheck size={13} fill="transparent" /> Thanh toán bảo mật
+                      <ShieldCheck size={13} fill="transparent" /> Secure Payment
                     </div>
                   </div>
                 </div>
@@ -2973,7 +2973,7 @@ function PlateImageScannerBox({
         marginBottom: "1.4rem",
         cursor: isLoading ? "wait" : "pointer"
       }}
-      title="Click để chọn ảnh biển số"
+      title="Click to select a license plate image"
     >
       <input
         key={inputKey}
@@ -3055,7 +3055,7 @@ function PlateImageScannerBox({
               whiteSpace: "nowrap"
             }}
           >
-            Đang nhận diện OCR {Math.max(0, Math.min(Number(progress) || 0, 100))}%
+            Recognizing with OCR {Math.max(0, Math.min(Number(progress) || 0, 100))}%
           </div>
         )}
 

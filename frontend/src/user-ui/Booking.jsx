@@ -15,7 +15,8 @@ import {
   Zap,
   ShieldCheck,
   Ban,
-  LoaderCircle
+  LoaderCircle,
+  AlertTriangle
 } from "lucide-react";
 
 import Sidebar from "../dashboard/Sidebar";
@@ -307,7 +308,7 @@ const formatDisplayDateTime = (dateValue, timeValue) => {
 
   if (Number.isNaN(date.getTime())) return "Not selected";
 
-  return date.toLocaleString("vi-VN", {
+  return date.toLocaleString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     day: "2-digit",
@@ -353,7 +354,7 @@ const toNumberMoney = (value) => {
 };
 
 const formatVnd = (value) => {
-  return `${Number(value || 0).toLocaleString("vi-VN")} VNĐ`;
+  return `${Number(value || 0).toLocaleString("en-US")} VND`;
 };
 
 const formatApiDateTime = (value) => {
@@ -363,7 +364,7 @@ const formatApiDateTime = (value) => {
 
   if (Number.isNaN(date.getTime())) return "-";
 
-  return date.toLocaleString("vi-VN", {
+  return date.toLocaleString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     day: "2-digit",
@@ -426,6 +427,7 @@ function Booking() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const [successModal, setSuccessModal] = useState({ show: false, data: null });
   const [paymentNotice, setPaymentNotice] = useState({
     show: false,
@@ -805,7 +807,7 @@ function Booking() {
       console.error("Failed to load active pricing policy:", error);
       setPricingPolicy(null);
       setPricingError(
-        "Không thể tải bảng giá mới nhất. Hệ thống đang dùng giá dự phòng."
+        "Unable to load the latest pricing policy. The system is using the fallback rate."
       );
     } finally {
       setPricingLoading(false);
@@ -898,7 +900,7 @@ function Booking() {
       });
     } catch (error) {
       console.error("Failed to load available slots:", error);
-      setSlotsError("Không thể tải danh sách slot còn trống. Vui lòng thử lại.");
+      setSlotsError("Unable to load available parking slots. Please try again.");
     } finally {
       if (!silent) {
         setSlotsLoading(false);
@@ -1067,7 +1069,7 @@ function Booking() {
           setPaymentNotice({
             show: true,
             type: "cancel",
-            message: "Bạn đã hủy thanh toán và booking đã được hủy."
+            message: "Payment was cancelled and the booking has been cancelled."
           });
         } catch (error) {
           console.error("Failed to cancel returned PayOS booking:", error);
@@ -1076,7 +1078,7 @@ function Booking() {
             show: true,
             type: "error",
             message:
-              "Thanh toán đã được hủy nhưng hệ thống chưa thể hủy booking. Vui lòng thử lại trong Booking History."
+              "Payment was cancelled, but the system could not cancel the booking. Please try again from Booking History."
           });
         }
 
@@ -1090,8 +1092,8 @@ function Booking() {
       }
 
       /*
-       * Chỉ xóa query PayOS khỏi URL.
-       * Người dùng vẫn ở nguyên màn hình New Booking.
+       * Remove only the PayOS query parameters from the URL.
+       * The user remains on the New Booking screen.
        */
       navigate("/user-ui", { replace: true });
     };
@@ -1130,7 +1132,7 @@ function Booking() {
     const paidSlotId = successModal.data?.slotId;
 
     setBookingPaymentStatus("PAID");
-    setBookingPaymentMessage("Đã thanh toán thành công");
+    setBookingPaymentMessage("Payment completed successfully.");
     setPendingBooking(null);
     setPendingRemainingSeconds(0);
 
@@ -1138,7 +1140,7 @@ function Booking() {
       show: true,
       type: "success",
       message:
-        "Đã thanh toán thành công. Booking đã được xác nhận và slot đã được giữ chỗ."
+        "Payment completed successfully. The booking is confirmed and the parking slot is reserved."
     });
 
     setSuccessModal((prev) => {
@@ -1159,8 +1161,8 @@ function Booking() {
     await loadAvailableSlots(formData.vehicleTypeId);
 
     /*
-     * Ẩn ngay slot vừa thanh toán khỏi danh sách chọn trên giao diện.
-     * Backend vẫn phải là nguồn dữ liệu chính để Parking Floor hiển thị RESERVED.
+     * Immediately remove the paid slot from the visible slot selection list.
+     * The backend remains the source of truth for displaying the slot as RESERVED.
      */
     if (paidSlotId) {
       setAvailableSlots((prev) =>
@@ -1171,8 +1173,8 @@ function Booking() {
     }
 
     /*
-     * Giữ người dùng ở trang New Booking.
-     * Sau khi hiển thị trạng thái thành công một lúc, đóng QR và reset form.
+     * Keep the user on the New Booking page.
+     * After briefly showing the success state, close the QR modal and reset the form.
      */
     window.setTimeout(() => {
       setSuccessModal({ show: false, data: null });
@@ -1198,7 +1200,7 @@ function Booking() {
 
       if (bookingStatus === "CONFIRMED" || paymentStatus === "PAID") {
         setBookingPaymentStatus("PAID");
-        setBookingPaymentMessage("Đã thanh toán thành công");
+        setBookingPaymentMessage("Payment completed successfully.");
         setPendingBooking(null);
         setPendingRemainingSeconds(0);
 
@@ -1206,7 +1208,7 @@ function Booking() {
           show: true,
           type: "success",
           message:
-            "Đã thanh toán thành công. Booking đã được xác nhận và slot đã được giữ chỗ."
+            "Payment completed successfully. The booking is confirmed and the parking slot is reserved."
         });
 
         setSuccessModal({ show: false, data: null });
@@ -1219,7 +1221,7 @@ function Booking() {
         show: true,
         type: "pending",
         message:
-          "Hệ thống đã quay lại từ PayOS. Thanh toán đang được xác nhận, vui lòng chờ trong giây lát."
+          "The system has returned from PayOS. Payment is being verified; please wait a moment."
       });
 
       setSuccessModal({ show: false, data: null });
@@ -1230,7 +1232,7 @@ function Booking() {
         show: true,
         type: "error",
         message:
-          "Không thể kiểm tra trạng thái thanh toán. Vui lòng vào Booking History để kiểm tra lại."
+          "Unable to verify the payment status. Please check Booking History."
       });
     }
   };
@@ -1271,11 +1273,11 @@ function Booking() {
         }
 
         setBookingPaymentStatus("PENDING");
-        setBookingPaymentMessage("Đang chờ khách quét QR và chuyển khoản...");
+        setBookingPaymentMessage("Waiting for the customer to scan the QR code and complete the transfer...");
       } catch (error) {
         if (!stopped) {
           setBookingPaymentStatus("PENDING");
-          setBookingPaymentMessage("Đang chờ xác nhận thanh toán từ PayOS...");
+          setBookingPaymentMessage("Waiting for payment confirmation from PayOS...");
         }
       } finally {
         paymentPollingRef.current = false;
@@ -1302,37 +1304,37 @@ function Booking() {
     event.preventDefault();
 
     if (!currentUserId) {
-      alert("Không tìm thấy userId. Vui lòng đăng nhập lại.");
+      alert("User ID was not found. Please sign in again.");
       return;
     }
 
     /*
-     * Không cho tạo booking mới trong lúc hệ thống đang kiểm tra
-     * hoặc khi người dùng vẫn còn một booking chờ thanh toán.
-     * Người dùng phải tiếp tục thanh toán hoặc hủy booking cũ trước.
+     * Do not allow a new booking while the system is checking
+     * or while the user still has a booking awaiting payment.
+     * The user must complete or cancel the previous booking first.
      */
     if (pendingLoading) {
-      alert("Hệ thống đang kiểm tra giao dịch chờ thanh toán. Vui lòng đợi trong giây lát.");
+      alert("The system is checking for a pending payment. Please wait a moment.");
       return;
     }
 
     if (pendingBooking) {
-      alert("Bạn đang có một booking chờ thanh toán. Vui lòng tiếp tục thanh toán hoặc hủy booking đó trước khi tạo booking mới.");
+      alert("You already have a booking awaiting payment. Complete or cancel it before creating a new booking.");
       return;
     }
 
     if (!formData.vehicleTypeId) {
-      alert("Vui lòng chọn loại xe.");
+      alert("Please select a vehicle type.");
       return;
     }
 
     if (!formData.slotId) {
-      alert("Vui lòng chọn slot còn trống.");
+      alert("Please select an available parking slot.");
       return;
     }
 
     if (!formData.licensePlate.trim()) {
-      alert("Vui lòng nhập biển số xe.");
+      alert("Please enter the vehicle license plate.");
       return;
     }
 
@@ -1347,7 +1349,7 @@ function Booking() {
       !formData.endDate ||
       !formData.endTime
     ) {
-      alert("Vui lòng chọn thời gian bắt đầu và kết thúc.");
+      alert("Please select both the start and end time.");
       return;
     }
 
@@ -1357,7 +1359,7 @@ function Booking() {
       !endDateTime ||
       endDateTime <= startDateTime
     ) {
-      alert("Thời gian kết thúc phải lớn hơn thời gian bắt đầu.");
+      alert("The end time must be later than the start time.");
       return;
     }
 
@@ -1381,7 +1383,7 @@ function Booking() {
       const bookingId = getBookingIdFromResponse(bookingResponse);
 
       if (!bookingId) {
-        throw new Error("Không lấy được bookingId sau khi tạo booking.");
+        throw new Error("Unable to retrieve the booking ID after creating the booking.");
       }
 
       const paymentResponse = await axiosClient.post(
@@ -1396,7 +1398,7 @@ function Booking() {
         new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
       setBookingPaymentStatus("PENDING");
-      setBookingPaymentMessage("Đang chờ khách quét QR và chuyển khoản...");
+      setBookingPaymentMessage("Waiting for the customer to scan the QR code and complete the transfer...");
 
       setSuccessModal({
         show: true,
@@ -1464,14 +1466,14 @@ function Booking() {
           type: "pending",
           message:
             error.response?.data?.message ||
-            "Bạn đang có một giao dịch chờ thanh toán. Giao dịch được hiển thị bên dưới."
+            "You already have a pending payment. It is shown below."
         });
       } else {
         alert(
           error.response?.data?.message ||
             error.response?.data ||
             error.message ||
-            "Tạo booking hoặc tạo QR thanh toán thất bại."
+            "Failed to create the booking or payment QR code."
         );
       }
     } finally {
@@ -1484,32 +1486,35 @@ function Booking() {
     setBookingPaymentStatus("IDLE");
     setBookingPaymentMessage("");
     setIsCancelling(false);
+    setShowCancelConfirmation(false);
     resetBookingForm();
 
     /*
-     * Không navigate sang Reservations hoặc Booking History.
-     * Người dùng vẫn ở nguyên trang New Booking.
+     * Do not navigate to Reservations or Booking History.
+     * The user remains on the New Booking page.
      */
   };
 
-  const handleCancelBooking = async () => {
+  const handleCancelBooking = () => {
     const bookingId = successModal.data?.bookingId;
 
     if (!bookingId || isCancelling) {
       return;
     }
 
-    const shouldCancel = window.confirm(
-      "Bạn có chắc muốn hủy booking này không? Mã QR thanh toán sẽ không còn được sử dụng."
-    );
+    setShowCancelConfirmation(true);
+  };
 
-    if (!shouldCancel) {
+  const confirmCancelBooking = async () => {
+    const bookingId = successModal.data?.bookingId;
+
+    if (!bookingId || isCancelling) {
       return;
     }
 
     try {
       setIsCancelling(true);
-      setBookingPaymentMessage("Đang hủy booking...");
+      setBookingPaymentMessage("Cancelling booking...");
 
       await axiosClient.put(
         `/bookings/my-history/${bookingId}/cancel`
@@ -1518,9 +1523,10 @@ function Booking() {
       setPaymentNotice({
         show: true,
         type: "cancel",
-        message: "Booking đã được hủy thành công."
+        message: "Booking cancelled successfully."
       });
 
+      setShowCancelConfirmation(false);
       setSuccessModal({ show: false, data: null });
       setPendingBooking((current) => {
         const currentId = current?.id || current?.bookingId;
@@ -1532,7 +1538,9 @@ function Booking() {
       setBookingPaymentMessage("");
       resetBookingForm();
 
-      await loadAvailableSlots(formData.vehicleTypeId, { silent: true });
+      await loadAvailableSlots(formData.vehicleTypeId, {
+        silent: true
+      });
     } catch (error) {
       console.error("Cancel booking failed:", error);
 
@@ -1547,18 +1555,18 @@ function Booking() {
           show: true,
           type: "error",
           message:
-            "Phiên đăng nhập đã hết hạn. Hệ thống đang chuyển bạn về trang đăng nhập."
+            "Your session has expired. The system is redirecting you to the sign-in page."
         });
       } else if (status === 403) {
         setPaymentNotice({
           show: true,
           type: "error",
           message:
-            "Tài khoản hiện tại không có quyền hủy booking này."
+            "Your account does not have permission to cancel this booking."
         });
 
         setBookingPaymentMessage(
-          "Không có quyền hủy booking."
+          "You do not have permission to cancel this booking."
         );
       } else if (status === 409) {
         setPaymentNotice({
@@ -1566,11 +1574,11 @@ function Booking() {
           type: "error",
           message:
             error.response?.data?.message ||
-            "Booking đã được thanh toán hoặc không còn có thể hủy."
+            "This booking has already been paid or can no longer be cancelled."
         });
 
         setBookingPaymentMessage(
-          "Booking không còn có thể hủy."
+          "This booking can no longer be cancelled."
         );
       } else {
         setPaymentNotice({
@@ -1579,13 +1587,15 @@ function Booking() {
           message:
             error.response?.data?.message ||
             error.response?.data ||
-            "Không thể hủy booking. Vui lòng thử lại."
+            "Unable to cancel the booking. Please try again."
         });
 
         setBookingPaymentMessage(
-          "Không thể hủy booking. Vui lòng thử lại."
+          "Unable to cancel the booking. Please try again."
         );
       }
+
+      setShowCancelConfirmation(false);
     } finally {
       setIsCancelling(false);
     }
@@ -1598,7 +1608,7 @@ function Booking() {
 
     setBookingPaymentStatus("PENDING");
     setBookingPaymentMessage(
-      "Đang chờ khách quét QR và chuyển khoản..."
+      "Waiting for the customer to scan the QR code and complete the transfer..."
     );
 
     setSuccessModal({
@@ -1614,9 +1624,9 @@ function Booking() {
     }
 
     /*
-     * Nút X chỉ đóng cửa sổ QR. Booking vẫn ở trạng thái chờ thanh toán
-     * và tiếp tục xuất hiện trong thẻ bên dưới để người dùng mở lại sau.
-     * Chỉ nút "Hủy Booking" mới gọi API hủy booking.
+     * The X button only closes the QR window. The booking remains awaiting payment
+     * and remains visible in the section below so it can be reopened later.
+     * Only the "Cancel Booking" button calls the booking cancellation API.
      */
     setSuccessModal({ show: false, data: null });
     setBookingPaymentStatus("IDLE");
@@ -2344,7 +2354,7 @@ function Booking() {
             }
 
             /* =======================================================
-               CSS QUẢN LÝ ĐẢO MÀU MODAL THEO LIGHT/DARK MODE (TỰ ĐỘNG)
+               MODAL COLOR MANAGEMENT FOR LIGHT/DARK MODE
                ======================================================= */
             .pm-modal-card {
               background: #111827 !important;
@@ -2361,7 +2371,7 @@ function Booking() {
               border: 1px solid #334155 !important; 
             }
 
-            /* Áp dụng khi body ở chế độ Light Mode (Sáng) */
+            /* Applied when the page uses Light Mode */
             body.light-mode .pm-modal-card {
               background: var(--bg-card) !important;
               border: 1px solid var(--border-color) !important;
@@ -2375,6 +2385,119 @@ function Booking() {
             body.light-mode .pm-qr-box { 
               background: var(--bg-card-soft) !important; 
               border: 1px solid var(--border-color) !important; 
+            }
+
+            .booking-cancel-confirm-overlay {
+              position: fixed;
+              inset: 0;
+              z-index: 10001;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 1rem;
+              background: rgba(3, 7, 18, 0.78);
+              backdrop-filter: blur(6px);
+              box-sizing: border-box;
+            }
+
+            .booking-cancel-confirm-card {
+              width: min(430px, 100%);
+              background: var(--bg-card);
+              border: 1px solid var(--border-color);
+              border-radius: 1rem;
+              box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+              padding: 1.5rem;
+              color: var(--text-main);
+              box-sizing: border-box;
+            }
+
+            .booking-cancel-confirm-icon {
+              width: 54px;
+              height: 54px;
+              margin: 0 auto 1rem;
+              border-radius: 999px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: #ef4444;
+              background: rgba(239, 68, 68, 0.12);
+              border: 1px solid rgba(239, 68, 68, 0.28);
+            }
+
+            .booking-cancel-confirm-title {
+              margin: 0;
+              text-align: center;
+              font-size: 1.2rem;
+              font-weight: 850;
+              color: var(--text-main);
+            }
+
+            .booking-cancel-confirm-message {
+              margin: 0.75rem 0 0;
+              color: var(--text-muted);
+              text-align: center;
+              font-size: 0.86rem;
+              line-height: 1.55;
+            }
+
+            .booking-cancel-confirm-summary {
+              margin-top: 1rem;
+              padding: 0.85rem 1rem;
+              border-radius: 0.75rem;
+              background: var(--bg-card-soft);
+              border: 1px solid var(--border-color);
+              display: grid;
+              grid-template-columns: 1fr auto;
+              gap: 0.45rem 1rem;
+              font-size: 0.8rem;
+            }
+
+            .booking-cancel-confirm-summary span:nth-child(odd) {
+              color: var(--text-muted);
+            }
+
+            .booking-cancel-confirm-summary span:nth-child(even) {
+              color: var(--text-main);
+              font-weight: 800;
+              text-align: right;
+              overflow-wrap: anywhere;
+            }
+
+            .booking-cancel-confirm-actions {
+              margin-top: 1.25rem;
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 0.75rem;
+            }
+
+            .booking-cancel-confirm-btn {
+              min-height: 44px;
+              border-radius: 0.65rem;
+              padding: 0.75rem 0.9rem;
+              font-size: 0.86rem;
+              font-weight: 850;
+              cursor: pointer;
+            }
+
+            .booking-cancel-confirm-btn:disabled {
+              cursor: not-allowed;
+              opacity: 0.65;
+            }
+
+            .booking-cancel-confirm-keep {
+              border: 1px solid var(--border-color);
+              background: var(--bg-input);
+              color: var(--text-main);
+            }
+
+            .booking-cancel-confirm-danger {
+              border: 1px solid rgba(239, 68, 68, 0.5);
+              background: #ef4444;
+              color: #ffffff;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              gap: 0.45rem;
             }
 
             @keyframes spin {
@@ -2752,29 +2875,29 @@ function Booking() {
             <div className="pending-booking-section-header">
               <div>
                 <h3 className="pending-booking-section-title">
-                  Booking đang dang dở
+                  Pending Booking
                 </h3>
                 <p className="pending-booking-section-subtitle">
-                  Booking chưa thanh toán sẽ xuất hiện tại đây sau khi bạn tải
-                  lại trang. Nhấn vào booking để tiếp tục thanh toán hoặc hủy booking.
+                  Unpaid bookings appear here after the page reloads. Select a
+                  booking to continue payment or cancel it.
                 </p>
               </div>
             </div>
 
             {pendingLoading ? (
               <div className="pending-booking-loading">
-                Đang kiểm tra booking chờ thanh toán...
+                Checking for a booking awaiting payment...
               </div>
             ) : !pendingBooking ? (
               <div className="pending-booking-empty">
-                Hiện không có booking nào đang chờ thanh toán.
+                There are currently no bookings awaiting payment.
               </div>
             ) : (
               <button
                 type="button"
                 className="pending-booking-row"
                 onClick={handleContinuePendingPayment}
-                aria-label="Mở booking đang chờ thanh toán để tiếp tục hoặc hủy"
+                aria-label="Open the pending booking to continue payment or cancel it"
               >
                 <div className="pending-booking-primary">
                   <div className="pending-booking-code-line">
@@ -2791,7 +2914,7 @@ function Booking() {
                   </div>
 
                   <span className="pending-booking-created">
-                    Hết hạn: {formatApiDateTime(pendingBooking.paymentExpiredAt)}
+                    Expires: {formatApiDateTime(pendingBooking.paymentExpiredAt)}
                   </span>
                 </div>
 
@@ -2847,7 +2970,7 @@ function Booking() {
                 </div>
 
                 <span className="pending-booking-open">
-                  Xem và xử lý
+                  View and Manage
                   <ArrowRight size={16} />
                 </span>
               </button>
@@ -2966,7 +3089,7 @@ function Booking() {
                     <div>
                       <div className="pm-text-label" style={{ fontSize: "0.72rem", fontWeight: "700" }}>PRICE PER HOUR</div>
                       <div className="pm-text-value" style={{ fontSize: "0.88rem", fontWeight: "600", marginTop: "0.15rem" }}>
-                        {formatVnd(successModal.data.pricePerHour || currentRatePerHour)} / giờ
+                        {formatVnd(successModal.data.pricePerHour || currentRatePerHour)} / hour
                       </div>
                     </div>
                   </div>
@@ -2979,7 +3102,7 @@ function Booking() {
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
                       <span className="pm-text-subrow">Service Charge</span>
-                      <span className="pm-text-title" style={{ fontWeight: "600" }}>0 VNĐ</span>
+                      <span className="pm-text-title" style={{ fontWeight: "600" }}>0 VND</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.1rem", fontWeight: "700", borderTop: "1px dashed rgba(128,128,128,0.3)", paddingTop: "1rem", marginTop: "0.25rem" }}>
                       <span className="pm-text-title">Total Amount</span>
@@ -2993,7 +3116,7 @@ function Booking() {
                 {/* RIGHT QR PAYMENT CODE PANEL */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
                   <div className="pm-text-title" style={{ fontSize: "1.1rem", fontWeight: "600", marginBottom: "1rem", textAlign: "center" }}>
-                    {bookingPaymentStatus === "PAID" ? "Đã thanh toán thành công" : "Scan QR Code for Payment"}
+                    {bookingPaymentStatus === "PAID" ? "Payment completed successfully." : "Scan QR Code for Payment"}
                   </div>
 
                   <div
@@ -3004,7 +3127,7 @@ function Booking() {
                       display: "inline-block"
                     }}
                   >
-                    {/* Hộp màu trắng bao quanh mã QR luôn cố định để chống lỗi lóa mắt / đảo ngược màu */}
+                    {/* Keep a white background around the QR code for reliable contrast */}
                     <div style={{ background: "#ffffff", padding: "0.5rem", borderRadius: "0.4rem", display: "block" }}>
                       {successModal.data.qrImageSrc ? (
                         <img
@@ -3055,8 +3178,8 @@ function Booking() {
                         }}
                       >
                         {modalRemainingSeconds > 0
-                          ? `Còn lại: ${formatCountdown(modalRemainingSeconds)}`
-                          : "Mã QR đã hết hạn"}
+                          ? `Time remaining: ${formatCountdown(modalRemainingSeconds)}`
+                          : "QR code expired"}
                       </div>
                     )}
 
@@ -3084,10 +3207,10 @@ function Booking() {
                     {bookingPaymentStatus === "PAID" ? (
                       <span style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem" }}>
                         <CheckCircle2 size={18} />
-                        Đã thanh toán thành công
+                        Payment completed successfully.
                       </span>
                     ) : (
-                      bookingPaymentMessage || "Đang chờ thanh toán..."
+                      bookingPaymentMessage || "Waiting for payment..."
                     )}
                   </div>
 
@@ -3148,7 +3271,7 @@ function Booking() {
                           cursor: "pointer"
                         }}
                       >
-                        Trở lại New Booking
+                        Return to New Booking
                       </button>
                     ) : (
                       <button
@@ -3182,13 +3305,102 @@ function Booking() {
                         )}
 
                         {isCancelling
-                          ? "Đang hủy Booking..."
-                          : "Hủy Booking"}
+                          ? "Cancelling Booking..."
+                          : "Cancel Booking"}
                       </button>
                     )}
                   </div>
                 </div>
 
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showCancelConfirmation && successModal.data && (
+          <div
+            className="booking-cancel-confirm-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="booking-cancel-confirm-title"
+            onClick={() => {
+              if (!isCancelling) {
+                setShowCancelConfirmation(false);
+              }
+            }}
+          >
+            <div
+              className="booking-cancel-confirm-card"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="booking-cancel-confirm-icon">
+                <AlertTriangle size={28} />
+              </div>
+
+              <h3
+                id="booking-cancel-confirm-title"
+                className="booking-cancel-confirm-title"
+              >
+                Cancel this booking?
+              </h3>
+
+              <p className="booking-cancel-confirm-message">
+                The booking and its payment QR code will be cancelled. This
+                action cannot be undone.
+              </p>
+
+              <div className="booking-cancel-confirm-summary">
+                <span>License Plate</span>
+                <span>{successModal.data.licensePlate || "-"}</span>
+
+                <span>Parking Slot</span>
+                <span>{successModal.data.slotDisplayCode || "-"}</span>
+
+                <span>Amount</span>
+                <span>
+                  {formatVnd(
+                    successModal.data.amount ||
+                      totalEstimated
+                  )}
+                </span>
+              </div>
+
+              <div className="booking-cancel-confirm-actions">
+                <button
+                  type="button"
+                  className="booking-cancel-confirm-btn booking-cancel-confirm-keep"
+                  disabled={isCancelling}
+                  onClick={() =>
+                    setShowCancelConfirmation(false)
+                  }
+                >
+                  Keep Booking
+                </button>
+
+                <button
+                  type="button"
+                  className="booking-cancel-confirm-btn booking-cancel-confirm-danger"
+                  disabled={isCancelling}
+                  onClick={confirmCancelBooking}
+                >
+                  {isCancelling ? (
+                    <>
+                      <LoaderCircle
+                        size={17}
+                        style={{
+                          animation:
+                            "spin 0.8s linear infinite"
+                        }}
+                      />
+                      Cancelling...
+                    </>
+                  ) : (
+                    <>
+                      <Ban size={17} />
+                      Yes, Cancel Booking
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>

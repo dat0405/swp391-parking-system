@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../dashboard/Sidebar";
 import Header from "../dashboard/Header";
 import {
@@ -19,6 +19,7 @@ import { bookingApi } from "../api/bookingApi";
 import axiosClient from "../api/axiosClient";
 
 const RESERVATION_HISTORY_KEY = "reservation_admin_history";
+const RESERVATION_POLL_INTERVAL_MS = 5 * 1000;
 
 const theme = {
   page: "var(--bg-dashboard)",
@@ -336,7 +337,20 @@ const ReservationAdmin = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
+
+  /*
+   * Initial loading is only shown when the page has no cached data yet.
+   * Background polling never replaces the table with a loading row.
+   */
+  const [isInitialLoading, setIsInitialLoading] = useState(
+    reservations.length === 0
+  );
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const hasLoadedReservationsRef = useRef(
+    reservations.length > 0
+  );
+  const reservationRequestInFlightRef = useRef(false);
 
   const [reservationToCancel, setReservationToCancel] = useState(null);
   const [selectedReservationDetail, setSelectedReservationDetail] =
@@ -390,9 +404,34 @@ const ReservationAdmin = () => {
     };
   };
 
-  const loadReservations = async () => {
+  const loadReservations = async ({
+    mode = "silent"
+  } = {}) => {
+    /*
+     * Prevent a new polling request from starting while the previous
+     * booking/slot request is still pending.
+     */
+    if (reservationRequestInFlightRef.current) {
+      return;
+    }
+
+    reservationRequestInFlightRef.current = true;
+
+    const shouldShowInitialLoading =
+      mode === "initial" &&
+      !hasLoadedReservationsRef.current;
+
+    const shouldShowRefreshIndicator =
+      mode === "manual";
+
     try {
-      setIsLoading(true);
+      if (shouldShowInitialLoading) {
+        setIsInitialLoading(true);
+      }
+
+      if (shouldShowRefreshIndicator) {
+        setIsRefreshing(true);
+      }
 
       const [bookingResponse, slotsResponse] = await Promise.all([
         bookingApi.getAllBookings(),
@@ -406,12 +445,18 @@ const ReservationAdmin = () => {
       const slotsPayload = slotsResponse.data;
       const allSlots = Array.isArray(slotsPayload)
         ? slotsPayload
-        : slotsPayload.content || slotsPayload.data || slotsPayload.slots || [];
+        : slotsPayload.content ||
+          slotsPayload.data ||
+          slotsPayload.slots ||
+          [];
 
       const slotDisplayMap = buildSlotDisplayMap(allSlots);
 
       const latestReservations = data.map((booking) =>
-        mapBookingToReservation(booking, slotDisplayMap)
+        mapBookingToReservation(
+          booking,
+          slotDisplayMap
+        )
       );
 
       setReservations((previousReservations) => {
@@ -420,43 +465,79 @@ const ReservationAdmin = () => {
             ? previousReservations
             : getSavedReservationHistory();
 
-        const mergedReservations = mergeReservationHistory(
-          baseHistory,
-          latestReservations
-        );
+        const mergedReservations =
+          mergeReservationHistory(
+            baseHistory,
+            latestReservations
+          );
 
-        saveReservationHistory(mergedReservations);
+        saveReservationHistory(
+          mergedReservations
+        );
 
         return mergedReservations;
       });
+
+      hasLoadedReservationsRef.current = true;
     } catch (error) {
-      console.error("Load reservations failed:", error);
+      console.error(
+        "Load reservations failed:",
+        error
+      );
 
-      const savedHistory = getSavedReservationHistory();
+      const savedHistory =
+        getSavedReservationHistory();
 
-      if (savedHistory.length > 0) {
+      if (
+        !hasLoadedReservationsRef.current &&
+        savedHistory.length > 0
+      ) {
         setReservations(savedHistory);
+        hasLoadedReservationsRef.current = true;
       }
 
-      alert(
-        error.response?.data?.message ||
-          error.response?.data ||
-          "Không tải được danh sách reservations."
-      );
+      /*
+       * Silent polling errors are kept in the console only.
+       * This avoids repeated alerts and visible UI flicker.
+       */
+      if (mode !== "silent") {
+        alert(
+          error.response?.data?.message ||
+            error.response?.data ||
+            "Unable to load reservations."
+        );
+      }
     } finally {
-      setIsLoading(false);
+      reservationRequestInFlightRef.current = false;
+
+      if (shouldShowInitialLoading) {
+        setIsInitialLoading(false);
+      }
+
+      if (shouldShowRefreshIndicator) {
+        setIsRefreshing(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadReservations();
+    loadReservations({
+      mode: "initial"
+    });
 
     const intervalId = window.setInterval(
-      loadReservations,
-      5000
+      () => {
+        loadReservations({
+          mode: "silent"
+        });
+      },
+      RESERVATION_POLL_INTERVAL_MS
     );
 
-    return () => window.clearInterval(intervalId);
+    return () => {
+      window.clearInterval(intervalId);
+      reservationRequestInFlightRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -733,7 +814,7 @@ const ReservationAdmin = () => {
   const handleConfirmReservation = async (reservation) => {
     try {
       await bookingApi.confirmBooking(reservation.id);
-      await loadReservations();
+      await loadReservations({ mode: "silent" });
     } catch (error) {
       alert(
         error.response?.data?.message ||
@@ -767,7 +848,7 @@ const ReservationAdmin = () => {
       });
 
       setReservationToCancel(null);
-      await loadReservations();
+      await loadReservations({ mode: "silent" });
     } catch (error) {
       alert(
         error.response?.data?.message ||
@@ -835,6 +916,19 @@ const ReservationAdmin = () => {
         }}
       >
         <Header />
+
+        <style>
+          {`
+            @keyframes reservationRefreshSpin {
+              from {
+                transform: rotate(0deg);
+              }
+              to {
+                transform: rotate(360deg);
+              }
+            }
+          `}
+        </style>
 
         <div style={{ marginBottom: "2rem" }}>
           <h1
@@ -1011,21 +1105,32 @@ const ReservationAdmin = () => {
 
             <button
               title="Reload reservations"
-              onClick={loadReservations}
-              disabled={isLoading}
+              onClick={() =>
+                loadReservations({
+                  mode: "manual"
+                })
+              }
+              disabled={isRefreshing}
               style={{
                 padding: "0.65rem",
                 borderRadius: "0.6rem",
                 border: `1px solid ${theme.border}`,
                 background: theme.input,
                 color: theme.text,
-                cursor: isLoading ? "not-allowed" : "pointer",
+                cursor: isRefreshing ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
-                opacity: isLoading ? 0.65 : 1
+                opacity: isRefreshing ? 0.65 : 1
               }}
             >
-              <RefreshCcw size={18} />
+              <RefreshCcw
+                size={18}
+                style={{
+                  animation: isRefreshing
+                    ? "reservationRefreshSpin 0.8s linear infinite"
+                    : "none"
+                }}
+              />
             </button>
           </div>
 
@@ -1070,7 +1175,7 @@ const ReservationAdmin = () => {
             <table
               style={{
                 width: "100%",
-                minWidth: "1120px",
+                minWidth: "980px",
                 height: "100%",
                 borderCollapse: "collapse",
                 textAlign: "left",
@@ -1087,7 +1192,6 @@ const ReservationAdmin = () => {
                     background: theme.tableHeader
                   }}
                 >
-                  <th style={{ padding: "1rem" }}>ID</th>
                   <th style={{ padding: "1rem" }}>Customer</th>
                   <th style={{ padding: "1rem" }}>Vehicle Plate</th>
                   <th style={{ padding: "1rem" }}>Slot</th>
@@ -1101,10 +1205,10 @@ const ReservationAdmin = () => {
               </thead>
 
               <tbody>
-                {isLoading ? (
+                {isInitialLoading && reservations.length === 0 ? (
                   <tr style={{ height: "320px" }}>
                     <td
-                      colSpan="8"
+                      colSpan="7"
                       style={{
                         padding: "2rem",
                         textAlign: "center",
@@ -1118,7 +1222,7 @@ const ReservationAdmin = () => {
                 ) : currentItems.length === 0 ? (
                   <tr style={{ height: "320px" }}>
                     <td
-                      colSpan="8"
+                      colSpan="7"
                       style={{
                         padding: "2rem",
                         textAlign: "center",
@@ -1151,16 +1255,6 @@ const ReservationAdmin = () => {
                             background: theme.tableRow
                           }}
                         >
-                          <td
-                            style={{
-                              padding: "1rem",
-                              color: theme.muted,
-                              fontWeight: "700"
-                            }}
-                          >
-                            {row.displayId}
-                          </td>
-
                           <td style={{ padding: "1rem" }}>
                             <div
                               style={{
@@ -1385,7 +1479,7 @@ const ReservationAdmin = () => {
                               : `1px solid ${theme.border}`
                         }}
                       >
-                        <td colSpan="8" />
+                        <td colSpan="7" />
                       </tr>
                     ))}
                   </>
@@ -1535,7 +1629,9 @@ function ReservationDetailModal({
         justifyContent: "center",
         zIndex: 2000,
         backdropFilter: "blur(4px)",
-        padding: "1rem"
+        padding: "1rem",
+        overflowY: "auto",
+        overscrollBehavior: "contain"
       }}
     >
       <div
@@ -1543,10 +1639,13 @@ function ReservationDetailModal({
           background: theme.card,
           border: `1px solid ${theme.border}`,
           borderRadius: "0.85rem",
-          width: "min(520px, 100%)",
+          width: "min(640px, 100%)",
+          maxHeight: "calc(100vh - 2rem)",
           color: theme.text,
           boxShadow: "0 24px 60px rgba(0, 0, 0, 0.35)",
-          overflow: "hidden"
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column"
         }}
       >
         <div
@@ -1555,8 +1654,10 @@ function ReservationDetailModal({
             justifyContent: "space-between",
             alignItems: "flex-start",
             gap: "1rem",
-            padding: "1.25rem 1.5rem",
-            borderBottom: `1px solid ${theme.border}`
+            padding: "1.1rem 1.25rem",
+            borderBottom: `1px solid ${theme.border}`,
+            flexShrink: 0,
+            background: theme.card
           }}
         >
           <div>
@@ -1596,7 +1697,14 @@ function ReservationDetailModal({
           </button>
         </div>
 
-        <div style={{ padding: "1.5rem" }}>
+        <div
+          style={{
+            padding: "1.15rem 1.25rem 1.25rem",
+            overflowY: "auto",
+            minHeight: 0,
+            overscrollBehavior: "contain"
+          }}
+        >
           <div
             style={{
               display: "flex",
@@ -1659,9 +1767,9 @@ function ReservationDetailModal({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "0.85rem",
-              marginBottom: "1.25rem"
+              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+              gap: "0.7rem",
+              marginBottom: "1rem"
             }}
           >
             {[
