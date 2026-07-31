@@ -260,7 +260,6 @@ const mapApiSlotToViewSlot = (slot) => {
     info:
       slot.info ||
       slot.licensePlate ||
-      slot.manualLicensePlate ||
       (finalStatus === "occupied"
         ? "Occupied"
         : finalStatus === "reserved"
@@ -355,7 +354,6 @@ const ParkingManagement = () => {
   const [errorMessage, setErrorMessage] = useState("");
 
   const [editingSlot, setEditingSlot] = useState(null);
-  const [manualLicensePlate, setManualLicensePlate] = useState("");
   const [slotStatusLoading, setSlotStatusLoading] = useState(false);
   const [slotStatusError, setSlotStatusError] = useState("");
 
@@ -917,7 +915,6 @@ const ParkingManagement = () => {
     if (!canManageSlots) return;
 
     setEditingSlot(slot);
-    setManualLicensePlate("");
     setSlotStatusError("");
   };
 
@@ -925,15 +922,11 @@ const ParkingManagement = () => {
     if (slotStatusLoading) return;
 
     setEditingSlot(null);
-    setManualLicensePlate("");
     setSlotStatusError("");
   };
 
   const getUpdatedInfoByStatus = (statusType) => {
-    if (statusType === "occupied") {
-      return manualLicensePlate.trim() || "Occupied";
-    }
-
+    if (statusType === "occupied") return "Occupied";
     if (statusType === "available") return "Available";
     if (statusType === "reserved") return "Reserved";
     if (statusType === "maintenance") return "Maintenance";
@@ -949,13 +942,15 @@ const ParkingManagement = () => {
       setSlotStatusError("");
 
       const updatedInfo = getUpdatedInfoByStatus(statusType);
-      const licensePlateValue = manualLicensePlate.trim() || null;
 
+      /*
+       * Không nhập hoặc gửi biển số thủ công tại Parking Floors.
+       * Biển số và trạng thái thông thường được đồng bộ từ Booking
+       * và quy trình Check-in/Check-out.
+       */
       const payload = {
         status: statusType.toUpperCase(),
-        info: updatedInfo,
-        manualLicensePlate: licensePlateValue,
-        licensePlate: licensePlateValue
+        info: updatedInfo
       };
 
       await axiosClient.patch(`/parking-slots/${editingSlot.id}/status`, payload);
@@ -975,7 +970,6 @@ const ParkingManagement = () => {
       );
 
       setEditingSlot(null);
-      setManualLicensePlate("");
 
       await loadParkingSlots({ silent: true });
     } catch (error) {
@@ -1483,8 +1477,6 @@ const ParkingManagement = () => {
       {canManageSlots && editingSlot && (
         <IncidentModal
           editingSlot={editingSlot}
-          manualLicensePlate={manualLicensePlate}
-          setManualLicensePlate={setManualLicensePlate}
           slotStatusLoading={slotStatusLoading}
           slotStatusError={slotStatusError}
           handleUpdateSlotStatus={handleUpdateSlotStatus}
@@ -1524,8 +1516,6 @@ const ParkingManagement = () => {
 
 function IncidentModal({
   editingSlot,
-  manualLicensePlate,
-  setManualLicensePlate,
   slotStatusLoading,
   slotStatusError,
   handleUpdateSlotStatus,
@@ -1559,45 +1549,25 @@ function IncidentModal({
         <h3
           style={{
             color: theme.text,
-            margin: "0 0 1.25rem 0",
+            margin: "0 0 0.75rem 0",
             fontSize: "1.2rem"
           }}
         >
-          Incident Config: Slot {editingSlot.displayCode}
+          Manage Status: Slot {editingSlot.displayCode}
         </h3>
 
-        <div style={{ marginBottom: "1.35rem" }}>
-          <label
-            style={{
-              color: theme.muted,
-              fontSize: "0.85rem",
-              display: "block",
-              marginBottom: "0.5rem",
-              lineHeight: 1.35
-            }}
-          >
-            Manual License Plate (Use if system failed to sync check-in):
-          </label>
-
-          <input
-            type="text"
-            placeholder="e.g., NY-8291-K"
-            value={manualLicensePlate}
-            onChange={(event) => setManualLicensePlate(event.target.value)}
-            disabled={slotStatusLoading}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              height: "40px",
-              padding: "0 0.75rem",
-              borderRadius: "0.45rem",
-              border: `1px solid ${theme.border}`,
-              background: theme.input,
-              color: theme.text,
-              outline: "none"
-            }}
-          />
-        </div>
+        <p
+          style={{
+            margin: "0 0 1.25rem 0",
+            color: theme.muted,
+            fontSize: "0.85rem",
+            lineHeight: 1.5
+          }}
+        >
+          Booking and Check-in/Check-out automatically synchronize the
+          license plate and normal slot status. Use the buttons below only
+          when an Admin or Parking Manager needs to override the slot status.
+        </p>
 
         <div
           style={{
