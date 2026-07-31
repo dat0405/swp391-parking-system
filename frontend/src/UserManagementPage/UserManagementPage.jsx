@@ -1,699 +1,1194 @@
-import React, { useEffect, useMemo, useState } from "react";
-import Sidebar from "../dashboard/Sidebar";
-import Header from "../dashboard/Header";
-import { reportDashboardApi } from "../api/reportDashboardApi";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  DollarSign,
-  Activity,
-  Percent,
-  Calendar,
-  Download,
-  Filter,
-  MoreVertical,
+  UserPlus,
+  Search,
+  Pencil,
+  X,
+  ShieldAlert,
+  AlertTriangle,
+  Users,
+  Shield,
+  Lock,
+  UserCheck,
   ChevronLeft,
   ChevronRight,
-  Circle,
-  Car,
-  Bike,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  TrendingUp,
-  TrendingDown,
-  Minus
 } from "lucide-react";
 
-const emptyReport = {
-  range: "WEEK",
-  startDate: null,
-  endDate: null,
-  summary: {
-    totalRevenue: 0,
-    totalSessions: 0,
-    avgOccupancy: 0,
-    totalReservations: 0
-  },
-  revenueChart: [],
-  vehicleDistribution: [],
-  reservationStatusBreakdown: [],
-  slotStatusBreakdown: [],
-  operationalLog: []
+import Header from "../dashboard/Header";
+import Sidebar from "../dashboard/Sidebar";
+import { userApi } from "../api/userApi";
+
+const USER_STATUS_POLL_INTERVAL_MS = 10 * 1000;
+
+const theme = {
+  page: "var(--bg-dashboard)",
+  card: "var(--bg-card)",
+  cardSoft: "var(--bg-card-soft)",
+  input: "var(--bg-input)",
+  border: "var(--border-color)",
+  tableHeader: "var(--bg-table-header)",
+  tableRow: "var(--bg-table-row)",
+  text: "var(--text-main)",
+  muted: "var(--text-muted)",
+  blue: "var(--primary-blue)",
+  blueSoft: "var(--primary-blue-soft)",
+  green: "var(--success-green)",
+  greenSoft: "var(--success-green-soft)",
+  red: "var(--danger-red)",
+  redSoft: "var(--danger-red-soft)",
+  yellow: "var(--warning-yellow)",
+  yellowSoft: "var(--warning-yellow-soft)",
+  shadow: "var(--shadow-card)",
 };
 
-const rangeToApiValue = {
-  Today: "TODAY",
-  Week: "WEEK",
-  Month: "MONTH"
-};
-
-const reportColors = {
-  blue: "#3b82f6",
-  green: "#10b981",
-  red: "#ef4444",
-  yellow: "#f59e0b"
-};
-
-const formatCurrency = (value) => {
-  return `${Number(value || 0).toLocaleString("vi-VN")} VND`;
-};
-
-const formatNumber = (value) => {
-  return Number(value || 0).toLocaleString("vi-VN");
-};
-
-const formatPercent = (value) => {
-  return `${Number(value || 0).toFixed(1)}%`;
-};
-
-const formatDateTime = (value) => {
-  if (!value) return "N/A";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-
-  return date.toLocaleString("vi-VN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric"
+function UserManagementPage() {
+  const [stats, setStats] = useState({
+    totalAccounts: 0,
+    activeNow: 0,
+    staffMembers: 0,
+    lockedAccounts: 0,
   });
-};
 
-const getMetricValueFontSize = (value) => {
-  const text = String(value || "");
-
-  if (text.length >= 18) return "1.35rem";
-  if (text.length >= 15) return "1.5rem";
-  if (text.length >= 12) return "1.7rem";
-
-  return "2rem";
-};
-
-const getStatusMeta = (status) => {
-  const value = String(status || "").toUpperCase();
-
-  if (value === "CONFIRMED" || value === "COMPLETED" || value === "PAID") {
-    return {
-      label: value,
-      color: reportColors.green,
-      colorClass: "report-progress-fill-green",
-      icon: CheckCircle2
-    };
-  }
-
-  if (value === "PENDING" || value === "RESERVED" || value === "ACTIVE") {
-    return {
-      label: value,
-      color: reportColors.yellow,
-      colorClass: "report-progress-fill-yellow",
-      icon: Clock
-    };
-  }
-
-  if (value === "CANCELLED" || value === "CANCELED") {
-    return {
-      label: value,
-      color: reportColors.red,
-      colorClass: "report-progress-fill-red",
-      icon: XCircle
-    };
-  }
-
-  return {
-    label: value || "UNKNOWN",
-    color: reportColors.blue,
-    colorClass: "report-progress-fill-blue",
-    icon: CheckCircle2
-  };
-};
-
-const normalizeVehicleDistribution = (rows = []) => {
-  return rows.map((item) => {
-    const vehicleType = String(item.vehicleType || item.vehicletype || "Unknown");
-    const total = Number(item.total || 0);
-    const percent = Number(item.percent || 0);
-    const isMotorbike =
-      vehicleType.toLowerCase().includes("bike") ||
-      vehicleType.toLowerCase().includes("motor");
-
-    return {
-      label: vehicleType,
-      count: total,
-      percent,
-      icon: isMotorbike ? Bike : Car,
-      color: isMotorbike ? reportColors.green : reportColors.blue,
-      colorClass: isMotorbike
-        ? "report-progress-fill-green"
-        : "report-progress-fill-blue"
-    };
-  });
-};
-
-const normalizeReservationBreakdown = (rows = []) => {
-  const total = rows.reduce((sum, item) => sum + Number(item.total || 0), 0);
-
-  return rows.map((item) => {
-    const status = item.status || "UNKNOWN";
-    const value = Number(item.total || 0);
-    const percent = total === 0 ? 0 : Math.round((value * 1000) / total) / 10;
-    const meta = getStatusMeta(status);
-
-    return {
-      label: meta.label,
-      value,
-      percent,
-      color: meta.color,
-      colorClass: meta.colorClass,
-      icon: meta.icon
-    };
-  });
-};
-
-const normalizeChartData = (rows = []) => {
-  return rows.map((item) => ({
-    label: String(item.label || "N/A"),
-    revenue: Number(item.revenue || 0),
-    paymentCount: Number(item.paymentCount || item.paymentcount || 0)
-  }));
-};
-
-const normalizeMonthlyComparison = (rows = []) => {
-  if (!Array.isArray(rows)) {
-    return [];
-  }
-
-  return rows.map((item) => ({
-    year: Number(item.year || 0),
-    month: Number(item.month || 0),
-    monthLabel: String(item.monthLabel || "N/A"),
-    totalRevenue: Number(item.totalRevenue || 0),
-    totalSessions: Number(item.totalSessions || 0),
-    totalReservations: Number(item.totalReservations || 0),
-    completedReservations: Number(item.completedReservations || 0),
-    cancelledReservations: Number(item.cancelledReservations || 0),
-    averageOccupancy: Number(item.averageOccupancy || 0),
-    paymentCount: Number(item.paymentCount || 0),
-    revenueGrowthPercent: Number(item.revenueGrowthPercent || 0),
-    sessionGrowthPercent: Number(item.sessionGrowthPercent || 0),
-    reservationGrowthPercent: Number(
-      item.reservationGrowthPercent || 0
-    )
-  }));
-};
-
-const calculateGrowthPercent = (previousValue, currentValue) => {
-  const previous = Number(previousValue || 0);
-  const current = Number(currentValue || 0);
-
-  if (previous === 0) {
-    return current === 0 ? 0 : 100;
-  }
-
-  return ((current - previous) / Math.abs(previous)) * 100;
-};
-
-const formatGrowthPercent = (value) => {
-  const number = Number(value || 0);
-  const sign = number > 0 ? "+" : "";
-
-  return `${sign}${number.toFixed(1)}%`;
-};
-
-const styles = {
-  card: {
-    background: "var(--bg-card)",
-    border: "1px solid var(--border-color)",
-    color: "var(--text-main)",
-    boxShadow: "var(--shadow-card)"
-  }
-};
-
-const clampPercent = (value) => {
-  const number = Number(value || 0);
-
-  if (number < 0) return 0;
-  if (number > 100) return 100;
-
-  return number;
-};
-
-function ProgressBar({ percent, colorClass, height = 9 }) {
-  const safePercent = clampPercent(percent);
-
-  return (
-    <div
-      className="report-progress-track"
-      style={{
-        height: `${height}px`
-      }}
-    >
-      <div
-        className={`report-progress-fill ${colorClass}`}
-        style={{
-          width: `${safePercent}%`
-        }}
-      />
-    </div>
-  );
-}
-
-const Reports = () => {
-  const [timeRange, setTimeRange] = useState("Week");
-  const [comparisonMonths, setComparisonMonths] = useState(6);
-  const [monthlyComparison, setMonthlyComparison] = useState([]);
-  const [report, setReport] = useState(emptyReport);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [timeTick, setTimeTick] = useState(Date.now());
 
-  const isMonthlyComparison =
-    timeRange === "Monthly Comparison";
+  /*
+   * Ngăn nhiều request GET /users chạy chồng lên nhau.
+   * Polling mới sẽ được bỏ qua nếu request trước vẫn đang xử lý.
+   */
+  const usersRequestInFlightRef = useRef(false);
+  const usersAbortControllerRef = useRef(null);
 
-  const apiRange = rangeToApiValue[timeRange] || "WEEK";
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedRole, setSelectedRole] = useState("All Roles");
+  const [selectedStatus, setSelectedStatus] = useState("Any Status");
 
-  const isInitialLoading = loading && !hasLoadedOnce;
-  const isRefreshing = loading && hasLoadedOnce;
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newFullName, setNewFullName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole] = useState("PARKING STAFF");
 
-  useEffect(() => {
-    let isMounted = true;
+  const [isEditRoleOpen, setIsEditRoleOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [updatedRole, setUpdatedRole] = useState("");
 
-    const loadReport = async () => {
+  const [isLockModalOpen, setIsLockModalOpen] = useState(false);
+  const [userToLock, setUserToLock] = useState(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+
+  const formatRoleLabel = (roleName) => {
+    if (roleName === "SYSTEM_ADMIN") return "ADMIN";
+    if (roleName === "PARKING_MANAGER") return "PARKING MANAGEMENT";
+    if (roleName === "PARKING_STAFF") return "PARKING STAFF";
+    if (roleName === "DRIVER") return "DRIVER";
+
+    return roleName || "DRIVER";
+  };
+
+  const getRoleIdByLabel = (roleLabel) => {
+    if (roleLabel === "ADMIN") return 1;
+    if (roleLabel === "PARKING MANAGEMENT") return 2;
+    if (roleLabel === "PARKING STAFF") return 3;
+    if (roleLabel === "DRIVER") return 4;
+
+    return 4;
+  };
+
+  const formatStatusLabel = (user) => {
+    if (user.status === "BANNED") return "Locked";
+    if (user.online) return "Active";
+
+    return "Offline";
+  };
+
+  const getDisplayStatus = (accountStatus, online) => {
+    if (accountStatus === "BANNED") return "Locked";
+    if (online) return "Active";
+
+    return "Offline";
+  };
+
+  const getAvatarText = (fullName) => {
+    if (!fullName) return "U";
+
+    const parts = fullName.trim().split(/\s+/);
+
+    if (parts.length === 1) {
+      return parts[0].substring(0, 2).toUpperCase();
+    }
+
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  };
+
+  const formatLastLogin = (value) => {
+    if (!value) return "Never";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "Never";
+    }
+
+    return date.toLocaleString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
+  const formatTimeAgo = (value) => {
+    if (!value) return "";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+
+    const diffInSeconds = Math.floor((timeTick - date.getTime()) / 1000);
+
+    if (diffInSeconds < 0) return "";
+    if (diffInSeconds < 60) return "just now";
+
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+
+    if (diffInMinutes < 60) {
+      return `${diffInMinutes} min ago`;
+    }
+
+    const diffInHours = Math.floor(diffInMinutes / 60);
+
+    if (diffInHours < 24) {
+      return `${diffInHours}h ago`;
+    }
+
+    const diffInDays = Math.floor(diffInHours / 24);
+
+    if (diffInDays < 7) {
+      return `${diffInDays}d ago`;
+    }
+
+    return date.toLocaleDateString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
+  const getStatusDisplayText = (user) => {
+    if (user.status === "Locked") return "Locked";
+    if (user.status === "Active") return "Active";
+
+    /*
+     * Trạng thái hoạt động chỉ dựa vào dữ liệu đăng nhập/hoạt động
+     * của chính tài khoản.
+     *
+     * Không dùng updatedAt vì trường đó thay đổi khi Admin sửa role,
+     * thông tin tài khoản hoặc trạng thái nghiệp vụ.
+     */
+    const offlineTime =
+      user.lastActiveAt ||
+      user.lastLoginAt ||
+      null;
+
+    const offlineAgo = formatTimeAgo(offlineTime);
+
+    if (!offlineAgo) return "Offline";
+
+    return `Offline · ${offlineAgo}`;
+  };
+
+  const mapApiUserToTableUser = (user) => {
+    return {
+      id: user.id,
+      name: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      roleId: user.roleId,
+      roleName: user.roleName,
+      roles: [formatRoleLabel(user.roleName)],
+      accountStatus: user.status,
+      status: formatStatusLabel(user),
+      online: user.online,
+      lastLogin: formatLastLogin(user.lastLoginAt),
+      lastLoginAt: user.lastLoginAt,
+      lastActiveAt: user.lastActiveAt,
+      updatedAt: user.updatedAt,
+      avatar: getAvatarText(user.fullName),
+    };
+  };
+
+  const calculateStats = (mappedUsers) => {
+    const staffRoles = ["ADMIN", "PARKING MANAGEMENT", "PARKING STAFF"];
+
+    return {
+      totalAccounts: mappedUsers.length,
+      activeNow: mappedUsers.filter((user) => user.online).length,
+      staffMembers: mappedUsers.filter((user) =>
+        user.roles.some((role) => staffRoles.includes(role))
+      ).length,
+      lockedAccounts: mappedUsers.filter(
+        (user) => user.accountStatus === "BANNED"
+      ).length,
+    };
+  };
+
+  const fetchData = useCallback(
+    async (showInitialLoading = false) => {
+      if (usersRequestInFlightRef.current) {
+        return;
+      }
+
+      const abortController = new AbortController();
+
+      usersRequestInFlightRef.current = true;
+      usersAbortControllerRef.current = abortController;
+
       try {
-        setLoading(true);
-        setErrorMessage("");
-
-        if (isMonthlyComparison) {
-          const response =
-            await reportDashboardApi.getMonthlyComparison(
-              comparisonMonths
-            );
-
-          if (!isMounted) return;
-
-          setMonthlyComparison(
-            normalizeMonthlyComparison(response.data)
-          );
-        } else {
-          const response =
-            await reportDashboardApi.getReportDashboard(
-              apiRange
-            );
-
-          if (!isMounted) return;
-
-          setReport({
-            ...emptyReport,
-            ...(response.data || {}),
-            summary: {
-              ...emptyReport.summary,
-              ...(response.data?.summary || {})
-            },
-            revenueChart:
-              response.data?.revenueChart || [],
-            vehicleDistribution:
-              response.data?.vehicleDistribution || [],
-            reservationStatusBreakdown:
-              response.data?.reservationStatusBreakdown || [],
-            slotStatusBreakdown:
-              response.data?.slotStatusBreakdown || [],
-            operationalLog:
-              response.data?.operationalLog || []
-          });
+        if (showInitialLoading) {
+          setLoading(true);
         }
+
+        const res = await userApi.getUsers({
+          signal: abortController.signal,
+        });
+
+        const apiUsers = Array.isArray(res.data) ? res.data : [];
+        const mappedUsers = apiUsers.map(mapApiUserToTableUser);
+
+        setUsers(mappedUsers);
+        setStats(calculateStats(mappedUsers));
+        setTimeTick(Date.now());
       } catch (error) {
-        if (!isMounted) return;
+        const isCancelled =
+          error?.code === "ERR_CANCELED" ||
+          error?.name === "CanceledError";
 
-        console.error("Failed to load report data:", error);
-
-        setErrorMessage(
-          isMonthlyComparison
-            ? "Failed to load monthly comparison data from server."
-            : "Failed to load report data from server."
-        );
-
-        if (!hasLoadedOnce) {
-          if (isMonthlyComparison) {
-            setMonthlyComparison([]);
-          } else {
-            setReport(emptyReport);
-          }
+        if (isCancelled) {
+          return;
         }
+
+        console.error("Lỗi kết nối API users:", error);
+
+        /*
+         * Nếu polling nền lỗi, giữ nguyên dữ liệu đang hiển thị.
+         * Chỉ trả về danh sách rỗng khi lần tải đầu tiên thất bại.
+         */
+        setUsers((prevUsers) => {
+          if (prevUsers.length > 0) {
+            return prevUsers;
+          }
+
+          setStats({
+            totalAccounts: 0,
+            activeNow: 0,
+            staffMembers: 0,
+            lockedAccounts: 0,
+          });
+
+          return [];
+        });
       } finally {
-        if (isMounted) {
-          setHasLoadedOnce(true);
+        if (usersAbortControllerRef.current === abortController) {
+          usersAbortControllerRef.current = null;
+        }
+
+        usersRequestInFlightRef.current = false;
+
+        if (showInitialLoading) {
           setLoading(false);
         }
       }
-    };
+    },
+    []
+  );
 
-    loadReport();
+  useEffect(() => {
+    fetchData(true);
+
+    const intervalId = window.setInterval(() => {
+      fetchData(false);
+    }, USER_STATUS_POLL_INTERVAL_MS);
 
     return () => {
-      isMounted = false;
+      window.clearInterval(intervalId);
+
+      usersAbortControllerRef.current?.abort();
+      usersAbortControllerRef.current = null;
+      usersRequestInFlightRef.current = false;
     };
-  }, [apiRange, comparisonMonths, isMonthlyComparison]);
+  }, [fetchData]);
 
-  const chartData = useMemo(() => {
-    return normalizeChartData(report.revenueChart);
-  }, [report.revenueChart]);
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setTimeTick(Date.now());
+    }, 60000);
 
-  const vehicleDistribution = useMemo(() => {
-    return normalizeVehicleDistribution(report.vehicleDistribution);
-  }, [report.vehicleDistribution]);
+    return () => clearInterval(intervalId);
+  }, []);
 
-  const reservationStatusBreakdown = useMemo(() => {
-    return normalizeReservationBreakdown(report.reservationStatusBreakdown);
-  }, [report.reservationStatusBreakdown]);
+  const openEditRoleModal = (user) => {
+    setEditingUser(user);
+    setUpdatedRole(user.roles[0] || "DRIVER");
+    setIsEditRoleOpen(true);
+  };
 
-  const maxChartValue = useMemo(() => {
-    return Math.max(...chartData.map((item) => item.revenue), 1);
-  }, [chartData]);
+  const handleUpdateRoleSubmit = async (e) => {
+    e.preventDefault();
 
-  const operationalLogs = report.operationalLog || [];
-  const summary = report.summary || emptyReport.summary;
+    if (!editingUser) return;
 
-  const handleExportCSV = () => {
-    if (isMonthlyComparison) {
-      const headers = [
-        "Month",
-        "Revenue",
-        "Payments",
-        "Sessions",
-        "Reservations",
-        "Completed",
-        "Cancelled",
-        "Average occupancy",
-        "Revenue growth",
-        "Session growth",
-        "Reservation growth"
-      ];
+    try {
+      const roleId = getRoleIdByLabel(updatedRole);
 
-      const rows = monthlyComparison.map((item) => [
-        item.monthLabel,
-        item.totalRevenue,
-        item.paymentCount,
-        item.totalSessions,
-        item.totalReservations,
-        item.completedReservations,
-        item.cancelledReservations,
-        item.averageOccupancy,
-        item.revenueGrowthPercent,
-        item.sessionGrowthPercent,
-        item.reservationGrowthPercent
-      ]);
+      await userApi.updateUserRole(editingUser.id, {
+        roleId,
+      });
 
-      const csvContent = [
-        headers.join(","),
-        ...rows.map((row) =>
-          row
-            .map((value) =>
-              `"${String(value).replace(/"/g, '""')}"`
-            )
-            .join(",")
-        )
-      ].join("\n");
+      setIsEditRoleOpen(false);
+      setEditingUser(null);
 
-      const blob = new Blob(
-        [`\ufeff${csvContent}`],
-        {
-          type: "text/csv;charset=utf-8;"
-        }
+      await fetchData(false);
+    } catch (error) {
+      console.error("Lỗi khi cập nhật quyền hạn:", error);
+      alert(error.response?.data?.message || "Không thể cập nhật role");
+    }
+  };
+
+  const triggerLockConfirmation = (user) => {
+    setUserToLock(user);
+    setIsLockModalOpen(true);
+  };
+
+  const handleConfirmLockUser = async () => {
+    if (!userToLock) return;
+
+    const isCurrentlyLocked = userToLock.status === "Locked";
+    const nextStatus = isCurrentlyLocked ? "ACTIVE" : "BANNED";
+
+    try {
+      await userApi.updateUserStatus(userToLock.id, {
+        status: nextStatus,
+      });
+
+      setIsLockModalOpen(false);
+      setUserToLock(null);
+
+      await fetchData(false);
+    } catch (error) {
+      console.error("Lỗi khi cập nhật trạng thái tài khoản:", error);
+      alert(
+        error.response?.data?.message ||
+          "Không thể cập nhật trạng thái tài khoản"
       );
+    }
+  };
 
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
+  const handleAddUserSubmit = async (e) => {
+    e.preventDefault();
 
-      link.setAttribute("href", url);
-      link.setAttribute(
-        "download",
-        `Monthly_Comparison_${comparisonMonths}_Months.csv`
-      );
-
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+    if (!newFullName.trim() || !newEmail.trim() || !newPassword.trim()) {
+      alert("Please fill full name, email and password");
       return;
     }
 
-    const headers = [
-      "Session ID",
-      "Ticket ID",
-      "License plate",
-      "Slot",
-      "Status",
-      "Check-in time",
-      "Check-out time"
-    ];
+    try {
+      await userApi.createUser({
+        fullName: newFullName.trim(),
+        email: newEmail.trim().toLowerCase(),
+        phone: newPhone.trim(),
+        password: newPassword,
+        roleId: getRoleIdByLabel(newRole),
+      });
 
-    const rows = operationalLogs.map((log) => [
-      log.sessionId || "",
-      log.ticketId || "",
-      log.licensePlate || "",
-      log.slotCode || "",
-      log.status || "",
-      formatDateTime(log.checkInTime),
-      formatDateTime(log.checkOutTime)
-    ]);
+      setNewFullName("");
+      setNewEmail("");
+      setNewPhone("");
+      setNewPassword("");
+      setNewRole("PARKING STAFF");
+      setIsModalOpen(false);
 
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) =>
-        row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")
-      )
-    ].join("\n");
-
-    const blob = new Blob([`\ufeff${csvContent}`], {
-      type: "text/csv;charset=utf-8;"
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.setAttribute("href", url);
-    link.setAttribute("download", `System_Performance_Report_${timeRange}.csv`);
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      await fetchData(false);
+    } catch (error) {
+      console.error("Lỗi thêm tài khoản mới:", error);
+      alert(error.response?.data?.message || "Không thể thêm tài khoản mới");
+    }
   };
 
-  const metricCards = [
-    {
-      label: "TOTAL REVENUE",
-      value: formatCurrency(summary.totalRevenue),
-      hint: `${timeRange} revenue from payments`,
-      icon: DollarSign
-    },
-    {
-      label: "TOTAL SESSIONS",
-      value: formatNumber(summary.totalSessions),
-      hint: "Parking sessions in selected range",
-      icon: Activity
-    },
-    {
-      label: "AVG OCCUPANCY",
-      value: formatPercent(summary.avgOccupancy),
-      hint: "Occupied and reserved slots",
-      icon: Percent
-    },
-    {
-      label: "RESERVATIONS",
-      value: formatNumber(summary.totalReservations),
-      hint: "Booking records in selected range",
-      icon: Calendar
-    }
-  ];
+  const filteredUsers = users.filter((user) => {
+    const keyword = searchTerm.toLowerCase();
+
+    const matchesSearch =
+      String(user.name || "").toLowerCase().includes(keyword) ||
+      String(user.email || "").toLowerCase().includes(keyword) ||
+      String(user.phone || "").toLowerCase().includes(keyword);
+
+    const matchesRole =
+      selectedRole === "All Roles" || user.roles.includes(selectedRole);
+
+    const matchesStatus =
+      selectedStatus === "Any Status" || user.status === selectedStatus;
+
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage) || 1;
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const indexOfLastItem = safeCurrentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = filteredUsers.slice(indexOfFirstItem, indexOfLastItem);
+  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+
+  const emptyRowCount = Math.max(itemsPerPage - currentItems.length, 0);
 
   return (
-    <div className="dashboard-layout">
+    <div
+      className="dashboard-layout"
+      style={{
+        display: "flex",
+        width: "100vw",
+        minHeight: "100vh",
+        background: theme.page,
+        color: theme.text,
+      }}
+    >
       <Sidebar />
 
       <main
         className="main-content"
         style={{
-          flex: 1,
-          padding: "2rem",
+          flexGrow: 1,
+          padding: "1.5rem 2rem",
+          minHeight: "100vh",
+          boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
+          gap: "1.5rem",
           overflowY: "auto",
-          minWidth: 0,
-          background: "var(--bg-dashboard)",
-          color: "var(--text-main)"
+          background: theme.page,
+          color: theme.text,
         }}
       >
         <Header />
 
-        <style>
-          {`
-            .report-progress-track {
-              width: 100% !important;
-              background-color: #cbd5e1 !important;
-              border: 1px solid #94a3b8 !important;
-              border-radius: 999px !important;
-              overflow: hidden !important;
-              position: relative !important;
-              box-sizing: border-box !important;
-              pointer-events: none !important;
-              user-select: none !important;
-            }
-
-            .report-progress-fill {
-              height: 100% !important;
-              display: block !important;
-              border-radius: 999px !important;
-              opacity: 1 !important;
-              visibility: visible !important;
-              min-width: 4px !important;
-              pointer-events: none !important;
-              transform: translateZ(0) !important;
-              backface-visibility: hidden !important;
-            }
-
-            .report-progress-fill-blue {
-              background-color: #3b82f6 !important;
-            }
-
-            .report-progress-fill-green {
-              background-color: #10b981 !important;
-            }
-
-            .report-progress-fill-red {
-              background-color: #ef4444 !important;
-            }
-
-            .report-progress-fill-yellow {
-              background-color: #f59e0b !important;
-            }
-
-            .report-revenue-bar {
-              background-color: #3b82f6 !important;
-              opacity: 1 !important;
-              visibility: visible !important;
-              transform: translateZ(0) !important;
-              backface-visibility: hidden !important;
-            }
-
-            .report-chart-grid {
-              background-color: transparent !important;
-              background-image:
-                linear-gradient(
-                  to top,
-                  transparent 0%,
-                  transparent 24%,
-                  rgba(100, 116, 139, 0.38) 24.7%,
-                  rgba(100, 116, 139, 0.38) 25.3%,
-                  transparent 25.8%,
-                  transparent 49%,
-                  rgba(100, 116, 139, 0.38) 49.7%,
-                  rgba(100, 116, 139, 0.38) 50.3%,
-                  transparent 50.8%,
-                  transparent 74%,
-                  rgba(100, 116, 139, 0.38) 74.7%,
-                  rgba(100, 116, 139, 0.38) 75.3%,
-                  transparent 75.8%,
-                  transparent 100%
-                ) !important;
-              border-top: 1px solid rgba(100, 116, 139, 0.45) !important;
-              border-bottom: 1px solid rgba(100, 116, 139, 0.45) !important;
-            }
-
-            [data-theme="dark"] .report-chart-grid,
-            .dark .report-chart-grid,
-            body.dark .report-chart-grid {
-              background-image:
-                linear-gradient(
-                  to top,
-                  transparent 0%,
-                  transparent 24%,
-                  rgba(148, 163, 184, 0.22) 24.7%,
-                  rgba(148, 163, 184, 0.22) 25.3%,
-                  transparent 25.8%,
-                  transparent 49%,
-                  rgba(148, 163, 184, 0.22) 49.7%,
-                  rgba(148, 163, 184, 0.22) 50.3%,
-                  transparent 50.8%,
-                  transparent 74%,
-                  rgba(148, 163, 184, 0.22) 74.7%,
-                  rgba(148, 163, 184, 0.22) 75.3%,
-                  transparent 75.8%,
-                  transparent 100%
-                ) !important;
-              border-top: 1px solid rgba(148, 163, 184, 0.35) !important;
-              border-bottom: 1px solid rgba(148, 163, 184, 0.35) !important;
-            }
-
-            [data-theme="dark"] .report-progress-track,
-            .dark .report-progress-track,
-            body.dark .report-progress-track {
-              background-color: #1e293b !important;
-              border-color: rgba(148, 163, 184, 0.35) !important;
-            }
-          `}
-        </style>
-
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "flex-start",
+            alignItems: "center",
             gap: "1rem",
-            marginBottom: "1.75rem",
-            flexWrap: "wrap"
+            flexWrap: "wrap",
           }}
         >
-          <div style={{ minWidth: 0 }}>
+          <div>
             <h1
               style={{
-                color: "var(--text-main)",
-                fontSize: "1.9rem",
-                margin: "0",
-                letterSpacing: "-0.04em"
+                fontSize: "1.85rem",
+                fontWeight: "800",
+                margin: 0,
+                color: theme.text,
+                letterSpacing: "-0.04em",
               }}
             >
-              System performance reports
+              User Management
             </h1>
+
+            <p
+              style={{
+                color: theme.muted,
+                fontSize: "0.9rem",
+                marginTop: "4px",
+              }}
+            >
+              Configure access levels and manage system operators.
+            </p>
           </div>
 
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <button
-              onClick={handleExportCSV}
-              disabled={loading}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                padding: "0.65rem 1rem",
-                background: "#111827",
-                border: "1px solid #1e293b",
-                borderRadius: "0.5rem",
-                color: "#ffffff",
-                cursor: loading ? "not-allowed" : "pointer",
-                fontSize: "0.85rem",
-                fontWeight: "700",
-                opacity: loading ? 0.6 : 1
-              }}
-            >
-              <Download size={16} />
-              Export CSV
-            </button>
-          </div>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              backgroundColor: theme.blue,
+              color: "#ffffff",
+              border: "none",
+              padding: "0.65rem 1.2rem",
+              borderRadius: "0.6rem",
+              fontWeight: "700",
+              fontSize: "0.9rem",
+              cursor: "pointer",
+            }}
+          >
+            <UserPlus size={16} /> Add user
+          </button>
         </div>
 
         <div
           style={{
-            ...styles.card,
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: "1rem",
+          }}
+        >
+          <StatCard
+            label="TOTAL ACCOUNTS"
+            value={stats.totalAccounts.toLocaleString()}
+            icon={<Users size={17} />}
+            iconColor={theme.blue}
+            valueColor={theme.text}
+          />
+
+          <StatCard
+            label="ACTIVE NOW"
+            value={stats.activeNow.toLocaleString()}
+            icon={<UserCheck size={17} />}
+            iconColor={theme.green}
+            valueColor={theme.text}
+          />
+
+          <StatCard
+            label="STAFF MEMBERS"
+            value={stats.staffMembers.toLocaleString()}
+            icon={<Shield size={17} />}
+            iconColor="#6366f1"
+            valueColor={theme.text}
+          />
+
+          <StatCard
+            label="LOCKED ACCOUNTS"
+            value={stats.lockedAccounts.toString().padStart(2, "0")}
+            icon={<Lock size={17} />}
+            iconColor={theme.red}
+            valueColor={stats.lockedAccounts > 0 ? theme.red : theme.text}
+            labelColor={stats.lockedAccounts > 0 ? theme.red : theme.muted}
+          />
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "0.75rem",
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ position: "relative", flexGrow: 1, minWidth: "260px" }}>
+            <Search
+              size={16}
+              style={{
+                position: "absolute",
+                left: "12px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: theme.muted,
+              }}
+            />
+
+            <input
+              type="text"
+              placeholder="Filter by name, email, or phone..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              style={inputBaseStyle}
+            />
+          </div>
+
+          <select
+            value={selectedRole}
+            onChange={(e) => {
+              setSelectedRole(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={selectBaseStyle}
+          >
+            <option>All Roles</option>
+            <option>ADMIN</option>
+            <option>PARKING MANAGEMENT</option>
+            <option>PARKING STAFF</option>
+            <option>DRIVER</option>
+          </select>
+
+          <select
+            value={selectedStatus}
+            onChange={(e) => {
+              setSelectedStatus(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={selectBaseStyle}
+          >
+            <option>Any Status</option>
+            <option>Active</option>
+            <option>Offline</option>
+            <option>Locked</option>
+          </select>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: theme.card,
+            borderRadius: "0.85rem",
+            border: `1px solid ${theme.border}`,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            position: "relative",
+            minHeight: "454px",
+            boxShadow: theme.shadow,
+          }}
+        >
+          {!loading && (
+            <div
+              style={{
+                position: "absolute",
+                top: "0.75rem",
+                right: "1rem",
+                zIndex: 3,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                color: theme.muted,
+                fontSize: "0.72rem",
+                backgroundColor: theme.cardSoft,
+                border: `1px solid ${theme.border}`,
+                borderRadius: "999px",
+                padding: "0.25rem 0.6rem",
+              }}
+            >
+              <span
+                style={{
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  backgroundColor: theme.green,
+                }}
+              />
+              Polling · 10s
+            </div>
+          )}
+
+          {loading ? (
+            <div
+              style={{
+                flexGrow: 1,
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                color: theme.muted,
+                fontSize: "0.9rem",
+              }}
+            >
+              Synchronizing infrastructure data...
+            </div>
+          ) : (
+            <div style={{ flexGrow: 1, overflowX: "auto" }}>
+              <table
+                style={{
+                  width: "100%",
+                  minWidth: "960px",
+                  height: "100%",
+                  borderCollapse: "collapse",
+                  textAlign: "left",
+                  fontSize: "0.85rem",
+                  color: theme.text,
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      height: "62px",
+                      borderBottom: `1px solid ${theme.border}`,
+                      color: theme.muted,
+                      backgroundColor: theme.tableHeader,
+                    }}
+                  >
+                    <th style={{ padding: "0.9rem 1rem" }}>Full name</th>
+                    <th style={{ padding: "0.9rem 1rem" }}>Email</th>
+                    <th style={{ padding: "0.9rem 1rem" }}>Role</th>
+                    <th style={{ padding: "0.9rem 1rem" }}>Status</th>
+                    <th style={{ padding: "0.9rem 1rem" }}>Last login</th>
+                    <th style={{ padding: "0.9rem 1rem", textAlign: "right" }}>
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {currentItems.length === 0 ? (
+                    <tr style={{ height: "320px" }}>
+                      <td
+                        colSpan={6}
+                        style={{
+                          padding: "2rem",
+                          textAlign: "center",
+                          color: theme.muted,
+                          background: theme.tableRow,
+                        }}
+                      >
+                        No users found.
+                      </td>
+                    </tr>
+                  ) : (
+                    <>
+                      {currentItems.map((user) => (
+                        <tr
+                          key={user.id}
+                          style={{
+                            height: "76px",
+                            borderBottom: `1px solid ${theme.border}`,
+                            color: theme.text,
+                            background: theme.tableRow,
+                          }}
+                        >
+                          <td style={{ padding: "0.85rem 1rem" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.75rem",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: "32px",
+                                  height: "32px",
+                                  borderRadius: "50%",
+                                  backgroundColor: theme.blueSoft,
+                                  border: `1px solid ${theme.border}`,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "0.75rem",
+                                  fontWeight: "800",
+                                  color: theme.blue,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {user.avatar}
+                              </div>
+
+                              <span
+                                style={{
+                                  fontWeight: "700",
+                                  color: theme.text,
+                                }}
+                              >
+                                {user.name}
+                              </span>
+                            </div>
+                          </td>
+
+                          <td
+                            style={{
+                              padding: "0.85rem 1rem",
+                              color: theme.muted,
+                            }}
+                          >
+                            {user.email}
+                          </td>
+
+                          <td style={{ padding: "0.85rem 1rem" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "0.25rem",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              {user.roles.map((role, index) => (
+                                <span
+                                  key={index}
+                                  style={{
+                                    backgroundColor: theme.blueSoft,
+                                    color: theme.blue,
+                                    fontSize: "0.65rem",
+                                    fontWeight: "800",
+                                    padding: "0.18rem 0.45rem",
+                                    borderRadius: "0.35rem",
+                                    border: `1px solid ${theme.border}`,
+                                  }}
+                                >
+                                  {role}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+
+                          <td style={{ padding: "0.85rem 1rem" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.4rem",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: "7px",
+                                  height: "7px",
+                                  borderRadius: "50%",
+                                  backgroundColor:
+                                    user.status === "Active"
+                                      ? theme.green
+                                      : user.status === "Locked"
+                                        ? theme.red
+                                        : theme.muted,
+                                }}
+                              />
+
+                              <span
+                                style={{
+                                  color:
+                                    user.status === "Active"
+                                      ? theme.green
+                                      : user.status === "Locked"
+                                        ? theme.red
+                                        : theme.muted,
+                                  fontWeight: "650",
+                                }}
+                              >
+                                {getStatusDisplayText(user)}
+                              </span>
+                            </div>
+                          </td>
+
+                          <td
+                            style={{
+                              padding: "0.85rem 1rem",
+                              color: theme.muted,
+                            }}
+                          >
+                            {user.lastLogin}
+                          </td>
+
+                          <td
+                            style={{
+                              padding: "0.85rem 1rem",
+                              textAlign: "right",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "flex-end",
+                                gap: "0.75rem",
+                              }}
+                            >
+                              <button
+                                onClick={() => openEditRoleModal(user)}
+                                style={iconButtonStyle}
+                                title="Edit Role"
+                              >
+                                <Pencil size={15} />
+                              </button>
+
+                              <button
+                                onClick={() => triggerLockConfirmation(user)}
+                                style={{
+                                  ...iconButtonStyle,
+                                  color:
+                                    user.status === "Locked"
+                                      ? theme.red
+                                      : theme.muted,
+                                }}
+                                title={
+                                  user.status === "Locked"
+                                    ? "Unlock Account"
+                                    : "Lock Account"
+                                }
+                              >
+                                <Lock size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {Array.from({ length: emptyRowCount }).map((_, index) => (
+                        <tr
+                          key={`user-empty-space-${index}`}
+                          style={{
+                            height: "76px",
+                            background: theme.tableRow,
+                            borderBottom:
+                              index === emptyRowCount - 1
+                                ? "none"
+                                : `1px solid ${theme.border}`,
+                          }}
+                        >
+                          <td colSpan={6} />
+                        </tr>
+                      ))}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "1rem",
+              borderTop: `1px solid ${theme.border}`,
+              color: theme.muted,
+              fontSize: "0.8rem",
+              backgroundColor: theme.card,
+              flexShrink: 0,
+            }}
+          >
+            <span>
+              Showing{" "}
+              <b>{filteredUsers.length > 0 ? indexOfFirstItem + 1 : 0}</b> -{" "}
+              <b>{Math.min(indexOfLastItem, filteredUsers.length)}</b> of{" "}
+              <b>{filteredUsers.length}</b> users
+            </span>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "0.35rem",
+                alignItems: "center",
+              }}
+            >
+              <PaginationButton
+                disabled={safeCurrentPage === 1}
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              >
+                <ChevronLeft size={14} />
+              </PaginationButton>
+
+              {pageNumbers.map((number) => (
+                <PaginationButton
+                  key={number}
+                  active={safeCurrentPage === number}
+                  onClick={() => setCurrentPage(number)}
+                >
+                  {number}
+                </PaginationButton>
+              ))}
+
+              <PaginationButton
+                disabled={safeCurrentPage === totalPages}
+                onClick={() =>
+                  setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                }
+              >
+                <ChevronRight size={14} />
+              </PaginationButton>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {isModalOpen && (
+        <AddUserModal
+          newFullName={newFullName}
+          setNewFullName={setNewFullName}
+          newEmail={newEmail}
+          setNewEmail={setNewEmail}
+          newPhone={newPhone}
+          setNewPhone={setNewPhone}
+          newPassword={newPassword}
+          setNewPassword={setNewPassword}
+          newRole={newRole}
+          setNewRole={setNewRole}
+          setIsModalOpen={setIsModalOpen}
+          handleAddUserSubmit={handleAddUserSubmit}
+        />
+      )}
+
+      {isEditRoleOpen && editingUser && (
+        <EditRoleModal
+          editingUser={editingUser}
+          updatedRole={updatedRole}
+          setUpdatedRole={setUpdatedRole}
+          setIsEditRoleOpen={setIsEditRoleOpen}
+          handleUpdateRoleSubmit={handleUpdateRoleSubmit}
+        />
+      )}
+
+      {isLockModalOpen && userToLock && (
+        <LockUserModal
+          userToLock={userToLock}
+          setIsLockModalOpen={setIsLockModalOpen}
+          setUserToLock={setUserToLock}
+          handleConfirmLockUser={handleConfirmLockUser}
+        />
+      )}
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  icon,
+  iconColor,
+  valueColor,
+  labelColor = theme.muted,
+}) {
+  return (
+    <div
+      style={{
+        backgroundColor: theme.card,
+        padding: "1.25rem",
+        borderRadius: "0.85rem",
+        border: `1px solid ${theme.border}`,
+        boxShadow: theme.shadow,
+        minHeight: "100px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          color: labelColor,
+          fontSize: "0.7rem",
+          fontWeight: "800",
+          letterSpacing: "0.05em",
+        }}
+      >
+        <span>{label}</span>
+        <span style={{ color: iconColor }}>{icon}</span>
+      </div>
+
+      <h2
+        style={{
+          fontSize: "1.8rem",
+          fontWeight: "800",
+          margin: "0.35rem 0 0 0",
+          color: valueColor,
+        }}
+      >
+        {value}
+      </h2>
+    </div>
+  );
+}
+
+function AddUserModal({
+  newFullName,
+  setNewFullName,
+  newEmail,
+  setNewEmail,
+  newPhone,
+  setNewPhone,
+  newPassword,
+  setNewPassword,
+  newRole,
+  setNewRole,
+  setIsModalOpen,
+  handleAddUserSubmit,
+}) {
+  return (
+    <ModalShell>
+      <ModalCard width="460px">
+        <ModalHeader title="Provision New Account" onClose={() => setIsModalOpen(false)} />
+
+        <form onSubmit={handleAddUserSubmit} style={{ display: "grid", gap: "1rem" }}>
+          <ModalField label="FULL NAME">
+            <input
+              type="text"
+              required
+              placeholder="Nguyen Van A"
+              value={newFullName}
+              onChange={(e) => setNewFullName(e.target.value)}
+              style={modalInputStyle}
+            />
+          </ModalField>
+
+          <ModalField label="EMAIL ADDRESS">
+            <input
+              type="email"
+              required
+              placeholder="staff@gmail.com"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              style={modalInputStyle}
+            />
+          </ModalField>
+
+          <ModalField label="PHONE">
+            <input
+              type="text"
+              placeholder="0900000000"
+              value={newPhone}
+              onChange={(e) => setNewPhone(e.target.value)}
+              style={modalInputStyle}
+            />
+          </ModalField>
+
+          <ModalField label="PASSWORD">
+            <input
+              type="password"
+              required
+              placeholder="Password@123"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              style={modalInputStyle}
+            />
+          </ModalField>
+
+          <ModalField label="ASSIGN ROLE">
+            <select
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              style={modalInputStyle}
+            >
+              <option value="PARKING MANAGEMENT">PARKING MANAGEMENT</option>
+              <option value="PARKING STAFF">PARKING STAFF</option>
+              <option value="DRIVER">DRIVER</option>
+            </select>
+          </ModalField>
+
+          <ModalActions>
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              style={secondaryButtonStyle}
+            >
+              Cancel
+            </button>
+
+            <button type="submit" style={primaryButtonStyle}>
+              Grant Access
+            </button>
+          </ModalActions>
+        </form>
+      </ModalCard>
+    </ModalShell>
+  );
+}
+
+function EditRoleModal({
+  editingUser,
+  updatedRole,
+  setUpdatedRole,
+  setIsEditRoleOpen,
+  handleUpdateRoleSubmit,
+}) {
+  return (
+    <ModalShell>
+      <ModalCard width="420px">
+        <div
+          style={{
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            padding: "0.75rem 1rem",
-            borderRadius: "0.75rem",
-            marginBottom: "2rem",
-            gap: "1rem",
-            flexWrap: "wrap"
+            marginBottom: "1.25rem",
           }}
         >
           <div
@@ -701,1703 +1196,452 @@ const Reports = () => {
               display: "flex",
               alignItems: "center",
               gap: "0.5rem",
-              flexWrap: "wrap"
+              color: theme.blue,
             }}
           >
-            <span
-              style={{
-                color: "var(--text-muted)",
-                fontSize: "0.75rem",
-                fontWeight: "bold",
-                marginRight: "0.5rem"
-              }}
-            >
-              TIME RANGE
-            </span>
+            <ShieldAlert size={18} />
 
-            {["Today", "Week", "Month", "Monthly Comparison"].map((tab) => {
-              const isSelected = timeRange === tab;
-
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setTimeRange(tab)}
-                  disabled={isRefreshing && isSelected}
-                  style={{
-                    padding: "0.45rem 1.15rem",
-                    borderRadius: "0.45rem",
-                    border: isSelected
-                      ? "1px solid var(--primary-blue)"
-                      : "1px solid transparent",
-                    background: isSelected
-                      ? "var(--primary-blue)"
-                      : "transparent",
-                    color: isSelected ? "#ffffff" : "var(--text-muted)",
-                    cursor: isRefreshing && isSelected ? "default" : "pointer",
-                    fontSize: "0.85rem",
-                    fontWeight: "700",
-                    opacity: isRefreshing && !isSelected ? 0.85 : 1
-                  }}
-                >
-                  {tab}
-                </button>
-              );
-            })}
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "flex-end",
-              gap: "0.75rem",
-              flexWrap: "wrap"
-            }}
-          >
-            {isMonthlyComparison && (
-              <select
-                value={comparisonMonths}
-                onChange={(event) =>
-                  setComparisonMonths(
-                    Number(event.target.value)
-                  )
-                }
-                disabled={loading}
-                style={{
-                  background: "var(--bg-input)",
-                  border:
-                    "1px solid var(--border-color)",
-                  color: "var(--text-main)",
-                  borderRadius: "0.45rem",
-                  padding: "0.45rem 0.7rem",
-                  fontSize: "0.8rem",
-                  fontWeight: "700",
-                  cursor: loading
-                    ? "not-allowed"
-                    : "pointer"
-                }}
-              >
-                <option value={6}>
-                  Last 6 months
-                </option>
-                <option value={12}>
-                  Last 12 months
-                </option>
-              </select>
-            )}
-
-            <span
-              style={{
-                color: "var(--text-main)",
-                fontSize: "0.78rem",
-                fontWeight: "800",
-                display: "inline-flex",
-                alignItems: "center",
-                minWidth: "120px",
-                justifyContent: "flex-end"
-              }}
-            >
-              {isInitialLoading
-                ? "Loading..."
-                : isMonthlyComparison
-                  ? `Range: ${comparisonMonths} months`
-                  : `Range: ${apiRange}`}
-            </span>
-          </div>
-        </div>
-
-        {errorMessage && (
-          <div
-            style={{
-              background: "rgba(239, 68, 68, 0.12)",
-              border: "1px solid #ef4444",
-              color: "#ef4444",
-              padding: "0.85rem 1rem",
-              borderRadius: "0.75rem",
-              marginBottom: "1.5rem",
-              fontSize: "0.9rem",
-              fontWeight: "700"
-            }}
-          >
-            {errorMessage}
-          </div>
-        )}
-
-        {isMonthlyComparison ? (
-          <MonthlyComparisonSection
-            data={monthlyComparison}
-            loading={loading && monthlyComparison.length === 0}
-            months={comparisonMonths}
-          />
-        ) : (
-          <>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: "1.25rem",
-            marginBottom: "2rem"
-          }}
-        >
-          {metricCards.map((card) => {
-            const Icon = card.icon;
-            const displayValue = isInitialLoading ? "..." : card.value;
-
-            return (
-              <div
-                key={card.label}
-                className="report-summary-card"
-                style={{
-                  ...styles.card,
-                  padding: "1.25rem",
-                  borderRadius: "0.75rem",
-                  minHeight: "126px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  gap: "1rem",
-                  boxSizing: "border-box",
-                  overflow: "hidden"
-                }}
-              >
-                <div
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    display: "flex",
-                    flexDirection: "column"
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: "0.75rem",
-                      color: "var(--text-muted)",
-                      fontWeight: "800",
-                      letterSpacing: "0.02em",
-                      lineHeight: 1.2
-                    }}
-                  >
-                    {card.label}
-                  </span>
-
-                  <p
-                    style={{
-                      fontSize: getMetricValueFontSize(displayValue),
-                      fontWeight: "800",
-                      margin: "0.65rem 0 0 0",
-                      color: "var(--text-main)",
-                      lineHeight: 1.08,
-                      maxWidth: "100%",
-                      overflowWrap: "anywhere",
-                      wordBreak: "break-word"
-                    }}
-                  >
-                    {displayValue}
-                  </p>
-
-                  <span
-                    style={{
-                      display: "block",
-                      color: "var(--text-muted)",
-                      fontSize: "0.75rem",
-                      marginTop: "0.45rem",
-                      lineHeight: 1.35
-                    }}
-                  >
-                    {card.hint}
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    width: "48px",
-                    height: "48px",
-                    flexShrink: 0,
-                    background: "rgba(59, 130, 246, 0.12)",
-                    border: "1px solid rgba(59, 130, 246, 0.18)",
-                    borderRadius: "0.75rem",
-                    color: "var(--primary-blue)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center"
-                  }}
-                >
-                  <Icon size={22} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 2fr) minmax(300px, 1fr)",
-            gap: "1.5rem",
-            marginBottom: "1.5rem"
-          }}
-        >
-          <div
-            className="report-chart-card"
-            style={{
-              ...styles.card,
-              borderRadius: "0.75rem",
-              padding: "1.5rem",
-              display: "flex",
-              flexDirection: "column",
-              minHeight: "360px",
-              minWidth: 0
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "1.5rem",
-                gap: "1rem",
-                flexWrap: "wrap"
-              }}
-            >
-              <div>
-                <h3
-                  style={{
-                    color: "var(--text-main)",
-                    margin: 0,
-                    fontSize: "1.15rem"
-                  }}
-                >
-                  Revenue performance
-                </h3>
-
-                <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
-                  Revenue grouped by selected time range
-                </span>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: "1rem",
-                  fontSize: "0.8rem",
-                  fontWeight: "700"
-                }}
-              >
-                <span
-                  style={{
-                    color: reportColors.blue,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.35rem"
-                  }}
-                >
-                  <Circle size={7} fill="currentColor" />
-                  Revenue
-                </span>
-              </div>
-            </div>
-
-            <div
-              style={{
-                flex: 1,
-                display: "grid",
-                gridTemplateRows: "1fr auto",
-                gap: "1rem"
-              }}
-            >
-              <div
-                className="report-chart-grid"
-                style={{
-                  position: "relative",
-                  display: "grid",
-                  gridTemplateColumns: `repeat(${Math.max(
-                    chartData.length,
-                    1
-                  )}, minmax(0, 1fr))`,
-                  alignItems: "end",
-                  gap: "1rem",
-                  padding: "1rem 0.5rem 0 0.5rem",
-                  minHeight: "230px"
-                }}
-              >
-                {chartData.length === 0 ? (
-                  <div
-                    style={{
-                      gridColumn: "1 / -1",
-                      color: "var(--text-muted)",
-                      textAlign: "center",
-                      alignSelf: "center",
-                      fontWeight: "700"
-                    }}
-                  >
-                    {isInitialLoading
-                      ? "Loading revenue chart..."
-                      : "No revenue chart data"}
-                  </div>
-                ) : (
-                  chartData.map((item, index) => {
-                    const currentHeight = Math.max(
-                      (item.revenue / maxChartValue) * 100,
-                      item.revenue > 0 ? 6 : 0
-                    );
-
-                    return (
-                      <div
-                        key={`${item.label}-${index}`}
-                        style={{
-                          display: "flex",
-                          alignItems: "end",
-                          justifyContent: "center",
-                          height: "100%"
-                        }}
-                      >
-                        <div
-                          className="report-revenue-bar"
-                          title={`${item.label}: ${formatCurrency(
-                            item.revenue
-                          )} (${item.paymentCount} payments)`}
-                          style={{
-                            width: "22px",
-                            height: `${currentHeight}%`,
-                            borderRadius: "999px 999px 0 0",
-                            boxShadow: "0 0 16px rgba(59, 130, 246, 0.35)"
-                          }}
-                        />
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: `repeat(${Math.max(
-                    chartData.length,
-                    1
-                  )}, minmax(0, 1fr))`,
-                  gap: "1rem",
-                  color: "var(--text-muted)",
-                  fontSize: "0.75rem",
-                  fontWeight: "bold",
-                  textAlign: "center"
-                }}
-              >
-                {chartData.length === 0 ? (
-                  <span>No data</span>
-                ) : (
-                  chartData.map((item, index) => (
-                    <span key={`${item.label}-${index}`}>{item.label}</span>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div
-              style={{
-                marginTop: "1.5rem",
-                paddingTop: "1.25rem",
-                borderTop: "1px solid var(--border-color)"
-              }}
-            >
-              <h4
-                style={{
-                  color: "var(--text-main)",
-                  margin: "0 0 1rem 0",
-                  fontSize: "1rem",
-                  fontWeight: "800"
-                }}
-              >
-                Revenue Breakdown
-              </h4>
-
-              <div style={{ overflowX: "auto" }}>
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    color: "var(--text-main)",
-                    fontSize: "0.9rem"
-                  }}
-                >
-                  <thead>
-                    <tr
-                      style={{
-                        color: "var(--text-muted)",
-                        textAlign: "left",
-                        background: "rgba(148, 163, 184, 0.14)"
-                      }}
-                    >
-                      <th style={{ padding: "0.5rem 0.75rem 0.5rem 0" }}>
-                        Period
-                      </th>
-                      <th style={{ padding: "0.5rem 0.75rem" }}>Revenue</th>
-                      <th style={{ padding: "0.5rem 0.75rem" }}>Payments</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {chartData.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={3}
-                          style={{
-                            padding: "0.75rem 0",
-                            color: "var(--text-muted)",
-                            fontWeight: "700"
-                          }}
-                        >
-                          No revenue breakdown data
-                        </td>
-                      </tr>
-                    ) : (
-                      chartData.map((item, index) => (
-                        <tr key={`${item.label}-breakdown-${index}`}>
-                          <td
-                            style={{
-                              padding: "0.35rem 0.75rem 0.35rem 0",
-                              fontWeight: "700",
-                              color: "var(--text-main)"
-                            }}
-                          >
-                            {item.label}
-                          </td>
-                          <td
-                            style={{
-                              padding: "0.35rem 0.75rem",
-                              color: "var(--text-main)"
-                            }}
-                          >
-                            {formatCurrency(item.revenue)}
-                          </td>
-                          <td
-                            style={{
-                              padding: "0.35rem 0.75rem",
-                              color: "var(--text-main)"
-                            }}
-                          >
-                            {formatNumber(item.paymentCount)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className="report-side-card"
-            style={{
-              ...styles.card,
-              borderRadius: "0.75rem",
-              padding: "1.5rem",
-              minWidth: 0
-            }}
-          >
-            <h3
-              style={{
-                color: "var(--text-main)",
-                margin: "0 0 1.5rem 0",
-                fontSize: "1.15rem"
-              }}
-            >
-              Vehicle distribution
-            </h3>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-              {vehicleDistribution.length === 0 ? (
-                <p
-                  style={{
-                    color: "var(--text-muted)",
-                    margin: 0,
-                    fontWeight: "700"
-                  }}
-                >
-                  {isInitialLoading
-                    ? "Loading vehicle distribution..."
-                    : "No vehicle distribution data"}
-                </p>
-              ) : (
-                vehicleDistribution.map((vehicle, index) => {
-                  const Icon = vehicle.icon;
-
-                  return (
-                    <div key={`${vehicle.label}-${index}`}>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          color: "var(--text-main)",
-                          fontSize: "0.85rem",
-                          fontWeight: "700",
-                          marginBottom: "0.5rem",
-                          gap: "1rem"
-                        }}
-                      >
-                        <span
-                          style={{
-                            color: "var(--text-main)",
-                            display: "flex",
-                            gap: "0.5rem",
-                            minWidth: 0
-                          }}
-                        >
-                          <Icon size={16} />
-                          {vehicle.label}
-                        </span>
-                        <span>{formatPercent(vehicle.percent)}</span>
-                      </div>
-
-                      <div
-                        style={{
-                          color: "var(--text-muted)",
-                          fontSize: "0.75rem",
-                          marginBottom: "0.5rem"
-                        }}
-                      >
-                        {formatNumber(vehicle.count)} slots
-                      </div>
-
-                      <ProgressBar
-                        percent={vehicle.percent}
-                        colorClass={vehicle.colorClass}
-                        height={9}
-                      />
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            <div
-              style={{
-                marginTop: "2rem",
-                paddingTop: "1.25rem",
-                borderTop: "1px solid var(--border-color)"
-              }}
-            >
-              <h4
-                style={{
-                  margin: "0 0 1rem 0",
-                  color: "var(--text-main)",
-                  fontSize: "0.95rem"
-                }}
-              >
-                Reservation status
-              </h4>
-
-              <div style={{ display: "grid", gap: "0.85rem" }}>
-                {reservationStatusBreakdown.length === 0 ? (
-                  <p
-                    style={{
-                      color: "var(--text-muted)",
-                      margin: 0,
-                      fontWeight: "700"
-                    }}
-                  >
-                    {isInitialLoading
-                      ? "Loading reservation data..."
-                      : "No reservation data"}
-                  </p>
-                ) : (
-                  reservationStatusBreakdown.map((item) => {
-                    const Icon = item.icon;
-
-                    return (
-                      <div key={item.label}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: "0.35rem",
-                            gap: "1rem"
-                          }}
-                        >
-                          <span
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "0.45rem",
-                              color: "var(--text-main)",
-                              fontSize: "0.78rem",
-                              fontWeight: "700"
-                            }}
-                          >
-                            <Icon size={14} color={item.color} />
-                            {item.label}
-                          </span>
-
-                          <span
-                            style={{
-                              color: "var(--text-main)",
-                              fontSize: "0.78rem",
-                              fontWeight: "700"
-                            }}
-                          >
-                            {formatNumber(item.value)}
-                          </span>
-                        </div>
-
-                        <ProgressBar
-                          percent={item.percent}
-                          colorClass={item.colorClass}
-                          height={6}
-                        />
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            <SimpleBreakdownTable
-              title="Vehicle Distribution"
-              headers={["Vehicle Type", "Count", "Percent"]}
-              emptyText="No vehicle distribution data"
-              rows={vehicleDistribution.map((vehicle) => [
-                vehicle.label,
-                formatNumber(vehicle.count),
-                formatPercent(vehicle.percent)
-              ])}
-            />
-
-            <SimpleBreakdownTable
-              title="Reservation Status"
-              headers={["Status", "Count", "Percent"]}
-              emptyText="No reservation data"
-              rows={reservationStatusBreakdown.map((item) => [
-                item.label,
-                formatNumber(item.value),
-                formatPercent(item.percent)
-              ])}
-            />
-          </div>
-        </div>
-
-        <div
-          className="report-operational-log"
-          style={{
-            ...styles.card,
-            borderRadius: "0.75rem",
-            overflow: "hidden"
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "1.25rem 1.5rem",
-              borderBottom: "1px solid var(--border-color)",
-              gap: "1rem",
-              flexWrap: "wrap"
-            }}
-          >
-            <div>
-              <h3
-                style={{
-                  color: "var(--text-main)",
-                  margin: 0,
-                  fontSize: "1.1rem"
-                }}
-              >
-                Operational log
-              </h3>
-              <p
-                style={{
-                  color: "var(--text-muted)",
-                  margin: "0.35rem 0 0",
-                  fontSize: "0.8rem"
-                }}
-              >
-                Recent parking sessions in the selected time range.
-              </p>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                gap: "0.5rem",
-                color: "var(--text-muted)"
-              }}
-            >
-              <button
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "inherit",
-                  cursor: "pointer"
-                }}
-              >
-                <Filter size={18} />
-              </button>
-
-              <button
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "inherit",
-                  cursor: "pointer"
-                }}
-              >
-                <MoreVertical size={18} />
-              </button>
-            </div>
-          </div>
-
-          <div style={{ width: "100%", overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                minWidth: "900px",
-                borderCollapse: "collapse",
-                textAlign: "left"
-              }}
-            >
-              <thead>
-                <tr
-                  style={{
-                    borderBottom: "1px solid var(--border-color)",
-                    color: "var(--text-muted)",
-                    fontSize: "0.85rem",
-                    background: "rgba(148, 163, 184, 0.14)"
-                  }}
-                >
-                  <th style={{ padding: "1rem 1.5rem" }}>TICKET</th>
-                  <th style={{ padding: "1rem" }}>LICENSE PLATE</th>
-                  <th style={{ padding: "1rem" }}>SLOT</th>
-                  <th style={{ padding: "1rem" }}>STATUS</th>
-                  <th style={{ padding: "1rem" }}>CHECK-IN</th>
-                  <th style={{ padding: "1rem" }}>CHECK-OUT</th>
-                  <th style={{ padding: "1rem 1.5rem", textAlign: "right" }}>
-                    ACTIONS
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {operationalLogs.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      style={{
-                        padding: "2rem",
-                        textAlign: "center",
-                        color: "var(--text-muted)",
-                        fontWeight: "700"
-                      }}
-                    >
-                      {isInitialLoading
-                        ? "Loading operational logs..."
-                        : "No operational logs"}
-                    </td>
-                  </tr>
-                ) : (
-                  operationalLogs.map((log, index) => {
-                    const statusMeta = getStatusMeta(log.status);
-
-                    return (
-                      <tr
-                        key={`${log.sessionId || index}`}
-                        style={{
-                          borderBottom: "1px solid var(--border-color)",
-                          color: "var(--text-main)",
-                          fontSize: "0.9rem",
-                          background: "var(--bg-table-row)"
-                        }}
-                      >
-                        <td style={{ padding: "1rem 1.5rem", fontWeight: "700" }}>
-                          {log.ticketId || `#${log.sessionId}`}
-                        </td>
-
-                        <td
-                          style={{
-                            padding: "1rem",
-                            color: "var(--success-green)",
-                            fontWeight: "700"
-                          }}
-                        >
-                          {log.licensePlate || "N/A"}
-                        </td>
-
-                        <td style={{ padding: "1rem", fontWeight: "700" }}>
-                          {log.slotCode || "N/A"}
-                        </td>
-
-                        <td style={{ padding: "1rem" }}>
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "0.4rem",
-                              color: statusMeta.color,
-                              background: `${statusMeta.color}20`,
-                              border: `1px solid ${statusMeta.color}55`,
-                              borderRadius: "999px",
-                              padding: "0.25rem 0.65rem",
-                              fontSize: "0.75rem",
-                              fontWeight: "800"
-                            }}
-                          >
-                            {statusMeta.label}
-                          </span>
-                        </td>
-
-                        <td style={{ padding: "1rem", color: "var(--text-muted)" }}>
-                          {formatDateTime(log.checkInTime)}
-                        </td>
-
-                        <td style={{ padding: "1rem", color: "var(--text-muted)" }}>
-                          {formatDateTime(log.checkOutTime)}
-                        </td>
-
-                        <td style={{ padding: "1rem 1.5rem", textAlign: "right" }}>
-                          <button
-                            style={{
-                              background: "transparent",
-                              border: "none",
-                              color: "var(--primary-blue)",
-                              cursor: "pointer",
-                              fontSize: "0.8rem",
-                              fontWeight: "bold"
-                            }}
-                          >
-                            DETAILS
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "1rem 1.5rem",
-              borderTop: "1px solid var(--border-color)",
-              gap: "1rem",
-              flexWrap: "wrap"
-            }}
-          >
-            <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-              Showing {operationalLogs.length} records for{" "}
-              {timeRange.toLowerCase()} report
-            </span>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-              <button
-                style={{
-                  background: "rgba(148, 163, 184, 0.14)",
-                  border: "1px solid var(--border-color)",
-                  color: "var(--text-muted)",
-                  padding: "0.4rem 0.6rem",
-                  borderRadius: "0.375rem",
-                  cursor: "not-allowed"
-                }}
-                disabled
-              >
-                <ChevronLeft size={16} />
-              </button>
-
-              <button
-                style={{
-                  background: "var(--primary-blue)",
-                  border: "1px solid var(--primary-blue)",
-                  color: "#ffffff",
-                  padding: "0.4rem 0.75rem",
-                  borderRadius: "0.375rem",
-                  fontSize: "0.85rem",
-                  fontWeight: "bold"
-                }}
-              >
-                1
-              </button>
-
-              <button
-                style={{
-                  background: "rgba(148, 163, 184, 0.14)",
-                  border: "1px solid var(--border-color)",
-                  color: "var(--text-muted)",
-                  padding: "0.4rem 0.6rem",
-                  borderRadius: "0.375rem",
-                  cursor: "not-allowed"
-                }}
-                disabled
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        </div>
-          </>
-        )}
-
-      </main>
-    </div>
-  );
-};
-
-function MonthlyComparisonSection({
-  data,
-  loading,
-  months
-}) {
-  const latestMonth =
-    data.length > 0
-      ? data[data.length - 1]
-      : null;
-
-  const previousMonth =
-    data.length > 1
-      ? data[data.length - 2]
-      : null;
-
-  const maxRevenue = Math.max(
-    ...data.map((item) => item.totalRevenue),
-    1
-  );
-
-  const maxActivity = Math.max(
-    ...data.flatMap((item) => [
-      item.totalSessions,
-      item.totalReservations
-    ]),
-    1
-  );
-
-  const occupancyGrowth = latestMonth
-    ? calculateGrowthPercent(
-        previousMonth?.averageOccupancy || 0,
-        latestMonth.averageOccupancy
-      )
-    : 0;
-
-  const cards = [
-    {
-      label: "CURRENT MONTH REVENUE",
-      value: formatCurrency(
-        latestMonth?.totalRevenue || 0
-      ),
-      growth:
-        latestMonth?.revenueGrowthPercent || 0,
-      hint: latestMonth?.monthLabel || "No data",
-      icon: DollarSign
-    },
-    {
-      label: "PARKING SESSIONS",
-      value: formatNumber(
-        latestMonth?.totalSessions || 0
-      ),
-      growth:
-        latestMonth?.sessionGrowthPercent || 0,
-      hint: "Compared with previous month",
-      icon: Activity
-    },
-    {
-      label: "RESERVATIONS",
-      value: formatNumber(
-        latestMonth?.totalReservations || 0
-      ),
-      growth:
-        latestMonth?.reservationGrowthPercent || 0,
-      hint: "Compared with previous month",
-      icon: Calendar
-    },
-    {
-      label: "AVERAGE OCCUPANCY",
-      value: formatPercent(
-        latestMonth?.averageOccupancy || 0
-      ),
-      growth: occupancyGrowth,
-      hint: "Monthly average occupancy",
-      icon: Percent
-    }
-  ];
-
-  if (loading) {
-    return (
-      <div
-        style={{
-          ...styles.card,
-          borderRadius: "0.75rem",
-          minHeight: "340px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--text-muted)",
-          fontWeight: "700"
-        }}
-      >
-        Loading monthly comparison...
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div
-        style={{
-          ...styles.card,
-          borderRadius: "0.75rem",
-          minHeight: "260px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--text-muted)",
-          fontWeight: "700"
-        }}
-      >
-        No monthly comparison data.
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(240px, 1fr))",
-          gap: "1.25rem",
-          marginBottom: "2rem"
-        }}
-      >
-        {cards.map((card) => {
-          const Icon = card.icon;
-
-          return (
-            <div
-              key={card.label}
-              style={{
-                ...styles.card,
-                padding: "1.25rem",
-                borderRadius: "0.75rem",
-                minHeight: "142px",
-                display: "flex",
-                justifyContent: "space-between",
-                gap: "1rem"
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <span
-                  style={{
-                    color: "var(--text-muted)",
-                    fontSize: "0.72rem",
-                    fontWeight: "800"
-                  }}
-                >
-                  {card.label}
-                </span>
-
-                <p
-                  style={{
-                    margin: "0.65rem 0 0",
-                    color: "var(--text-main)",
-                    fontSize: getMetricValueFontSize(
-                      card.value
-                    ),
-                    lineHeight: 1.08,
-                    fontWeight: "800",
-                    overflowWrap: "anywhere"
-                  }}
-                >
-                  {card.value}
-                </p>
-
-                <div
-                  style={{
-                    marginTop: "0.55rem",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.45rem",
-                    flexWrap: "wrap"
-                  }}
-                >
-                  <GrowthBadge value={card.growth} />
-
-                  <span
-                    style={{
-                      color: "var(--text-muted)",
-                      fontSize: "0.72rem"
-                    }}
-                  >
-                    {card.hint}
-                  </span>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  width: "46px",
-                  height: "46px",
-                  flexShrink: 0,
-                  borderRadius: "0.75rem",
-                  background:
-                    "rgba(59, 130, 246, 0.12)",
-                  border:
-                    "1px solid rgba(59, 130, 246, 0.18)",
-                  color: "var(--primary-blue)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}
-              >
-                <Icon size={21} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(420px, 1fr))",
-          gap: "1.5rem",
-          marginBottom: "1.5rem"
-        }}
-      >
-        <div
-          style={{
-            ...styles.card,
-            borderRadius: "0.75rem",
-            padding: "1.5rem",
-            minWidth: 0
-          }}
-        >
-          <div style={{ marginBottom: "1.25rem" }}>
             <h3
               style={{
                 margin: 0,
-                color: "var(--text-main)",
-                fontSize: "1.15rem"
+                color: theme.text,
+                fontSize: "1.1rem",
+                fontWeight: "700",
               }}
             >
-              Monthly revenue trend
+              Modify User Role
             </h3>
-
-            <p
-              style={{
-                margin: "0.35rem 0 0",
-                color: "var(--text-muted)",
-                fontSize: "0.78rem"
-              }}
-            >
-              Revenue comparison across the last {months} months.
-            </p>
           </div>
 
-          <div
-            className="report-chart-grid"
-            style={{
-              minHeight: "270px",
-              display: "grid",
-              gridTemplateColumns: `repeat(${data.length}, minmax(44px, 1fr))`,
-              alignItems: "end",
-              gap: "0.75rem",
-              padding: "1rem 0.5rem 0",
-              overflowX: "auto"
-            }}
+          <button
+            onClick={() => setIsEditRoleOpen(false)}
+            style={iconButtonStyle}
           >
-            {data.map((item) => {
-              const height = Math.max(
-                (item.totalRevenue / maxRevenue) * 100,
-                item.totalRevenue > 0 ? 5 : 0
-              );
-
-              return (
-                <div
-                  key={`${item.year}-${item.month}-revenue`}
-                  style={{
-                    height: "100%",
-                    minWidth: "44px",
-                    display: "grid",
-                    gridTemplateRows: "1fr auto",
-                    gap: "0.55rem"
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "end",
-                      justifyContent: "center"
-                    }}
-                  >
-                    <div
-                      className="report-revenue-bar"
-                      title={`${item.monthLabel}: ${formatCurrency(item.totalRevenue)}`}
-                      style={{
-                        width: "30px",
-                        height: `${height}%`,
-                        minHeight:
-                          item.totalRevenue > 0
-                            ? "6px"
-                            : "0",
-                        borderRadius:
-                          "8px 8px 0 0",
-                        boxShadow:
-                          "0 0 14px rgba(59, 130, 246, 0.28)"
-                      }}
-                    />
-                  </div>
-
-                  <span
-                    style={{
-                      color: "var(--text-muted)",
-                      fontSize: "0.68rem",
-                      fontWeight: "700",
-                      textAlign: "center",
-                      whiteSpace: "nowrap"
-                    }}
-                  >
-                    {item.monthLabel}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+            <X size={18} />
+          </button>
         </div>
 
         <div
           style={{
-            ...styles.card,
-            borderRadius: "0.75rem",
-            padding: "1.5rem",
-            minWidth: 0
+            backgroundColor: theme.cardSoft,
+            padding: "0.85rem",
+            borderRadius: "0.65rem",
+            marginBottom: "1.25rem",
+            border: `1px solid ${theme.border}`,
           }}
         >
-          <div style={{ marginBottom: "1.25rem" }}>
-            <h3
-              style={{
-                margin: 0,
-                color: "var(--text-main)",
-                fontSize: "1.15rem"
-              }}
-            >
-              Sessions and reservations
-            </h3>
-
-            <p
-              style={{
-                margin: "0.35rem 0 0",
-                color: "var(--text-muted)",
-                fontSize: "0.78rem"
-              }}
-            >
-              Monthly activity volume comparison.
-            </p>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              gap: "1rem",
-              marginBottom: "0.75rem",
-              color: "var(--text-muted)",
-              fontSize: "0.75rem",
-              fontWeight: "700"
-            }}
-          >
-            <span style={{ color: reportColors.green }}>
-              ● Sessions
-            </span>
-            <span style={{ color: reportColors.yellow }}>
-              ● Reservations
-            </span>
-          </div>
-
-          <div
-            className="report-chart-grid"
-            style={{
-              minHeight: "245px",
-              display: "grid",
-              gridTemplateColumns: `repeat(${data.length}, minmax(54px, 1fr))`,
-              alignItems: "end",
-              gap: "0.75rem",
-              padding: "1rem 0.5rem 0",
-              overflowX: "auto"
-            }}
-          >
-            {data.map((item) => {
-              const sessionHeight = Math.max(
-                (item.totalSessions / maxActivity) * 100,
-                item.totalSessions > 0 ? 5 : 0
-              );
-
-              const reservationHeight = Math.max(
-                (item.totalReservations / maxActivity) * 100,
-                item.totalReservations > 0 ? 5 : 0
-              );
-
-              return (
-                <div
-                  key={`${item.year}-${item.month}-activity`}
-                  style={{
-                    height: "100%",
-                    minWidth: "54px",
-                    display: "grid",
-                    gridTemplateRows: "1fr auto",
-                    gap: "0.55rem"
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "end",
-                      justifyContent: "center",
-                      gap: "5px"
-                    }}
-                  >
-                    <div
-                      title={`${item.monthLabel}: ${formatNumber(item.totalSessions)} sessions`}
-                      style={{
-                        width: "18px",
-                        height: `${sessionHeight}%`,
-                        minHeight:
-                          item.totalSessions > 0
-                            ? "6px"
-                            : "0",
-                        background: reportColors.green,
-                        borderRadius: "6px 6px 0 0"
-                      }}
-                    />
-
-                    <div
-                      title={`${item.monthLabel}: ${formatNumber(item.totalReservations)} reservations`}
-                      style={{
-                        width: "18px",
-                        height: `${reservationHeight}%`,
-                        minHeight:
-                          item.totalReservations > 0
-                            ? "6px"
-                            : "0",
-                        background: reportColors.yellow,
-                        borderRadius: "6px 6px 0 0"
-                      }}
-                    />
-                  </div>
-
-                  <span
-                    style={{
-                      color: "var(--text-muted)",
-                      fontSize: "0.68rem",
-                      fontWeight: "700",
-                      textAlign: "center",
-                      whiteSpace: "nowrap"
-                    }}
-                  >
-                    {item.monthLabel}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          ...styles.card,
-          borderRadius: "0.75rem",
-          overflow: "hidden"
-        }}
-      >
-        <div
-          style={{
-            padding: "1.25rem 1.5rem",
-            borderBottom:
-              "1px solid var(--border-color)"
-          }}
-        >
-          <h3
-            style={{
-              margin: 0,
-              color: "var(--text-main)",
-              fontSize: "1.1rem"
-            }}
-          >
-            Monthly comparison details
-          </h3>
+          <p style={{ margin: 0, fontSize: "0.8rem", color: theme.muted }}>
+            Selected Operator:
+          </p>
 
           <p
             style={{
-              margin: "0.35rem 0 0",
-              color: "var(--text-muted)",
-              fontSize: "0.78rem"
+              margin: "4px 0 0 0",
+              fontSize: "0.9rem",
+              color: theme.text,
+              fontWeight: "700",
             }}
           >
-            The current month may contain partial data.
+            {editingUser.name}
+          </p>
+
+          <p
+            style={{
+              margin: "2px 0 0 0",
+              fontSize: "0.8rem",
+              color: theme.muted,
+            }}
+          >
+            {editingUser.email}
           </p>
         </div>
 
-        <div style={{ overflowX: "auto" }}>
-          <table
-            style={{
-              width: "100%",
-              minWidth: "1100px",
-              borderCollapse: "collapse",
-              color: "var(--text-main)",
-              fontSize: "0.82rem"
-            }}
-          >
-            <thead>
-              <tr
-                style={{
-                  color: "var(--text-muted)",
-                  textAlign: "left",
-                  background:
-                    "rgba(148, 163, 184, 0.14)"
-                }}
-              >
-                <th style={{ padding: "0.9rem 1rem" }}>
-                  MONTH
-                </th>
-                <th style={{ padding: "0.9rem 1rem" }}>
-                  REVENUE
-                </th>
-                <th style={{ padding: "0.9rem 1rem" }}>
-                  PAYMENTS
-                </th>
-                <th style={{ padding: "0.9rem 1rem" }}>
-                  SESSIONS
-                </th>
-                <th style={{ padding: "0.9rem 1rem" }}>
-                  RESERVATIONS
-                </th>
-                <th style={{ padding: "0.9rem 1rem" }}>
-                  COMPLETED
-                </th>
-                <th style={{ padding: "0.9rem 1rem" }}>
-                  CANCELLED
-                </th>
-                <th style={{ padding: "0.9rem 1rem" }}>
-                  OCCUPANCY
-                </th>
-                <th style={{ padding: "0.9rem 1rem" }}>
-                  REVENUE CHANGE
-                </th>
-              </tr>
-            </thead>
+        <form
+          onSubmit={handleUpdateRoleSubmit}
+          style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}
+        >
+          <ModalField label="SELECT SYSTEM SECURITY LEVEL">
+            <select
+              value={updatedRole}
+              onChange={(e) => setUpdatedRole(e.target.value)}
+              style={modalInputStyle}
+            >
+              <option value="ADMIN">ADMIN</option>
+              <option value="PARKING MANAGEMENT">PARKING MANAGEMENT</option>
+              <option value="PARKING STAFF">PARKING STAFF</option>
+              <option value="DRIVER">DRIVER</option>
+            </select>
+          </ModalField>
 
-            <tbody>
-              {data.map((item) => (
-                <tr
-                  key={`${item.year}-${item.month}-row`}
-                  style={{
-                    borderTop:
-                      "1px solid var(--border-color)",
-                    background:
-                      "var(--bg-table-row)"
-                  }}
-                >
-                  <td
-                    style={{
-                      padding: "0.9rem 1rem",
-                      fontWeight: "800"
-                    }}
-                  >
-                    {item.monthLabel}
-                  </td>
+          <ModalActions>
+            <button
+              type="button"
+              onClick={() => setIsEditRoleOpen(false)}
+              style={secondaryButtonStyle}
+            >
+              Cancel
+            </button>
 
-                  <td style={{ padding: "0.9rem 1rem" }}>
-                    {formatCurrency(item.totalRevenue)}
-                  </td>
-
-                  <td style={{ padding: "0.9rem 1rem" }}>
-                    {formatNumber(item.paymentCount)}
-                  </td>
-
-                  <td style={{ padding: "0.9rem 1rem" }}>
-                    {formatNumber(item.totalSessions)}
-                  </td>
-
-                  <td style={{ padding: "0.9rem 1rem" }}>
-                    {formatNumber(item.totalReservations)}
-                  </td>
-
-                  <td
-                    style={{
-                      padding: "0.9rem 1rem",
-                      color: reportColors.green,
-                      fontWeight: "700"
-                    }}
-                  >
-                    {formatNumber(
-                      item.completedReservations
-                    )}
-                  </td>
-
-                  <td
-                    style={{
-                      padding: "0.9rem 1rem",
-                      color: reportColors.red,
-                      fontWeight: "700"
-                    }}
-                  >
-                    {formatNumber(
-                      item.cancelledReservations
-                    )}
-                  </td>
-
-                  <td style={{ padding: "0.9rem 1rem" }}>
-                    {formatPercent(
-                      item.averageOccupancy
-                    )}
-                  </td>
-
-                  <td style={{ padding: "0.9rem 1rem" }}>
-                    <GrowthBadge
-                      value={
-                        item.revenueGrowthPercent
-                      }
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </>
+            <button type="submit" style={primaryButtonStyle}>
+              Save Changes
+            </button>
+          </ModalActions>
+        </form>
+      </ModalCard>
+    </ModalShell>
   );
 }
 
-function GrowthBadge({ value }) {
-  const number = Number(value || 0);
+function LockUserModal({
+  userToLock,
+  setIsLockModalOpen,
+  setUserToLock,
+  handleConfirmLockUser,
+}) {
+  const isLocked = userToLock.status === "Locked";
 
-  const isPositive = number > 0;
-  const isNegative = number < 0;
-
-  const color = isPositive
-    ? reportColors.green
-    : isNegative
-      ? reportColors.red
-      : "var(--text-muted)";
-
-  const Icon = isPositive
-    ? TrendingUp
-    : isNegative
-      ? TrendingDown
-      : Minus;
+  const closeModal = () => {
+    setIsLockModalOpen(false);
+    setUserToLock(null);
+  };
 
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "0.25rem",
-        color,
-        background: isPositive
-          ? "rgba(16, 185, 129, 0.12)"
-          : isNegative
-            ? "rgba(239, 68, 68, 0.12)"
-            : "rgba(148, 163, 184, 0.14)",
-        border: `1px solid ${color}`,
-        borderRadius: "999px",
-        padding: "0.18rem 0.48rem",
-        fontSize: "0.7rem",
-        fontWeight: "800",
-        whiteSpace: "nowrap"
-      }}
-    >
-      <Icon size={12} />
-      {formatGrowthPercent(number)}
-    </span>
+    <ModalShell>
+      <ModalCard width="440px">
+        <div
+          style={{
+            display: "flex",
+            gap: "0.75rem",
+            alignItems: "flex-start",
+            marginBottom: "1rem",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: isLocked ? theme.greenSoft : theme.redSoft,
+              color: isLocked ? theme.green : theme.red,
+              padding: "0.55rem",
+              borderRadius: "0.65rem",
+              flexShrink: 0,
+            }}
+          >
+            <AlertTriangle size={22} />
+          </div>
+
+          <div style={{ flexGrow: 1 }}>
+            <h3
+              style={{
+                margin: 0,
+                color: theme.text,
+                fontSize: "1.1rem",
+                fontWeight: "700",
+              }}
+            >
+              {isLocked ? "Unlock Account" : "Lock Account"}
+            </h3>
+
+            <p
+              style={{
+                margin: "4px 0 0 0",
+                color: theme.muted,
+                fontSize: "0.85rem",
+                lineHeight: "1.4",
+              }}
+            >
+              {isLocked
+                ? "Are you sure you want to unlock this account?"
+                : "Are you sure you want to lock this account?"}
+            </p>
+          </div>
+
+          <button onClick={closeModal} style={iconButtonStyle}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: theme.cardSoft,
+            padding: "0.9rem",
+            borderRadius: "0.65rem",
+            marginBottom: "1.5rem",
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "1rem",
+            }}
+          >
+            <div>
+              <span
+                style={{
+                  display: "block",
+                  fontSize: "0.9rem",
+                  fontWeight: "700",
+                  color: theme.text,
+                }}
+              >
+                {userToLock.name}
+              </span>
+
+              <span
+                style={{
+                  display: "block",
+                  fontSize: "0.75rem",
+                  color: theme.muted,
+                  marginTop: "2px",
+                }}
+              >
+                {userToLock.email}
+              </span>
+            </div>
+
+            <span
+              style={{
+                backgroundColor: isLocked ? theme.greenSoft : theme.redSoft,
+                color: isLocked ? theme.green : theme.red,
+                fontSize: "0.65rem",
+                fontWeight: "800",
+                padding: "0.22rem 0.55rem",
+                borderRadius: "0.35rem",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {isLocked ? "LOCKED" : "ACTIVE"}
+            </span>
+          </div>
+
+          <div
+            style={{
+              borderTop: `1px solid ${theme.border}`,
+              marginTop: "0.75rem",
+              paddingTop: "0.6rem",
+              fontSize: "0.75rem",
+              color: theme.muted,
+            }}
+          >
+            {isLocked
+              ? "Warning: This user will be able to log in again after unlocking."
+              : "Warning: This user will not be able to log in until the account is unlocked."}
+          </div>
+        </div>
+
+        <ModalActions>
+          <button type="button" onClick={closeModal} style={secondaryButtonStyle}>
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleConfirmLockUser}
+            style={{
+              ...primaryButtonStyle,
+              backgroundColor: isLocked ? theme.green : theme.red,
+            }}
+          >
+            {isLocked ? "Confirm Unlock" : "Confirm Lock"}
+          </button>
+        </ModalActions>
+      </ModalCard>
+    </ModalShell>
   );
 }
 
-function SimpleBreakdownTable({ title, headers, rows, emptyText }) {
+function ModalShell({ children }) {
   return (
     <div
       style={{
-        marginTop: "2rem",
-        paddingTop: "1.25rem",
-        borderTop: "1px solid var(--border-color)"
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(3, 7, 18, 0.72)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+        backdropFilter: "blur(4px)",
+        padding: "1rem",
       }}
     >
-      <h4
-        style={{
-          color: "var(--text-main)",
-          margin: "0 0 1rem 0",
-          fontSize: "1rem",
-          fontWeight: "800"
-        }}
-      >
-        {title}
-      </h4>
-
-      <div style={{ overflowX: "auto" }}>
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            color: "var(--text-main)",
-            fontSize: "0.9rem"
-          }}
-        >
-          <thead>
-            <tr
-              style={{
-                color: "var(--text-muted)",
-                textAlign: "left",
-                background: "rgba(148, 163, 184, 0.14)"
-              }}
-            >
-              {headers.map((header) => (
-                <th key={header} style={{ padding: "0.5rem" }}>
-                  {header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={headers.length}
-                  style={{
-                    padding: "0.75rem 0.5rem",
-                    color: "var(--text-muted)",
-                    fontWeight: "700"
-                  }}
-                >
-                  {emptyText}
-                </td>
-              </tr>
-            ) : (
-              rows.map((row, rowIndex) => (
-                <tr key={`${title}-${rowIndex}`}>
-                  {row.map((cell, cellIndex) => (
-                    <td
-                      key={`${title}-${rowIndex}-${cellIndex}`}
-                      style={{
-                        padding: "0.35rem 0.5rem",
-                        color: "var(--text-main)",
-                        fontWeight: cellIndex === 0 ? "700" : "500"
-                      }}
-                    >
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {children}
     </div>
   );
 }
 
-export default Reports;
+function ModalCard({ children, width }) {
+  return (
+    <div
+      style={{
+        backgroundColor: theme.card,
+        border: `1px solid ${theme.border}`,
+        width,
+        maxWidth: "100%",
+        borderRadius: "0.85rem",
+        padding: "1.5rem",
+        boxShadow: "0 24px 60px rgba(0, 0, 0, 0.35)",
+        color: theme.text,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ModalHeader({ title, onClose }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "1.25rem",
+      }}
+    >
+      <h3
+        style={{
+          margin: 0,
+          color: theme.text,
+          fontSize: "1.1rem",
+          fontWeight: "700",
+        }}
+      >
+        {title}
+      </h3>
+
+      <button onClick={onClose} style={iconButtonStyle}>
+        <X size={18} />
+      </button>
+    </div>
+  );
+}
+
+function ModalField({ label, children }) {
+  return (
+    <label
+      style={{
+        display: "grid",
+        gap: "0.5rem",
+        color: theme.muted,
+        fontSize: "0.75rem",
+        fontWeight: "700",
+      }}
+    >
+      {label}
+      {children}
+    </label>
+  );
+}
+
+function ModalActions({ children }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        gap: "0.75rem",
+        marginTop: "0.5rem",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function PaginationButton({ children, active = false, disabled = false, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        backgroundColor: active ? theme.blue : theme.input,
+        border: active ? `1px solid ${theme.blue}` : `1px solid ${theme.border}`,
+        color: active ? "#ffffff" : disabled ? theme.muted : theme.text,
+        minWidth: "32px",
+        height: "32px",
+        borderRadius: "0.45rem",
+        fontWeight: "700",
+        cursor: disabled ? "not-allowed" : "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: disabled ? 0.55 : 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+const inputBaseStyle = {
+  width: "100%",
+  backgroundColor: "var(--bg-input)",
+  border: "1px solid var(--border-color)",
+  borderRadius: "0.6rem",
+  padding: "0.65rem 1rem 0.65rem 2.2rem",
+  color: "var(--text-main)",
+  fontSize: "0.9rem",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const selectBaseStyle = {
+  backgroundColor: "var(--bg-input)",
+  color: "var(--text-main)",
+  border: "1px solid var(--border-color)",
+  borderRadius: "0.6rem",
+  padding: "0.65rem 1rem",
+  fontSize: "0.9rem",
+  outline: "none",
+  cursor: "pointer",
+  minWidth: "160px",
+};
+
+const modalInputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  backgroundColor: "var(--bg-input)",
+  border: "1px solid var(--border-color)",
+  borderRadius: "0.55rem",
+  padding: "0.7rem 0.8rem",
+  color: "var(--text-main)",
+  fontSize: "0.9rem",
+  outline: "none",
+};
+
+const iconButtonStyle = {
+  background: "transparent",
+  border: "none",
+  color: "var(--text-muted)",
+  cursor: "pointer",
+  padding: "4px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const primaryButtonStyle = {
+  backgroundColor: "var(--primary-blue)",
+  border: "none",
+  color: "#ffffff",
+  padding: "0.6rem 1rem",
+  borderRadius: "0.55rem",
+  cursor: "pointer",
+  fontWeight: "700",
+  fontSize: "0.9rem",
+};
+
+const secondaryButtonStyle = {
+  backgroundColor: "var(--bg-input)",
+  border: "1px solid var(--border-color)",
+  color: "var(--text-main)",
+  padding: "0.6rem 1rem",
+  borderRadius: "0.55rem",
+  cursor: "pointer",
+  fontWeight: "650",
+  fontSize: "0.9rem",
+};
+
+export default UserManagementPage;
