@@ -43,7 +43,6 @@ const emptyPolicyForm = {
   id: null,
   vehicleTypeId: "",
   vehicleTypeName: "",
-  basePrice: "",
   pricePerHour: "",
   overtimeFee: "",
   overstayFee: "",
@@ -256,7 +255,6 @@ function PricingPoliciesPage() {
       id: policy.id,
       vehicleTypeId: policy.vehicleTypeId || "",
       vehicleTypeName: policy.vehicleTypeName || "",
-      basePrice: policy.basePrice ?? "",
       pricePerHour: policy.pricePerHour ?? "",
       overtimeFee: policy.overtimeFee ?? 0,
       overstayFee: policy.overstayFee ?? 0,
@@ -283,7 +281,13 @@ function PricingPoliciesPage() {
 
   const buildRequestPayload = () => ({
     vehicleTypeId: Number(formData.vehicleTypeId),
-    basePrice: Number(formData.basePrice),
+
+    /*
+     * Backend hiện vẫn yêu cầu basePrice.
+     * Giao diện không sử dụng giá cơ bản nên luôn gửi 0.
+     */
+    basePrice: 0,
+
     pricePerHour: Number(formData.pricePerHour),
     overtimeFee: Number(formData.overtimeFee || 0),
     overstayFee: Number(formData.overstayFee || 0),
@@ -293,11 +297,6 @@ function PricingPoliciesPage() {
   const validateForm = () => {
     if (!formData.vehicleTypeId) {
       alert("Vehicle type ID is required.");
-      return false;
-    }
-
-    if (formData.basePrice === "" || Number(formData.basePrice) < 0) {
-      alert("Base price is required and cannot be negative.");
       return false;
     }
 
@@ -528,7 +527,6 @@ function PricingPoliciesPage() {
       "Policy ID",
       "Vehicle Type ID",
       "Vehicle Type",
-      "Base Price",
       "Price Per Hour",
       "Overtime Fee",
       "Overstay Fee",
@@ -541,7 +539,6 @@ function PricingPoliciesPage() {
       policy.id,
       policy.vehicleTypeId,
       policy.vehicleTypeName,
-      policy.basePrice,
       policy.pricePerHour,
       policy.overtimeFee,
       policy.overstayFee,
@@ -797,7 +794,7 @@ function PricingTableSection({
   togglePolicyStatus,
   canManagePricing,
 }) {
-  const colSpan = canManagePricing ? 9 : 6;
+  const colSpan = canManagePricing ? 8 : 5;
 
   return (
     <div style={{ ...tableCardStyle, minHeight: canManagePricing ? "520px" : "360px" }}>
@@ -835,14 +832,13 @@ function PricingTableSection({
         <table
           style={{
             ...mainTableStyle,
-            minWidth: canManagePricing ? "1180px" : "940px",
+            minWidth: canManagePricing ? "1080px" : "780px",
           }}
         >
           <thead>
             <tr style={tableHeadRowStyle}>
               <th style={thStyle}>POLICY ID</th>
               <th style={thStyle}>VEHICLE TYPE</th>
-              <th style={thStyle}>BASE PRICE</th>
               <th style={thStyle}>PRICE PER HOUR</th>
               <th style={thStyle}>OVERTIME FEE</th>
               <th style={thStyle}>OVERSTAY FEE</th>
@@ -885,7 +881,6 @@ function PricingTableSection({
                       <div style={subTextStyle}>Type ID: {policy.vehicleTypeId}</div>
                     </td>
 
-                    <td style={tdMoneyStyle}>{formatVND(policy.basePrice)}</td>
                     <td style={tdMoneyStyle}>{formatVND(policy.pricePerHour)}</td>
                     <td style={tdMoneyStyle}>{formatVND(policy.overtimeFee)}</td>
                     <td style={tdMoneyStyle}>{formatVND(policy.overstayFee)}</td>
@@ -1365,19 +1360,6 @@ function PricingPolicyModal({
             Current type: {formData.vehicleTypeName}
           </div>
         )}
-
-        <ModalField label="Base price *">
-          <input
-            type="number"
-            name="basePrice"
-            placeholder="e.g. 0"
-            value={formData.basePrice}
-            onChange={handleFormChange}
-            required
-            min="0"
-            style={modalInputStyle}
-          />
-        </ModalField>
 
         <ModalField label="Price per hour *">
           <input

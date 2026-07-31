@@ -178,7 +178,18 @@ function UserManagementPage() {
     if (user.status === "Locked") return "Locked";
     if (user.status === "Active") return "Active";
 
-    const offlineTime = user.updatedAt || user.lastActiveAt;
+    /*
+     * Trạng thái hoạt động chỉ dựa vào dữ liệu đăng nhập/hoạt động
+     * của chính tài khoản.
+     *
+     * Không dùng updatedAt vì trường đó thay đổi khi Admin sửa role,
+     * thông tin tài khoản hoặc trạng thái nghiệp vụ.
+     */
+    const offlineTime =
+      user.lastActiveAt ||
+      user.lastLoginAt ||
+      null;
+
     const offlineAgo = formatTimeAgo(offlineTime);
 
     if (!offlineAgo) return "Offline";
@@ -199,6 +210,7 @@ function UserManagementPage() {
       status: formatStatusLabel(user),
       online: user.online,
       lastLogin: formatLastLogin(user.lastLoginAt),
+      lastLoginAt: user.lastLoginAt,
       lastActiveAt: user.lastActiveAt,
       updatedAt: user.updatedAt,
       avatar: getAvatarText(user.fullName),
@@ -238,6 +250,10 @@ function UserManagementPage() {
           lastLogin: event.lastLoginAt
             ? formatLastLogin(event.lastLoginAt)
             : user.lastLogin,
+          lastLoginAt:
+            event.lastLoginAt !== undefined
+              ? event.lastLoginAt
+              : user.lastLoginAt,
           lastActiveAt:
             event.lastActiveAt !== undefined
               ? event.lastActiveAt
