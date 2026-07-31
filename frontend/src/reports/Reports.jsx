@@ -577,6 +577,44 @@ const Reports = () => {
               backface-visibility: hidden !important;
             }
 
+            /*
+             * Dedicated colors for the Monthly Comparison chart.
+             *
+             * These use !important because the global light-theme CSS
+             * can otherwise override inline backgrounds and make the
+             * bars appear white or transparent.
+             */
+            .report-session-bar {
+              background-color: #10b981 !important;
+              border: 1px solid #059669 !important;
+              opacity: 1 !important;
+              visibility: visible !important;
+              transform: translateZ(0) !important;
+              backface-visibility: hidden !important;
+              box-shadow: 0 0 14px rgba(16, 185, 129, 0.28) !important;
+            }
+
+            .report-reservation-bar {
+              background-color: #f59e0b !important;
+              border: 1px solid #d97706 !important;
+              opacity: 1 !important;
+              visibility: visible !important;
+              transform: translateZ(0) !important;
+              backface-visibility: hidden !important;
+              box-shadow: 0 0 14px rgba(245, 158, 11, 0.28) !important;
+            }
+
+            /*
+             * Keep the legend colors stable in both light and dark mode.
+             */
+            .report-session-legend {
+              color: #059669 !important;
+            }
+
+            .report-reservation-legend {
+              color: #d97706 !important;
+            }
+
             .report-chart-grid {
               background-color: transparent !important;
               background-image:
@@ -2008,10 +2046,10 @@ function MonthlyComparisonSection({
               fontWeight: "700"
             }}
           >
-            <span style={{ color: reportColors.green }}>
+            <span className="report-session-legend">
               ● Sessions
             </span>
-            <span style={{ color: reportColors.yellow }}>
+            <span className="report-reservation-legend">
               ● Reservations
             </span>
           </div>
@@ -2059,6 +2097,7 @@ function MonthlyComparisonSection({
                     }}
                   >
                     <div
+                      className="report-session-bar"
                       title={`${item.monthLabel}: ${formatNumber(item.totalSessions)} sessions`}
                       style={{
                         width: "18px",
@@ -2067,12 +2106,13 @@ function MonthlyComparisonSection({
                           item.totalSessions > 0
                             ? "6px"
                             : "0",
-                        background: reportColors.green,
-                        borderRadius: "6px 6px 0 0"
+                        borderRadius: "6px 6px 0 0",
+                        boxSizing: "border-box"
                       }}
                     />
 
                     <div
+                      className="report-reservation-bar"
                       title={`${item.monthLabel}: ${formatNumber(item.totalReservations)} reservations`}
                       style={{
                         width: "18px",
@@ -2081,8 +2121,8 @@ function MonthlyComparisonSection({
                           item.totalReservations > 0
                             ? "6px"
                             : "0",
-                        background: reportColors.yellow,
-                        borderRadius: "6px 6px 0 0"
+                        borderRadius: "6px 6px 0 0",
+                        boxSizing: "border-box"
                       }}
                     />
                   </div>
