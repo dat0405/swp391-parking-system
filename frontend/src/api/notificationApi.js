@@ -1,30 +1,5 @@
 import axiosClient from './axiosClient';
 
-/**
- * Chuẩn hóa base URL của Backend.
- *
- * Ví dụ:
- * https://backend.azurewebsites.net/api/
- *
- * sẽ thành:
- * https://backend.azurewebsites.net/api
- */
-const getApiBaseUrl = () => {
-  const configuredBaseUrl = String(
-    axiosClient.defaults.baseURL || ''
-  ).trim();
-
-  /*
-   * Trường hợp axiosClient chưa khai báo baseURL,
-   * dùng /api cho môi trường cùng domain.
-   */
-  if (!configuredBaseUrl) {
-    return '/api';
-  }
-
-  return configuredBaseUrl.replace(/\/+$/, '');
-};
-
 export const notificationApi = {
   /**
    * Lấy toàn bộ notification của tài khoản
@@ -100,53 +75,6 @@ export const notificationApi = {
   markAllAsRead: async () => {
     await axiosClient.put(
       '/notifications/me/read-all'
-    );
-  },
-
-  /**
-   * Tạo URL dùng để mở kết nối SSE realtime.
-   *
-   * Không gọi endpoint này bằng axios.
-   * Header.jsx sẽ dùng URL này với EventSource.
-   *
-   * Endpoint:
-   * GET /api/notifications/stream
-   */
-  getNotificationStreamUrl: () => {
-    const apiBaseUrl = getApiBaseUrl();
-
-    return `${apiBaseUrl}/notifications/stream`;
-  },
-
-  /**
-   * Mở kết nối realtime đến Backend.
-   *
-   * withCredentials: true cho phép trình duyệt
-   * gửi JWT cookie đến Azure Backend.
-   *
-   * Các event Backend gửi:
-   * - CONNECTED
-   * - NOTIFICATION_CREATED
-   * - HEARTBEAT
-   */
-  createNotificationEventSource: () => {
-    if (
-      typeof window === 'undefined' ||
-      typeof window.EventSource === 'undefined'
-    ) {
-      throw new Error(
-        'EventSource is not supported in this environment'
-      );
-    }
-
-    const streamUrl =
-      notificationApi.getNotificationStreamUrl();
-
-    return new window.EventSource(
-      streamUrl,
-      {
-        withCredentials: true
-      }
     );
   }
 };

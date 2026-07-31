@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../dashboard/Sidebar";
 import Header from "../dashboard/Header";
 import axiosClient from "../api/axiosClient";
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 const slotsPerPage = 25;
+const PARKING_SLOTS_POLL_INTERVAL_MS = 15 * 1000;
 
 const statusFilters = [
   { key: "all", label: "All" },
@@ -344,6 +345,13 @@ const ParkingManagement = () => {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const hasLoadedOnceRef = useRef(false);
 
+  /*
+   * Ngăn nhiều request parking-slots chạy chồng lên nhau
+   * khi request trước chưa hoàn tất.
+   */
+  const parkingSlotsRequestInFlightRef = useRef(false);
+  const parkingSlotsAbortControllerRef = useRef(null);
+
   const [errorMessage, setErrorMessage] = useState("");
 
   const [editingSlot, setEditingSlot] = useState(null);
@@ -372,8 +380,7 @@ const ParkingManagement = () => {
 
   const canManageSlots = [
     "SYSTEM_ADMIN",
-    "PARKING_MANAGER",
-    "PARKING_STAFF"
+    "PARKING_MANAGER"
   ].includes(normalizedRole);
 
   const isReadOnlyViewer = !canManageSlots;
@@ -415,49 +422,133 @@ const ParkingManagement = () => {
     });
   };
 
-  const loadParkingSlots = async ({ silent = false } = {}) => {
-    try {
-      if (!silent) {
-        setLoading(true);
+  const loadParkingSlots = useCallback(
+    async ({ silent = false } = {}) => {
+      /*
+       * Bỏ qua lần polling mới nếu request trước vẫn đang chạy.
+       * Điều này tránh dồn request và giảm tải cho Backend/Azure SQL.
+       */
+      if (parkingSlotsRequestInFlightRef.current) {
+        return;
       }
 
-      setErrorMessage("");
+      const abortController = new AbortController();
 
-      const response = await axiosClient.get("/parking-slots");
-      const payload = response.data;
+      parkingSlotsRequestInFlightRef.current = true;
+      parkingSlotsAbortControllerRef.current = abortController;
 
-      const slots = Array.isArray(payload)
-        ? payload
-        : payload.content || payload.data || payload.slots || [];
+      try {
+        if (!silent) {
+          setLoading(true);
+        }
 
-      const normalizedDisplaySlots = buildNormalizedDisplaySlots(slots);
+        const response = await axiosClient.get(
+          "/parking-slots",
+          {
+            signal: abortController.signal
+          }
+        );
 
-      setSlotsData(normalizedDisplaySlots);
-      setHasLoadedOnce(true);
-      hasLoadedOnceRef.current = true;
-    } catch (error) {
-      console.error("Failed to load parking slots:", error);
-      setErrorMessage("Không thể tải dữ liệu parking slots từ backend.");
+        const payload = response.data;
 
-      if (!hasLoadedOnceRef.current) {
-        setSlotsData([]);
+        const slots = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.content)
+            ? payload.content
+            : Array.isArray(payload?.data)
+              ? payload.data
+              : Array.isArray(payload?.slots)
+                ? payload.slots
+                : [];
+
+        const normalizedDisplaySlots =
+          buildNormalizedDisplaySlots(slots);
+
+        setSlotsData(normalizedDisplaySlots);
+        setHasLoadedOnce(true);
+        hasLoadedOnceRef.current = true;
+        setErrorMessage("");
+      } catch (error) {
+        const isCancelled =
+          error?.code === "ERR_CANCELED" ||
+          error?.name === "CanceledError";
+
+        if (isCancelled) {
+          return;
+        }
+
+        console.error(
+          "Failed to load parking slots:",
+          error
+        );
+
+        /*
+         * Polling nền bị lỗi nhưng đã có dữ liệu cũ:
+         * giữ nguyên dữ liệu và không làm màn hình nhấp nháy.
+         */
+        if (
+          !silent ||
+          !hasLoadedOnceRef.current
+        ) {
+          const backendMessage =
+            error?.response?.data?.message ||
+            error?.response?.data?.error ||
+            "";
+
+          setErrorMessage(
+            backendMessage
+              ? `Không thể tải parking slots: ${backendMessage}`
+              : "Không thể tải dữ liệu parking slots từ backend."
+          );
+        }
+
+        if (!hasLoadedOnceRef.current) {
+          setSlotsData([]);
+        }
+      } finally {
+        if (
+          parkingSlotsAbortControllerRef.current ===
+          abortController
+        ) {
+          parkingSlotsAbortControllerRef.current = null;
+        }
+
+        parkingSlotsRequestInFlightRef.current = false;
+
+        if (!silent) {
+          setLoading(false);
+        }
       }
-    } finally {
-      if (!silent) {
-        setLoading(false);
-      }
-    }
-  };
+    },
+    []
+  );
 
+  /*
+   * Đồng bộ parking slots mỗi 15 giây.
+   *
+   * Không tạo request mới nếu request cũ còn Pending.
+   * Khi component unmount, request hiện tại sẽ được hủy.
+   */
   useEffect(() => {
     loadParkingSlots();
 
-    const intervalId = setInterval(() => {
-      loadParkingSlots({ silent: true });
-    }, 5000);
+    const intervalId = window.setInterval(
+      () => {
+        loadParkingSlots({
+          silent: true
+        });
+      },
+      PARKING_SLOTS_POLL_INTERVAL_MS
+    );
 
-    return () => clearInterval(intervalId);
-  }, []);
+    return () => {
+      window.clearInterval(intervalId);
+
+      parkingSlotsAbortControllerRef.current?.abort();
+      parkingSlotsAbortControllerRef.current = null;
+      parkingSlotsRequestInFlightRef.current = false;
+    };
+  }, [loadParkingSlots]);
 
   const floors = useMemo(() => {
     const floorMap = new Map();

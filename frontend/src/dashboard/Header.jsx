@@ -34,10 +34,7 @@ const USER_SYNCED_AT_KEY = 'headerUserSyncedAt';
 
 const LOGOUT_GUARD_MS = 15000;
 const USER_SYNC_INTERVAL_MS = 5 * 60 * 1000;
-const NOTIFICATION_POLL_INTERVAL_MS = 60 * 1000;
-const NOTIFICATION_EVENT_CONNECTED = 'CONNECTED';
-const NOTIFICATION_EVENT_CREATED = 'NOTIFICATION_CREATED';
-const NOTIFICATION_EVENT_HEARTBEAT = 'HEARTBEAT';
+const NOTIFICATION_POLL_INTERVAL_MS = 15 * 1000;
 const MAX_DISPLAY_NOTIFICATIONS = 20;
 
 const formatRole = (role) => {
@@ -367,22 +364,6 @@ function Header() {
 
   const isLoggingOutRef = useRef(false);
 
-  /*
-   * Giữ kết nối SSE hiện tại để có thể đóng khi logout
-   * hoặc khi Header bị unmount.
-   */
-  const notificationEventSourceRef =
-    useRef(null);
-
-  /*
-   * Dùng để ngăn một notification bị thêm trùng khi:
-   * - SSE tự reconnect;
-   * - polling và SSE cùng trả về một bản ghi;
-   * - trình duyệt nhận lại cùng event ID.
-   */
-  const knownNotificationIdsRef =
-    useRef(new Set());
-
   const isDarkMode = theme === 'dark';
 
   const displayNotifications =
@@ -583,14 +564,6 @@ function Header() {
                 null
             );
 
-        knownNotificationIdsRef.current =
-          new Set(
-            normalizedNotifications.map(
-              (notification) =>
-                notification.notificationId
-            )
-          );
-
         setNotifications(
           normalizedNotifications
         );
@@ -624,51 +597,6 @@ function Header() {
     },
     [handleRequestError]
   );
-
-  /**
-   * Thêm notification mới nhận từ SSE vào giao diện ngay lập tức.
-   *
-   * Không gọi lại API và không cần chuyển trang hoặc F5.
-   */
-  const handleRealtimeNotification =
-    useCallback((rawNotification) => {
-      const notification =
-        normalizeNotification(
-          rawNotification
-        );
-
-      const notificationId =
-        notification.notificationId;
-
-      if (notificationId === null) {
-        return;
-      }
-
-      if (
-        knownNotificationIdsRef.current.has(
-          notificationId
-        )
-      ) {
-        return;
-      }
-
-      knownNotificationIdsRef.current.add(
-        notificationId
-      );
-
-      setNotifications((previous) => [
-        notification,
-        ...previous
-      ]);
-
-      if (!notification.isRead) {
-        setUnreadCount(
-          (previous) => previous + 1
-        );
-      }
-
-      setNotificationError('');
-    }, []);
 
   useEffect(() => {
     applyThemeToBody(theme);
@@ -729,10 +657,10 @@ function Header() {
   ]);
 
   /**
-   * Tải notification khi Header mount.
+   * Tải notification khi Header mount và đồng bộ lại
+   * danh sách mỗi 15 giây bằng polling.
    *
-   * SSE là cơ chế cập nhật chính. Polling toàn bộ danh sách mỗi
-   * 60 giây chỉ là phương án dự phòng khi mạng hoặc SSE bị gián đoạn.
+   * Không sử dụng kết nối realtime dài hạn.
    */
   useEffect(() => {
     loadNotifications();
@@ -751,125 +679,6 @@ function Header() {
       window.clearInterval(intervalId);
     };
   }, [loadNotifications]);
-
-  /**
-   * Mở kết nối SSE realtime.
-   *
-   * Khi backend phát NOTIFICATION_CREATED:
-   * - notification mới được thêm ngay vào đầu danh sách;
-   * - badge tăng ngay;
-   * - không cần chuyển trang hoặc tải lại trang.
-   */
-  useEffect(() => {
-    if (
-      isLoggingOutRef.current ||
-      clearExpiredLogoutGuard()
-    ) {
-      return undefined;
-    }
-
-    let eventSource;
-
-    try {
-      eventSource =
-        notificationApi
-          .createNotificationEventSource();
-
-      notificationEventSourceRef.current =
-        eventSource;
-    } catch (error) {
-      console.error(
-        'Cannot create notification realtime connection:',
-        error
-      );
-
-      return undefined;
-    }
-
-    const handleConnected = () => {
-      setNotificationError('');
-    };
-
-    const handleNotificationCreated = (
-      message
-    ) => {
-      try {
-        const rawNotification =
-          JSON.parse(message.data);
-
-        handleRealtimeNotification(
-          rawNotification
-        );
-      } catch (error) {
-        console.error(
-          'Cannot parse realtime notification:',
-          error
-        );
-      }
-    };
-
-    /*
-     * HEARTBEAT chỉ giữ kết nối SSE hoạt động.
-     * Không hiển thị và không làm tăng badge.
-     */
-    const handleHeartbeat = () => {};
-
-    eventSource.addEventListener(
-      NOTIFICATION_EVENT_CONNECTED,
-      handleConnected
-    );
-
-    eventSource.addEventListener(
-      NOTIFICATION_EVENT_CREATED,
-      handleNotificationCreated
-    );
-
-    eventSource.addEventListener(
-      NOTIFICATION_EVENT_HEARTBEAT,
-      handleHeartbeat
-    );
-
-    eventSource.onerror = (error) => {
-      /*
-       * EventSource sẽ tự reconnect theo thời gian
-       * backend gửi trong sự kiện CONNECTED.
-       *
-       * Không redirect logout tại đây vì onerror không cung cấp
-       * status HTTP đáng tin cậy và có thể chỉ là mất mạng tạm thời.
-       */
-      console.error(
-        'Notification realtime connection interrupted:',
-        error
-      );
-    };
-
-    return () => {
-      eventSource.removeEventListener(
-        NOTIFICATION_EVENT_CONNECTED,
-        handleConnected
-      );
-
-      eventSource.removeEventListener(
-        NOTIFICATION_EVENT_CREATED,
-        handleNotificationCreated
-      );
-
-      eventSource.removeEventListener(
-        NOTIFICATION_EVENT_HEARTBEAT,
-        handleHeartbeat
-      );
-
-      eventSource.close();
-
-      if (
-        notificationEventSourceRef.current ===
-        eventSource
-      ) {
-        notificationEventSourceRef.current =
-          null;
-      }
-    };
-  }, [handleRealtimeNotification]);
 
   /**
    * Khi mở dropdown, tải lại danh sách
@@ -1075,16 +884,6 @@ function Header() {
 
     setIsOpenSettings(false);
     setIsOpenDropdown(false);
-
-    if (
-      notificationEventSourceRef.current
-    ) {
-      notificationEventSourceRef.current
-        .close();
-
-      notificationEventSourceRef.current =
-        null;
-    }
 
     try {
       try {

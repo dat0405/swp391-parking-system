@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   UserPlus,
   Search,
@@ -17,6 +17,8 @@ import {
 import Header from "../dashboard/Header";
 import Sidebar from "../dashboard/Sidebar";
 import { userApi } from "../api/userApi";
+
+const USER_STATUS_POLL_INTERVAL_MS = 10 * 1000;
 
 const theme = {
   page: "var(--bg-dashboard)",
@@ -49,8 +51,14 @@ function UserManagementPage() {
 
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [timeTick, setTimeTick] = useState(Date.now());
+
+  /*
+   * Ngăn nhiều request GET /users chạy chồng lên nhau.
+   * Polling mới sẽ được bỏ qua nếu request trước vẫn đang xử lý.
+   */
+  const usersRequestInFlightRef = useRef(false);
+  const usersAbortControllerRef = useRef(null);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("All Roles");
@@ -232,89 +240,91 @@ function UserManagementPage() {
     };
   };
 
-  const applyUserStatusEvent = (event) => {
-    setUsers((prevUsers) => {
-      const updatedUsers = prevUsers.map((user) => {
-        if (user.id !== event.userId) {
-          return user;
-        }
-
-        const nextAccountStatus = event.status || user.accountStatus;
-        const nextOnline = Boolean(event.online);
-
-        return {
-          ...user,
-          accountStatus: nextAccountStatus,
-          online: nextOnline,
-          status: getDisplayStatus(nextAccountStatus, nextOnline),
-          lastLogin: event.lastLoginAt
-            ? formatLastLogin(event.lastLoginAt)
-            : user.lastLogin,
-          lastLoginAt:
-            event.lastLoginAt !== undefined
-              ? event.lastLoginAt
-              : user.lastLoginAt,
-          lastActiveAt:
-            event.lastActiveAt !== undefined
-              ? event.lastActiveAt
-              : user.lastActiveAt,
-          updatedAt:
-            event.updatedAt !== undefined ? event.updatedAt : user.updatedAt,
-        };
-      });
-
-      setStats(calculateStats(updatedUsers));
-      setTimeTick(Date.now());
-
-      return updatedUsers;
-    });
-  };
-
-  const fetchData = async (showInitialLoading = false) => {
-    try {
-      if (showInitialLoading) {
-        setLoading(true);
+  const fetchData = useCallback(
+    async (showInitialLoading = false) => {
+      if (usersRequestInFlightRef.current) {
+        return;
       }
 
-      const res = await userApi.getUsers();
-      const apiUsers = Array.isArray(res.data) ? res.data : [];
-      const mappedUsers = apiUsers.map(mapApiUserToTableUser);
+      const abortController = new AbortController();
 
-      setUsers(mappedUsers);
-      setStats(calculateStats(mappedUsers));
-    } catch (error) {
-      console.error("Lỗi kết nối API users:", error);
+      usersRequestInFlightRef.current = true;
+      usersAbortControllerRef.current = abortController;
 
-      setUsers((prevUsers) => {
-        if (prevUsers.length > 0) {
-          return prevUsers;
+      try {
+        if (showInitialLoading) {
+          setLoading(true);
         }
 
-        setStats({
-          totalAccounts: 0,
-          activeNow: 0,
-          staffMembers: 0,
-          lockedAccounts: 0,
+        const res = await userApi.getUsers({
+          signal: abortController.signal,
         });
 
-        return [];
-      });
-    } finally {
-      if (showInitialLoading) {
-        setLoading(false);
+        const apiUsers = Array.isArray(res.data) ? res.data : [];
+        const mappedUsers = apiUsers.map(mapApiUserToTableUser);
+
+        setUsers(mappedUsers);
+        setStats(calculateStats(mappedUsers));
+        setTimeTick(Date.now());
+      } catch (error) {
+        const isCancelled =
+          error?.code === "ERR_CANCELED" ||
+          error?.name === "CanceledError";
+
+        if (isCancelled) {
+          return;
+        }
+
+        console.error("Lỗi kết nối API users:", error);
+
+        /*
+         * Nếu polling nền lỗi, giữ nguyên dữ liệu đang hiển thị.
+         * Chỉ trả về danh sách rỗng khi lần tải đầu tiên thất bại.
+         */
+        setUsers((prevUsers) => {
+          if (prevUsers.length > 0) {
+            return prevUsers;
+          }
+
+          setStats({
+            totalAccounts: 0,
+            activeNow: 0,
+            staffMembers: 0,
+            lockedAccounts: 0,
+          });
+
+          return [];
+        });
+      } finally {
+        if (usersAbortControllerRef.current === abortController) {
+          usersAbortControllerRef.current = null;
+        }
+
+        usersRequestInFlightRef.current = false;
+
+        if (showInitialLoading) {
+          setLoading(false);
+        }
       }
-    }
-  };
+    },
+    []
+  );
 
   useEffect(() => {
     fetchData(true);
 
-    const intervalId = setInterval(() => {
+    const intervalId = window.setInterval(() => {
       fetchData(false);
-    }, 30000);
+    }, USER_STATUS_POLL_INTERVAL_MS);
 
-    return () => clearInterval(intervalId);
-  }, []);
+    return () => {
+      window.clearInterval(intervalId);
+
+      usersAbortControllerRef.current?.abort();
+      usersAbortControllerRef.current = null;
+      usersRequestInFlightRef.current = false;
+    };
+  }, [fetchData]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -322,37 +332,6 @@ function UserManagementPage() {
     }, 60000);
 
     return () => clearInterval(intervalId);
-  }, []);
-
-  useEffect(() => {
-    const streamUrl = userApi.getUserStatusStreamUrl();
-
-    const eventSource = new EventSource(streamUrl, {
-      withCredentials: true,
-    });
-
-    eventSource.addEventListener("CONNECTED", () => {
-      setIsRealtimeConnected(true);
-    });
-
-    eventSource.addEventListener("USER_STATUS_CHANGED", (message) => {
-      try {
-        const event = JSON.parse(message.data);
-        applyUserStatusEvent(event);
-      } catch (error) {
-        console.error("Cannot parse user status event:", error);
-      }
-    });
-
-    eventSource.onerror = (error) => {
-      console.error("User status stream error:", error);
-      setIsRealtimeConnected(false);
-    };
-
-    return () => {
-      eventSource.close();
-      setIsRealtimeConnected(false);
-    };
   }, []);
 
   const openEditRoleModal = (user) => {
@@ -691,10 +670,10 @@ function UserManagementPage() {
                   width: "6px",
                   height: "6px",
                   borderRadius: "50%",
-                  backgroundColor: isRealtimeConnected ? theme.green : theme.muted,
+                  backgroundColor: theme.green,
                 }}
               />
-              {isRealtimeConnected ? "Realtime" : "Offline sync"}
+              Polling · 10s
             </div>
           )}
 
