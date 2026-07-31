@@ -1108,31 +1108,217 @@ function Booking() {
         booking?.data?.status ||
         booking?.data?.bookingStatus ||
         ""
-    ).toUpperCase();
+    )
+      .trim()
+      .toUpperCase();
   };
 
-  const getPaymentStatusValue = (booking) => {
+  const getPaymentStatusValue = (payload) => {
     return String(
-      booking?.paymentStatus ||
-        booking?.payment_status ||
-        booking?.data?.paymentStatus ||
-        booking?.data?.payment_status ||
+      payload?.paymentStatus ||
+        payload?.payment_status ||
+        payload?.status ||
+        payload?.data?.paymentStatus ||
+        payload?.data?.payment_status ||
+        payload?.data?.status ||
         ""
-    ).toUpperCase();
+    )
+      .trim()
+      .toUpperCase();
+  };
+
+  const getPaymentOrderCode = (payload) => {
+    return (
+      payload?.paymentOrderCode ||
+      payload?.payment_order_code ||
+      payload?.orderCode ||
+      payload?.order_code ||
+      payload?.payment?.orderCode ||
+      payload?.data?.paymentOrderCode ||
+      payload?.data?.orderCode ||
+      null
+    );
+  };
+
+  const isSuccessfulPaymentStatus = (value) => {
+    const status = String(value || "")
+      .trim()
+      .toUpperCase();
+
+    return [
+      "PAID",
+      "SUCCESS",
+      "SUCCEEDED",
+      "COMPLETED"
+    ].includes(status);
+  };
+
+  const isTerminalPaymentFailure = (value) => {
+    const status = String(value || "")
+      .trim()
+      .toUpperCase();
+
+    return [
+      "CANCELLED",
+      "CANCELED",
+      "EXPIRED",
+      "FAILED"
+    ].includes(status);
   };
 
   const isBookingPaymentSuccess = (booking) => {
-    const bookingStatus = getBookingStatusValue(booking);
-    const paymentStatus = getPaymentStatusValue(booking);
+    const bookingStatus =
+      getBookingStatusValue(booking);
 
-    return bookingStatus === "CONFIRMED" || paymentStatus === "PAID";
+    const paymentStatus =
+      getPaymentStatusValue(booking);
+
+    return (
+      bookingStatus === "CONFIRMED" ||
+      isSuccessfulPaymentStatus(
+        paymentStatus
+      )
+    );
   };
 
-  const markBookingPaymentSuccess = async (booking) => {
-    const paidSlotId = successModal.data?.slotId;
+  const fetchBookingHistoryItem = async (
+    bookingId
+  ) => {
+    if (!bookingId) {
+      return null;
+    }
+
+    const response = await axiosClient.get(
+      `/bookings/my-history/${bookingId}`
+    );
+
+    return unwrapApiData(response);
+  };
+
+  const fetchPayOSPaymentStatus = async (
+    orderCode
+  ) => {
+    if (!orderCode) {
+      return null;
+    }
+
+    /*
+     * The backend route name is checkout-status, but it calls the generic
+     * PaymentService.getPayOSPaymentStatus(orderCode) method.
+     */
+    const response = await axiosClient.get(
+      `/payments/payos/checkout-status/${orderCode}`
+    );
+
+    return unwrapApiData(response);
+  };
+
+  const synchronizeBookingPayment = async ({
+    bookingId,
+    orderCode
+  }) => {
+    let payOSPayload = null;
+    let booking = null;
+    let payOSError = null;
+    let bookingError = null;
+
+    /*
+     * Ask PayOS directly through the backend first. This prevents the UI
+     * from waiting only for a delayed webhook/database update.
+     */
+    if (orderCode) {
+      try {
+        payOSPayload =
+          await fetchPayOSPaymentStatus(
+            orderCode
+          );
+      } catch (error) {
+        payOSError = error;
+        console.warn(
+          "Direct PayOS status check failed:",
+          error
+        );
+      }
+    }
+
+    /*
+     * Refresh the booking after the status check. The backend may have
+     * synchronized it to PAID / CONFIRMED.
+     */
+    if (bookingId) {
+      try {
+        booking =
+          await fetchBookingHistoryItem(
+            bookingId
+          );
+      } catch (error) {
+        bookingError = error;
+        console.warn(
+          "Booking payment refresh failed:",
+          error
+        );
+      }
+    }
+
+    const payOSStatus =
+      getPaymentStatusValue(payOSPayload);
+
+    const bookingPaymentStatus =
+      getPaymentStatusValue(booking);
+
+    const paid =
+      isSuccessfulPaymentStatus(
+        payOSStatus
+      ) ||
+      isBookingPaymentSuccess(booking);
+
+    const terminalStatus =
+      isTerminalPaymentFailure(
+        payOSStatus
+      )
+        ? payOSStatus
+        : isTerminalPaymentFailure(
+              bookingPaymentStatus
+            )
+          ? bookingPaymentStatus
+          : "";
+
+    if (
+      !payOSPayload &&
+      !booking &&
+      (payOSError || bookingError)
+    ) {
+      throw (
+        payOSError ||
+        bookingError
+      );
+    }
+
+    return {
+      paid,
+      terminalStatus,
+      payOSStatus,
+      booking:
+        booking ||
+        (paid
+          ? {
+              status: "CONFIRMED",
+              paymentStatus: "PAID"
+            }
+          : null)
+    };
+  };
+
+  const markBookingPaymentSuccess = async (
+    booking
+  ) => {
+    const paidSlotId =
+      successModal.data?.slotId;
 
     setBookingPaymentStatus("PAID");
-    setBookingPaymentMessage("Payment completed successfully.");
+    setBookingPaymentMessage(
+      "Payment completed successfully."
+    );
     setPendingBooking(null);
     setPendingRemainingSeconds(0);
 
@@ -1152,32 +1338,40 @@ function Booking() {
         show: true,
         data: {
           ...prev.data,
-          bookingStatus: getBookingStatusValue(booking) || "CONFIRMED",
-          paymentStatus: getPaymentStatusValue(booking) || "PAID"
+          bookingStatus:
+            getBookingStatusValue(
+              booking
+            ) || "CONFIRMED",
+          paymentStatus:
+            getPaymentStatusValue(
+              booking
+            ) || "PAID"
         }
       };
     });
 
-    await loadAvailableSlots(formData.vehicleTypeId);
+    await loadAvailableSlots(
+      formData.vehicleTypeId,
+      {
+        silent: true
+      }
+    );
 
-    /*
-     * Immediately remove the paid slot from the visible slot selection list.
-     * The backend remains the source of truth for displaying the slot as RESERVED.
-     */
     if (paidSlotId) {
       setAvailableSlots((prev) =>
         prev.filter(
-          (slot) => String(slot.id) !== String(paidSlotId)
+          (slot) =>
+            String(slot.id) !==
+            String(paidSlotId)
         )
       );
     }
 
-    /*
-     * Keep the user on the New Booking page.
-     * After briefly showing the success state, close the QR modal and reset the form.
-     */
     window.setTimeout(() => {
-      setSuccessModal({ show: false, data: null });
+      setSuccessModal({
+        show: false,
+        data: null
+      });
       setPendingBooking(null);
       setPendingRemainingSeconds(0);
       setBookingPaymentStatus("IDLE");
@@ -1186,21 +1380,35 @@ function Booking() {
     }, 1500);
   };
 
-  const checkBookingPaymentResult = async (bookingId) => {
-    if (!bookingId) return;
+  const checkBookingPaymentResult = async (
+    bookingId
+  ) => {
+    if (!bookingId) {
+      return;
+    }
 
     try {
-      const response = await axiosClient.get(
-        `/bookings/my-history/${bookingId}`
-      );
-      const booking = unwrapApiData(response);
+      const initialBooking =
+        await fetchBookingHistoryItem(
+          bookingId
+        );
 
-      const bookingStatus = getBookingStatusValue(booking);
-      const paymentStatus = getPaymentStatusValue(booking);
+      const orderCode =
+        getPaymentOrderCode(
+          initialBooking
+        );
 
-      if (bookingStatus === "CONFIRMED" || paymentStatus === "PAID") {
+      const result =
+        await synchronizeBookingPayment({
+          bookingId,
+          orderCode
+        });
+
+      if (result.paid) {
         setBookingPaymentStatus("PAID");
-        setBookingPaymentMessage("Payment completed successfully.");
+        setBookingPaymentMessage(
+          "Payment completed successfully."
+        );
         setPendingBooking(null);
         setPendingRemainingSeconds(0);
 
@@ -1211,9 +1419,20 @@ function Booking() {
             "Payment completed successfully. The booking is confirmed and the parking slot is reserved."
         });
 
-        setSuccessModal({ show: false, data: null });
+        setSuccessModal({
+          show: false,
+          data: null
+        });
+
         resetBookingForm();
-        await loadAvailableSlots(formData.vehicleTypeId);
+
+        await loadAvailableSlots(
+          formData.vehicleTypeId,
+          {
+            silent: true
+          }
+        );
+
         return;
       }
 
@@ -1224,9 +1443,15 @@ function Booking() {
           "The system has returned from PayOS. Payment is being verified; please wait a moment."
       });
 
-      setSuccessModal({ show: false, data: null });
+      setSuccessModal({
+        show: false,
+        data: null
+      });
     } catch (error) {
-      console.error("Failed to check booking payment result:", error);
+      console.error(
+        "Failed to check booking payment result:",
+        error
+      );
 
       setPaymentNotice({
         show: true,
@@ -1238,12 +1463,22 @@ function Booking() {
   };
 
   useEffect(() => {
-    const bookingId = successModal.data?.bookingId;
+    const bookingId =
+      successModal.data?.bookingId;
+
+    const orderCode =
+      successModal.data?.orderCode;
+
+    const paymentPollingFinished =
+      bookingPaymentStatus === "PAID" ||
+      isTerminalPaymentFailure(
+        bookingPaymentStatus
+      );
 
     if (
       !successModal.show ||
       !bookingId ||
-      bookingPaymentStatus === "PAID"
+      paymentPollingFinished
     ) {
       return undefined;
     }
@@ -1251,33 +1486,65 @@ function Booking() {
     let stopped = false;
 
     const checkPayment = async () => {
-      if (stopped || paymentPollingRef.current) {
+      if (
+        stopped ||
+        paymentPollingRef.current
+      ) {
         return;
       }
 
       paymentPollingRef.current = true;
 
       try {
-        const response = await axiosClient.get(
-          `/bookings/my-history/${bookingId}`
-        );
-        const booking = unwrapApiData(response);
+        const result =
+          await synchronizeBookingPayment({
+            bookingId,
+            orderCode
+          });
 
         if (stopped) {
           return;
         }
 
-        if (isBookingPaymentSuccess(booking)) {
-          await markBookingPaymentSuccess(booking);
+        if (result.paid) {
+          await markBookingPaymentSuccess(
+            result.booking
+          );
+          return;
+        }
+
+        if (result.terminalStatus) {
+          setBookingPaymentStatus(
+            result.terminalStatus
+          );
+
+          setBookingPaymentMessage(
+            result.terminalStatus ===
+              "EXPIRED"
+              ? "The payment QR code has expired."
+              : "The payment was cancelled or failed."
+          );
+
           return;
         }
 
         setBookingPaymentStatus("PENDING");
-        setBookingPaymentMessage("Waiting for the customer to scan the QR code and complete the transfer...");
+        setBookingPaymentMessage(
+          "Waiting for the customer to scan the QR code and complete the transfer..."
+        );
       } catch (error) {
         if (!stopped) {
-          setBookingPaymentStatus("PENDING");
-          setBookingPaymentMessage("Waiting for payment confirmation from PayOS...");
+          console.error(
+            "Booking payment polling failed:",
+            error
+          );
+
+          setBookingPaymentStatus(
+            "PENDING"
+          );
+          setBookingPaymentMessage(
+            "Waiting for payment confirmation from PayOS..."
+          );
         }
       } finally {
         paymentPollingRef.current = false;
@@ -1286,16 +1553,23 @@ function Booking() {
 
     checkPayment();
 
-    const intervalId = window.setInterval(checkPayment, 3000);
+    const intervalId =
+      window.setInterval(
+        checkPayment,
+        3000
+      );
 
     return () => {
       stopped = true;
       paymentPollingRef.current = false;
-      window.clearInterval(intervalId);
+      window.clearInterval(
+        intervalId
+      );
     };
   }, [
     successModal.show,
     successModal.data?.bookingId,
+    successModal.data?.orderCode,
     bookingPaymentStatus,
     formData.vehicleTypeId
   ]);
