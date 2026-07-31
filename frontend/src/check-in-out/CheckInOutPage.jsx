@@ -689,6 +689,59 @@ function CheckInOutPage() {
     };
   };
 
+  const createPlateRecognitionFormData = (file) => {
+    const formData = new FormData();
+
+    /*
+     * Backend PlateRecognitionController expects:
+     * @RequestParam("image") MultipartFile image
+     */
+    formData.append(
+      "image",
+      file,
+      file?.name || "plate-image.jpg"
+    );
+
+    return formData;
+  };
+
+  const postPlateRecognitionImage = async (
+    file,
+    requestedVehicleType = ""
+  ) => {
+    const queryParams = new URLSearchParams();
+
+    queryParams.set("mode", "accurate");
+
+    if (requestedVehicleType) {
+      queryParams.set(
+        "vehicleType",
+        requestedVehicleType
+      );
+    }
+
+    const formData =
+      createPlateRecognitionFormData(file);
+
+    /*
+     * Do not manually set Content-Type here.
+     *
+     * axiosClient's request interceptor removes the default JSON
+     * Content-Type for FormData. The browser then creates:
+     * multipart/form-data; boundary=...
+     */
+    return axiosClient.post(
+      `/plate-recognition/scan?${queryParams.toString()}`,
+      formData,
+      {
+        withCredentials: true,
+        headers: {
+          Accept: "application/json"
+        }
+      }
+    );
+  };
+
   const runCheckInPlateOcr = async (file, previewUrl, fileName) => {
     setCheckInOcrLoading(true);
     setCheckInOcrProgress(0);
@@ -700,16 +753,13 @@ function CheckInOutPage() {
     });
 
     try {
-      const formData = new FormData();
-      formData.append("image", file);
-      formData.append("vehicleType", vehicleType);
-
       setCheckInOcrProgress(25);
 
-      const response = await axiosClient.post(
-        `/plate-recognition/scan?vehicleType=${encodeURIComponent(vehicleType)}&mode=accurate`,
-        formData
-      );
+      const response =
+        await postPlateRecognitionImage(
+          file,
+          vehicleType
+        );
 
       setCheckInOcrProgress(100);
 
@@ -775,15 +825,10 @@ function CheckInOutPage() {
     setCheckoutData(null);
 
     try {
-      const formData = new FormData();
-      formData.append("image", file);
-
       setCheckOutOcrProgress(25);
 
-      const response = await axiosClient.post(
-        "/plate-recognition/scan?mode=accurate",
-        formData
-      );
+      const response =
+        await postPlateRecognitionImage(file);
 
       setCheckOutOcrProgress(100);
 
@@ -924,7 +969,7 @@ function CheckInOutPage() {
     if (!value) return "N/A";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "N/A";
-    return date.toLocaleString("vi-VN", {
+    return date.toLocaleString("en-GB", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
@@ -935,7 +980,7 @@ function CheckInOutPage() {
   };
 
   const formatCurrency = (value) => {
-    return Number(value || 0).toLocaleString("vi-VN", {
+    return Number(value || 0).toLocaleString("en-US", {
       style: "currency",
       currency: "VND"
     });
@@ -2174,7 +2219,7 @@ function CheckInOutPage() {
                       return;
                     }
 
-                                    setSearchTicketId(session.ticketId);
+                    setSearchTicketId(session.ticketId);
 
                     try {
                       const res = await parkingSessionApi.searchCheckout({

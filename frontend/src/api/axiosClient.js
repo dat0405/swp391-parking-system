@@ -1,7 +1,7 @@
 import axios from "axios";
 
 /*
- * VITE_API_BASE_URL chỉ chứa domain backend.
+ * VITE_API_BASE_URL chỉ chứa domain Backend.
  *
  * Local:
  * http://localhost:8080
@@ -9,9 +9,10 @@ import axios from "axios";
  * Production:
  * https://swp391-parking-backend-2005-budsfhhce2d6gte8.southeastasia-01.azurewebsites.net
  */
-const BACKEND_URL =
+const BACKEND_URL = String(
   import.meta.env.VITE_API_BASE_URL ||
-  "http://localhost:8080";
+    "http://localhost:8080"
+).trim();
 
 /*
  * Chuẩn hóa URL và thêm /api.
@@ -30,10 +31,16 @@ const axiosClient = axios.create({
    */
   withCredentials: true,
 
+  /*
+   * Không đặt Content-Type mặc định.
+   *
+   * Axios sẽ tự xác định:
+   * - Object thông thường: application/json
+   * - FormData: multipart/form-data kèm boundary
+   */
   headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  },
+    Accept: "application/json"
+  }
 });
 
 let isRefreshing = false;
@@ -48,8 +55,8 @@ const normalizeRequestUrl = (url = "") => {
 };
 
 /*
- * Các API xác thực công khai không được tự động refresh
- * khi trả về 401 hoặc 400.
+ * Các API xác thực công khai không được tự động
+ * refresh khi trả về 401 hoặc 400.
  */
 const isPublicAuthUrl = (url = "") => {
   const normalizedUrl =
@@ -98,6 +105,43 @@ const isLoginPage = () => {
     pathname === "/login" ||
     pathname.startsWith("/login/")
   );
+};
+
+/*
+ * Kiểm tra dữ liệu request có phải FormData hay không.
+ */
+const isFormDataRequest = (data) => {
+  return (
+    typeof FormData !== "undefined" &&
+    data instanceof FormData
+  );
+};
+
+/*
+ * Xóa Content-Type đã được gán trước đó.
+ *
+ * Với FormData, trình duyệt phải tự tạo:
+ * multipart/form-data; boundary=...
+ */
+const removeContentTypeHeader = (headers) => {
+  if (!headers) {
+    return;
+  }
+
+  /*
+   * AxiosHeaders của Axios phiên bản mới.
+   */
+  if (typeof headers.delete === "function") {
+    headers.delete("Content-Type");
+    headers.delete("content-type");
+    return;
+  }
+
+  /*
+   * Object headers thông thường.
+   */
+  delete headers["Content-Type"];
+  delete headers["content-type"];
 };
 
 /*
@@ -168,6 +212,23 @@ axiosClient.interceptors.request.use(
       delete config.headers.Authorization;
     }
 
+    /*
+     * Bảo đảm mọi request đều gửi HttpOnly cookie.
+     */
+    config.withCredentials = true;
+
+    /*
+     * Khi request chứa ảnh hoặc file bằng FormData,
+     * không được giữ Content-Type application/json.
+     *
+     * Browser sẽ tự thêm multipart boundary.
+     */
+    if (isFormDataRequest(config.data)) {
+      removeContentTypeHeader(
+        config.headers
+      );
+    }
+
     return config;
   },
 
@@ -204,8 +265,7 @@ axiosClient.interceptors.response.use(
      * Trên trang Login:
      *
      * GET /auth/me trả 401 chỉ có nghĩa là người dùng
-     * chưa đăng nhập. Không gọi refresh-token và không
-     * chuyển thành lỗi "Refresh token is required".
+     * chưa đăng nhập. Không gọi refresh-token.
      */
     if (
       status === 401 &&
@@ -217,7 +277,7 @@ axiosClient.interceptors.response.use(
     }
 
     /*
-     * Không được refresh token cho chính các API auth.
+     * Không refresh token cho chính các API auth.
      */
     if (
       isPublicAuthUrl(requestUrl) ||
@@ -232,8 +292,7 @@ axiosClient.interceptors.response.use(
      * - Backend trả 401;
      * - request chưa từng retry;
      * - không phải API xác thực công khai;
-     * - không phải refresh hoặc logout;
-     * - không phải /auth/me trên trang Login.
+     * - không phải refresh hoặc logout.
      */
     const shouldTryRefresh =
       status === 401 &&
@@ -254,13 +313,29 @@ axiosClient.interceptors.response.use(
         (resolve, reject) => {
           failedQueue.push({
             resolve,
-            reject,
+            reject
           });
         }
       )
-        .then(() =>
-          axiosClient(originalRequest)
-        )
+        .then(() => {
+          /*
+           * Làm sạch Content-Type lần nữa trước
+           * khi gửi lại request FormData.
+           */
+          if (
+            isFormDataRequest(
+              originalRequest.data
+            )
+          ) {
+            removeContentTypeHeader(
+              originalRequest.headers
+            );
+          }
+
+          return axiosClient(
+            originalRequest
+          );
+        })
         .catch((queueError) =>
           Promise.reject(queueError)
         );
@@ -280,14 +355,33 @@ axiosClient.interceptors.response.use(
       processQueue();
 
       /*
-       * Gửi lại request ban đầu sau khi refresh thành công.
+       * Bảo đảm request upload ảnh vẫn được gửi
+       * dưới dạng multipart sau khi refresh.
        */
-      return axiosClient(originalRequest);
+      if (
+        isFormDataRequest(
+          originalRequest.data
+        )
+      ) {
+        removeContentTypeHeader(
+          originalRequest.headers
+        );
+      }
+
+      /*
+       * Gửi lại request ban đầu sau khi
+       * refresh thành công.
+       */
+      return axiosClient(
+        originalRequest
+      );
     } catch (refreshError) {
       processQueue(refreshError);
       clearAuthAndRedirect();
 
-      return Promise.reject(refreshError);
+      return Promise.reject(
+        refreshError
+      );
     } finally {
       isRefreshing = false;
     }
