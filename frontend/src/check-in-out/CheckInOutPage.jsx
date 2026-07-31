@@ -24,6 +24,8 @@ const theme = {
   shadow: "var(--shadow-card)"
 };
 
+const BUSINESS_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
 function CheckInOutPage() {
   const generateTicketId = () =>
     `TK-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -1064,17 +1066,71 @@ function CheckInOutPage() {
     return raw.length ? `TK-${raw}` : "";
   };
 
+  const parseBackendDateTime = (value) => {
+    if (!value) {
+      return null;
+    }
+
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime())
+        ? null
+        : value;
+    }
+
+    const rawValue =
+      String(value).trim();
+
+    if (!rawValue) {
+      return null;
+    }
+
+    /*
+     * Azure/backend currently returns some UTC LocalDateTime values
+     * without a timezone suffix, for example:
+     * 2026-07-31T17:40:34
+     *
+     * That value is actually 00:40:34 in Vietnam (UTC+7).
+     */
+    const hasTimezone =
+      /(?:Z|[+-]\d{2}:?\d{2})$/i.test(
+        rawValue
+      );
+
+    const isIsoDateTime =
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(
+        rawValue
+      );
+
+    const normalizedValue =
+      isIsoDateTime && !hasTimezone
+        ? `${rawValue}Z`
+        : rawValue;
+
+    const date =
+      new Date(normalizedValue);
+
+    return Number.isNaN(date.getTime())
+      ? null
+      : date;
+  };
+
   const formatDateTime = (value) => {
-    if (!value) return "N/A";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "N/A";
+    const date =
+      parseBackendDateTime(value);
+
+    if (!date) {
+      return "N/A";
+    }
+
     return date.toLocaleString("en-GB", {
+      timeZone: BUSINESS_TIME_ZONE,
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
       day: "2-digit",
       month: "2-digit",
-      year: "numeric"
+      year: "numeric",
+      hour12: false
     });
   };
 
@@ -1210,7 +1266,16 @@ function CheckInOutPage() {
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      setEntryTime(now.toTimeString().split(" ")[0]);
+
+      setEntryTime(
+        now.toLocaleTimeString("en-GB", {
+          timeZone: BUSINESS_TIME_ZONE,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false
+        })
+      );
     };
     updateTime();
     const interval = setInterval(updateTime, 1000);
@@ -1456,6 +1521,92 @@ function CheckInOutPage() {
     }
   };
 
+  const finalizePrepaidBookingCheckout = async () => {
+    if (
+      !checkoutData ||
+      checkoutFinalized
+    ) {
+      return;
+    }
+
+    try {
+      if (
+        !validateCheckoutBeforeFinalizing()
+      ) {
+        return;
+      }
+
+      setCheckoutFinalized(true);
+      setCheckoutPaymentStatus(
+        "PROCESSING"
+      );
+      setCheckoutPaymentMessage(
+        "Confirming the prepaid booking and recording the exit time..."
+      );
+
+      const checkoutResponse =
+        await parkingSessionApi.checkOut({
+          ticketId:
+            checkoutData.ticketId,
+          licensePlate:
+            searchPlate
+              .trim()
+              .toUpperCase(),
+          paymentMethod:
+            "PREPAID_BOOKING",
+          lostTicket:
+            checkoutFeeDetails.lostTicket
+        });
+
+      setCheckoutData({
+        ...checkoutData,
+        ...checkoutResponse.data,
+        checkOutTime:
+          checkoutResponse.data
+            ?.checkOutTime ||
+          new Date().toISOString()
+      });
+
+      setCheckoutPaymentData(null);
+      setCheckoutPaymentStatus("PAID");
+      setCheckoutPaymentMessage(
+        "The payment has been made. Checkout completed successfully."
+      );
+
+      window.dispatchEvent(
+        new CustomEvent(
+          "dispatchParkingNotification",
+          {
+            detail: {
+              action:
+                "confirmed prepaid booking and checked out vehicle",
+              target:
+                checkoutData.licensePlate,
+              detail:
+                `ticket ${checkoutData.ticketId}`
+            }
+          }
+        )
+      );
+
+      await loadActiveSessions();
+
+      /*
+       * Keep the receipt visible after completion.
+       * Reset the gate fields only when staff closes the modal.
+       */
+    } catch (error) {
+      setCheckoutFinalized(false);
+      setCheckoutPaymentStatus("ERROR");
+      setCheckoutPaymentMessage(
+        getApiErrorMessage(
+          error,
+          "Unable to complete the prepaid booking checkout. Please try again."
+        )
+      );
+    }
+  };
+
   const handleConfirmCheckOut = async () => {
     if (!validateCheckoutBeforeFinalizing()) {
       return;
@@ -1470,39 +1621,24 @@ function CheckInOutPage() {
        * - amountDue > 0 means the customer overstayed, so we must create QR
        *   and collect only the extra overstay fee.
        */
-      if (Number(checkoutFeeDetails.amountDue || 0) <= 0) {
-        const checkoutResponse = await parkingSessionApi.checkOut({
-          ticketId: checkoutData.ticketId,
-          licensePlate: searchPlate.trim().toUpperCase(),
-          paymentMethod: "PREPAID_BOOKING",
-          lostTicket: checkoutFeeDetails.lostTicket
-        });
-
-        setCheckoutData({
-          ...checkoutData,
-          ...checkoutResponse.data,
-          checkOutTime: checkoutResponse.data?.checkOutTime || new Date().toISOString()
-        });
-
+      if (
+        Number(
+          checkoutFeeDetails.amountDue || 0
+        ) <= 0
+      ) {
+        /*
+         * The booking fee was already paid.
+         * Show the receipt and wait for staff confirmation.
+         */
         setCheckoutPaymentData(null);
-        setCheckoutPaymentStatus("PAID");
-        setCheckoutPaymentMessage("Payment completed successfully.");
-        setCheckoutFinalized(true);
-        setShowPaymentModal(true);
-
-        window.dispatchEvent(
-          new CustomEvent("dispatchParkingNotification", {
-            detail: {
-              action: "checked out prepaid booking",
-              target: checkoutData.licensePlate,
-              detail: `ticket ${checkoutData.ticketId}`
-            }
-          })
+        setCheckoutPaymentStatus(
+          "PREPAID_READY"
         );
-
-        await loadActiveSessions();
-  
-        resetCheckoutWorkingState();
+        setCheckoutPaymentMessage(
+          "The booking was paid in advance. Confirm the prepaid payment to record the exit time and release the parking slot."
+        );
+        setCheckoutFinalized(false);
+        setShowPaymentModal(true);
         return;
       }
 
@@ -1514,7 +1650,7 @@ function CheckInOutPage() {
         description: checkoutFeeDetails.lostTicket
           ? `LOSTTICKET${String(checkoutData.ticketId || "").replace(/[^A-Z0-9]/gi, "")}`
           : checkoutFeeDetails.prepaidBooking
-            ? `OVERSTAY${String(checkoutData.ticketId || "").replace(/[^A-Z0-9]/gi, "")}`
+            ? `EXTRAFEE${String(checkoutData.ticketId || "").replace(/[^A-Z0-9]/gi, "")}`
             : `CHECKOUT${String(checkoutData.ticketId || "").replace(/[^A-Z0-9]/gi, "")}`
       });
 
@@ -2912,7 +3048,7 @@ function CheckInOutPage() {
                     {isPrepaidWithoutExtraFee
                       ? "Booking already paid"
                       : checkoutFeeDetails.prepaidBooking
-                        ? "Pay Overstay Fee"
+                        ? "Pay Additional Parking Fee"
                         : "Pay by QR Code or Cash"}
                   </div>
 
@@ -2933,6 +3069,93 @@ function CheckInOutPage() {
                       <div className="pm-text-subrow" style={{ fontSize: "0.78rem", marginTop: "0.65rem", lineHeight: 1.45 }}>
                         This customer paid during booking and did not exceed the booked end time. Checkout only releases the parking slot and records the exit time.
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={
+                          finalizePrepaidBookingCheckout
+                        }
+                        disabled={
+                          checkoutFinalized ||
+                          checkoutPaymentStatus ===
+                            "PAID"
+                        }
+                        style={{
+                          width: "100%",
+                          marginTop: "1rem",
+                          border: "none",
+                          borderRadius: "0.65rem",
+                          padding: "0.82rem 1rem",
+                          background:
+                            checkoutPaymentStatus ===
+                            "PAID"
+                              ? "#10b981"
+                              : checkoutFinalized
+                                ? "#64748b"
+                                : "#3b82f6",
+                          color: "#ffffff",
+                          fontSize: "0.86rem",
+                          fontWeight: 900,
+                          cursor:
+                            checkoutFinalized ||
+                            checkoutPaymentStatus ===
+                              "PAID"
+                              ? "not-allowed"
+                              : "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "0.5rem"
+                        }}
+                      >
+                        <CheckCircle2 size={18} />
+
+                        {checkoutPaymentStatus ===
+                        "PAID"
+                          ? "Checkout Completed"
+                          : checkoutFinalized
+                            ? "Completing Checkout..."
+                            : "The Payment Has Been Made"}
+                      </button>
+
+                      {checkoutPaymentMessage && (
+                        <div
+                          style={{
+                            marginTop: "0.75rem",
+                            padding: "0.7rem 0.8rem",
+                            borderRadius: "0.6rem",
+                            background:
+                              checkoutPaymentStatus ===
+                              "PAID"
+                                ? "rgba(16, 185, 129, 0.14)"
+                                : checkoutPaymentStatus ===
+                                    "ERROR"
+                                  ? "rgba(239, 68, 68, 0.12)"
+                                  : "rgba(59, 130, 246, 0.12)",
+                            border:
+                              checkoutPaymentStatus ===
+                              "PAID"
+                                ? "1px solid rgba(16, 185, 129, 0.35)"
+                                : checkoutPaymentStatus ===
+                                    "ERROR"
+                                  ? "1px solid rgba(239, 68, 68, 0.35)"
+                                  : "1px solid rgba(59, 130, 246, 0.3)",
+                            color:
+                              checkoutPaymentStatus ===
+                              "PAID"
+                                ? "#10b981"
+                                : checkoutPaymentStatus ===
+                                    "ERROR"
+                                  ? "#ef4444"
+                                  : "#60a5fa",
+                            fontSize: "0.78rem",
+                            fontWeight: 800,
+                            lineHeight: 1.4
+                          }}
+                        >
+                          {checkoutPaymentMessage}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -2968,7 +3191,7 @@ function CheckInOutPage() {
 
                       <div className="pm-text-subrow" style={{ fontSize: "0.78rem", textAlign: "center", marginTop: "1rem", maxWidth: "220px", lineHeight: "1.4" }}>
                         {checkoutFeeDetails.prepaidBooking
-                          ? "Scan the PayOS QR code to pay the overstay fee."
+                          ? "Scan the PayOS QR code to pay only the additional overstay and/or overnight fee."
                           : "The customer can scan the PayOS QR code or pay cash to the staff."}
                       </div>
 

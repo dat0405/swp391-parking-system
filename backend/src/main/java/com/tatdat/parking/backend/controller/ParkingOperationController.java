@@ -44,6 +44,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
@@ -166,7 +167,7 @@ public class ParkingOperationController {
                 request.getVehicleTypeId();
 
         LocalDateTime checkInTime =
-                LocalDateTime.now();
+                currentUtcDateTime();
 
         VehicleType vehicleType =
                 vehicleTypeRepository
@@ -336,7 +337,7 @@ public class ParkingOperationController {
                 );
 
         LocalDateTime previewTime =
-                LocalDateTime.now();
+                currentUtcDateTime();
 
         return buildCheckOutPreview(
                 session,
@@ -381,7 +382,7 @@ public class ParkingOperationController {
                 );
 
         LocalDateTime checkOutTime =
-                LocalDateTime.now();
+                currentUtcDateTime();
 
         CheckOutResponse preview =
                 buildCheckOutPreview(
@@ -470,7 +471,7 @@ public class ParkingOperationController {
          * Booking trả trước và không quá giờ:
          * amountDue = 0, không tạo payment mới.
          *
-         * Booking trả trước nhưng quá giờ:
+         * Booking trả trước nhưng quá giờ hoặc qua đêm:
          * chỉ tạo payment cho phần phí phát sinh.
          */
         if (
@@ -706,7 +707,7 @@ public class ParkingOperationController {
                         pricingPolicy.getOverstayFee()
                 );
 
-        BigDecimal parkingFee =
+        BigDecimal calculatedParkingFee =
                 pricePerHour
                         .multiply(
                                 BigDecimal.valueOf(
@@ -718,7 +719,11 @@ public class ParkingOperationController {
                                 RoundingMode.HALF_UP
                         );
 
-        BigDecimal overtimeFee =
+        /*
+         * Trong PricingPolicy hiện tại:
+         * overtimeFee được sử dụng làm phí qua đêm.
+         */
+        BigDecimal overnightFee =
                 calculateOvertimeFee(
                         checkInTime,
                         checkOutTime,
@@ -739,15 +744,19 @@ public class ParkingOperationController {
 
         /*
          * Booking đã thanh toán trước:
-         * - Không thu lại parkingFee.
-         * - Không thu lại overnight/overtime fee thuộc thời gian đặt.
-         * - Chỉ thu phí quá giờ nếu có.
-         * - Phí mất vé vẫn được áp dụng.
+         *
+         * - Không thu lại phí đỗ xe theo giờ đã booking.
+         * - Chỉ thu thêm phí quá giờ.
+         * - Chỉ thu thêm phí qua đêm.
+         * - Phí mất vé vẫn được áp dụng nếu khách mất vé.
+         *
+         * Booking chưa trả trước / khách walk-in:
+         * thu phí đỗ xe thông thường cùng các phụ phí.
          */
-        if (prepaidBooking) {
-            overtimeFee =
-                    zeroMoney();
-        }
+        BigDecimal parkingFee =
+                prepaidBooking
+                        ? zeroMoney()
+                        : calculatedParkingFee;
 
         Holiday holiday =
                 prepaidBooking
@@ -760,13 +769,16 @@ public class ParkingOperationController {
 
         if (prepaidBooking) {
             subtotalBeforeHoliday =
-                    safeMoney(
-                            overstayFee
-                    );
+                    overnightFee
+                            .add(overstayFee)
+                            .setScale(
+                                    2,
+                                    RoundingMode.HALF_UP
+                            );
         } else {
             subtotalBeforeHoliday =
                     parkingFee
-                            .add(overtimeFee)
+                            .add(overnightFee)
                             .add(overstayFee)
                             .setScale(
                                     2,
@@ -833,7 +845,7 @@ public class ParkingOperationController {
                         parkingFee
                 )
                 .overtimeFee(
-                        overtimeFee
+                        overnightFee
                 )
                 .overstayFee(
                         overstayFee
@@ -1133,25 +1145,20 @@ public class ParkingOperationController {
                         booking.getPaymentStatus()
                 );
 
-        String bookingStatus =
-                normalizeStatus(
-                        booking.getStatus()
-                );
-
+        /*
+         * Chỉ xem là booking trả trước khi dữ liệu thanh toán
+         * thực sự đã được ghi nhận PAID.
+         *
+         * Không dùng riêng booking status như CONFIRMED,
+         * CHECKED_IN hoặc COMPLETED để kết luận đã thanh toán,
+         * vì trạng thái nghiệp vụ không thay thế trạng thái tiền.
+         */
         return PAYMENT_PAID.equals(
                 paymentStatus
         )
-                || "CONFIRMED".equals(
-                bookingStatus
-        )
-                || Booking.STATUS_CHECKED_IN
-                .equalsIgnoreCase(
-                        bookingStatus
-                )
-                || Booking.STATUS_COMPLETED
-                .equalsIgnoreCase(
-                        bookingStatus
-                );
+                || PAYMENT_PAID_BY_BOOKING.equals(
+                paymentStatus
+        );
     }
 
     /**
@@ -1219,7 +1226,7 @@ public class ParkingOperationController {
     }
 
     /**
-     * Tính phí qua đêm theo số ngày lịch.
+     * Tính phí qua đêm theo số lần chuyển sang ngày lịch mới.
      */
     private BigDecimal calculateOvertimeFee(
             LocalDateTime checkInTime,
@@ -1715,6 +1722,22 @@ public class ParkingOperationController {
         }
 
         return paymentMethod;
+    }
+
+    /**
+     * Lưu thời gian trong database theo UTC.
+     *
+     * Frontend chịu trách nhiệm chuyển UTC sang
+     * Asia/Ho_Chi_Minh khi hiển thị.
+     *
+     * Cách này giữ tương thích với các session cũ
+     * đã được Azure lưu theo UTC và tránh cộng lệch 7 giờ
+     * khi tính duration/overstay.
+     */
+    private LocalDateTime currentUtcDateTime() {
+        return LocalDateTime.now(
+                ZoneOffset.UTC
+        );
     }
 
     /**
