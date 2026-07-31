@@ -175,6 +175,7 @@ public class PricingPolicyController {
                     savedPricingPolicy,
                     null,
                     null,
+                    null,
                     true
             );
         }
@@ -227,6 +228,11 @@ public class PricingPolicyController {
         BigDecimal oldPricePerHour =
                 safeMoney(
                         pricingPolicy.getPricePerHour()
+                );
+
+        BigDecimal oldOvertimeFee =
+                safeMoney(
+                        pricingPolicy.getOvertimeFee()
                 );
 
         BigDecimal oldOverstayFee =
@@ -314,6 +320,7 @@ public class PricingPolicyController {
             broadcastEffectivePricingChange(
                     savedPricingPolicy,
                     oldPricePerHour,
+                    oldOvertimeFee,
                     oldOverstayFee,
                     becameActive
                             || vehicleTypeChanged
@@ -389,6 +396,7 @@ public class PricingPolicyController {
             broadcastEffectivePricingChange(
                     savedPricingPolicy,
                     savedPricingPolicy.getPricePerHour(),
+                    savedPricingPolicy.getOvertimeFee(),
                     savedPricingPolicy.getOverstayFee(),
                     true
             );
@@ -515,6 +523,14 @@ public class PricingPolicyController {
                                 .getPricePerHour()
                 );
 
+        BigDecimal oldOvertimeFee =
+                activePolicyBefore == null
+                        ? null
+                        : safeMoney(
+                        activePolicyBefore
+                                .getOvertimeFee()
+                );
+
         BigDecimal oldOverstayFee =
                 activePolicyBefore == null
                         ? null
@@ -578,6 +594,7 @@ public class PricingPolicyController {
             broadcastEffectivePricingChange(
                     activePolicyAfter,
                     oldPricePerHour,
+                    oldOvertimeFee,
                     oldOverstayFee,
                     activePolicyBefore == null
             );
@@ -641,6 +658,7 @@ public class PricingPolicyController {
     private void broadcastEffectivePricingChange(
             PricingPolicy pricingPolicy,
             BigDecimal oldPricePerHour,
+            BigDecimal oldOvertimeFee,
             BigDecimal oldOverstayFee,
             boolean forceCurrentPriceSummary
     ) {
@@ -658,6 +676,11 @@ public class PricingPolicyController {
                         pricingPolicy.getPricePerHour()
                 );
 
+        BigDecimal newOvertimeFee =
+                safeMoney(
+                        pricingPolicy.getOvertimeFee()
+                );
+
         BigDecimal newOverstayFee =
                 safeMoney(
                         pricingPolicy.getOverstayFee()
@@ -670,6 +693,13 @@ public class PricingPolicyController {
                         newPricePerHour
                 );
 
+        boolean overtimeFeeChanged =
+                oldOvertimeFee != null
+                        && moneyChanged(
+                        oldOvertimeFee,
+                        newOvertimeFee
+                );
+
         boolean overstayFeeChanged =
                 oldOverstayFee != null
                         && moneyChanged(
@@ -680,6 +710,7 @@ public class PricingPolicyController {
         if (
                 !forceCurrentPriceSummary
                         && !defaultPriceChanged
+                        && !overtimeFeeChanged
                         && !overstayFeeChanged
         ) {
             return;
@@ -701,11 +732,19 @@ public class PricingPolicyController {
             );
 
             messageParts.add(
-                    "Default parking price: "
+                    "Price per hour: "
                             + formatMoney(
                             newPricePerHour
                     )
                             + " VND/hour."
+            );
+
+            messageParts.add(
+                    "Overtime fee: "
+                            + formatMoney(
+                            newOvertimeFee
+                    )
+                            + " VND/day."
             );
 
             messageParts.add(
@@ -724,7 +763,7 @@ public class PricingPolicyController {
 
             if (defaultPriceChanged) {
                 messageParts.add(
-                        "Default parking price changed from "
+                        "Price per hour changed from "
                                 + formatMoney(
                                 oldPricePerHour
                         )
@@ -733,6 +772,20 @@ public class PricingPolicyController {
                                 newPricePerHour
                         )
                                 + " VND/hour."
+                );
+            }
+
+            if (overtimeFeeChanged) {
+                messageParts.add(
+                        "Overtime fee changed from "
+                                + formatMoney(
+                                oldOvertimeFee
+                        )
+                                + " VND/day to "
+                                + formatMoney(
+                                newOvertimeFee
+                        )
+                                + " VND/day."
                 );
             }
 
