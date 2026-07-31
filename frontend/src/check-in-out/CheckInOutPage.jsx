@@ -110,18 +110,6 @@ function CheckInOutPage() {
     previewUrlRef.current = "";
   };
 
-  const normalizeOcrConfidence = (value) => {
-    const numericValue = Number(value);
-
-    if (!Number.isFinite(numericValue) || numericValue <= 0) {
-      return 0;
-    }
-
-    return numericValue > 1
-      ? Math.min(numericValue / 100, 1)
-      : Math.min(numericValue, 1);
-  };
-
   const getPaymentQrImageSrc = (qrCode) => {
     /*
      * PayOS returns qrCode as the direct VietQR payment payload.
@@ -473,12 +461,40 @@ function CheckInOutPage() {
 
   const detectVehicleTypeFromPlate = (plate) => {
     const value = String(plate || "").trim().toUpperCase();
+    const compactValue = cleanPlateInput(value);
 
     const carRegex = /^\d{2}[A-Z]-\d{3}\.\d{2}$/;
     const motorbikeRegex = /^\d{2}-[A-Z][A-Z0-9]{0,2}-\d{3}\.\d{2}$/;
 
-    if (carRegex.test(value)) return "Car";
-    if (motorbikeRegex.test(value)) return "Motorbike";
+    /*
+     * A motorbike plate normally contains a two-character series
+     * after the province code, for example:
+     *
+     * 63-B9-999.99 -> 63B999999
+     * 59-AA-123.56 -> 59AA12356
+     *
+     * Check the motorbike structure before the car structure so OCR
+     * does not incorrectly classify a two-line motorbike plate as a car.
+     */
+    const compactMotorbikeRegex =
+      /^\d{2}(?:[A-Z]\d|[A-Z]{2})\d{5}$/;
+
+    const compactCarRegex =
+      /^\d{2}[A-Z]\d{5}$/;
+
+    if (
+      motorbikeRegex.test(value) ||
+      compactMotorbikeRegex.test(compactValue)
+    ) {
+      return "Motorbike";
+    }
+
+    if (
+      carRegex.test(value) ||
+      compactCarRegex.test(compactValue)
+    ) {
+      return "Car";
+    }
 
     return "";
   };
@@ -510,28 +526,18 @@ function CheckInOutPage() {
     );
   };
 
-  const shouldAcceptOcrPlate = (plate, type, data) => {
+  const shouldAcceptOcrPlate = (plate, type) => {
     /*
-     * FIX auto-fill: regex format biển số VN đã là bộ lọc mạnh nhất.
-     * Nếu plate khớp đúng format đầy đủ (30F-256.58 / 27-B1-258.88)
-     * thì luôn tự điền vào input và tự chọn loại xe.
-     *
-     * Trước đây chặn confidence < 0.72 và needsReview < 0.86 khiến
-     * OCR đọc ĐÚNG biển nhưng frontend vẫn không tự điền gì cả.
-     * Giờ chỉ từ chối khi độ tin cậy cực thấp (< 0.35), còn lại
-     * tự điền + hiển thị cảnh báo "vui lòng kiểm tra" nếu confidence thấp.
+     * A complete valid Vietnamese plate format is enough for auto-fill.
+     * OCR confidence is not shown and does not block the result.
      */
-    if (!plate || !validateVietnamPlate(plate, type)) {
-      return false;
-    }
-
-    const confidence = normalizeOcrConfidence(data?.confidence);
-
-    if (confidence > 0 && confidence < 0.35) {
-      return false;
-    }
-
-    return true;
+    return Boolean(
+      plate &&
+        validateVietnamPlate(
+          plate,
+          type
+        )
+    );
   };
 
   const buildOcrRejectMessage = (data, detectedPlate, detectedType) => {
@@ -552,19 +558,16 @@ function CheckInOutPage() {
 
     return `${
       data?.message ||
-      "OCR confidence is too low to fill in the license plate automatically."
+      "OCR could not identify a complete valid license plate."
     }${alternativeText} Please verify and correct it manually.`;
   };
 
-  const buildOcrSuccessMessage = (prefix, detectedPlate, uiDetectedType, data) => {
-    const confidence = normalizeOcrConfidence(data?.confidence);
-    const confidencePercent = Math.round(confidence * 100);
-    const reviewHint =
-      confidence > 0 && confidence < 0.75
-        ? " | Confidence is low. Please verify the license plate."
-        : "";
-
-    return `${prefix}: ${detectedPlate} | Vehicle type: ${uiDetectedType} | Confidence: ${confidencePercent}%${reviewHint}`;
+  const buildOcrSuccessMessage = (
+    prefix,
+    detectedPlate,
+    uiDetectedType
+  ) => {
+    return `${prefix}: ${detectedPlate} | Vehicle type: ${uiDetectedType}`;
   };
 
   const formatDetectedPlateByCompactText = (compactText) => {
@@ -636,46 +639,134 @@ function CheckInOutPage() {
     return null;
   };
 
-  const resolveOcrPlate = (data, fallbackType = "") => {
-    const rawDetectedPlate = pickOcrPlate(data);
-    const rawDetectedType = pickOcrVehicleType(
-      data,
-      rawDetectedPlate,
-      fallbackType
-    );
+  const resolvePlateFromOcrTextCandidates = (data) => {
+    const alternatives = Array.isArray(data?.alternatives)
+      ? data.alternatives
+      : [];
 
-    const textFallback = extractPlateFromOcrText(
-      data?.rawText ||
-        data?.raw_text ||
-        data?.recognizedText ||
-        data?.recognized_text ||
-        data?.ocrText ||
-        data?.ocr_text ||
-        data?.text ||
-        ""
-    );
+    const textCandidates = [
+      data?.rawText,
+      data?.raw_text,
+      data?.recognizedText,
+      data?.recognized_text,
+      data?.ocrText,
+      data?.ocr_text,
+      data?.text,
+      ...alternatives.flatMap((item) => [
+        item?.licensePlate,
+        item?.license_plate,
+        item?.plate,
+        item?.text,
+        item?.rawText,
+        item?.raw_text
+      ])
+    ].filter(Boolean);
 
-    if (!rawDetectedPlate && textFallback) {
+    let carResult = null;
+
+    for (const candidate of textCandidates) {
+      const detected =
+        extractPlateFromOcrText(candidate);
+
+      if (!detected) {
+        continue;
+      }
+
+      /*
+       * A two-line motorbike plate is more specific than the common
+       * one-line car pattern, so return it immediately.
+       */
+      if (
+        detected.vehicleType ===
+        "Motorbike"
+      ) {
+        return detected;
+      }
+
+      if (!carResult) {
+        carResult = detected;
+      }
+    }
+
+    return carResult;
+  };
+
+  const resolveOcrPlate = (
+    data,
+    fallbackType = ""
+  ) => {
+    const rawDetectedPlate =
+      pickOcrPlate(data);
+
+    const rawDetectedType =
+      pickOcrVehicleType(
+        data,
+        rawDetectedPlate,
+        fallbackType
+      );
+
+    const textFallback =
+      resolvePlateFromOcrTextCandidates(
+        data
+      );
+
+    /*
+     * Important for two-line motorbike plates:
+     *
+     * The OCR API may return an incomplete car-looking value such as
+     * 63B-999.99, while raw OCR text still contains 63-B9 / 999.99.
+     * Prefer the complete motorbike result from raw text.
+     */
+    if (
+      textFallback?.vehicleType ===
+      "Motorbike"
+    ) {
       return textFallback;
     }
 
-    const candidateTypes = [
-      rawDetectedType,
-      detectVehicleTypeFromPlate(rawDetectedPlate),
-      fallbackType,
-      "Car",
-      "Motorbike"
-    ]
-      .map(toUiVehicleType)
-      .filter((type, index, values) => values.indexOf(type) === index);
+    if (
+      !rawDetectedPlate &&
+      textFallback
+    ) {
+      return textFallback;
+    }
 
-    for (const candidateType of candidateTypes) {
-      const formattedPlate = formatPlateByVehicleType(
-        rawDetectedPlate,
-        candidateType
+    const structurallyDetectedType =
+      detectVehicleTypeFromPlate(
+        rawDetectedPlate
       );
 
-      if (validateVietnamPlate(formattedPlate, candidateType)) {
+    const candidateTypes = [
+      structurallyDetectedType,
+      textFallback?.vehicleType,
+      rawDetectedType,
+      fallbackType,
+      "Motorbike",
+      "Car"
+    ]
+      .filter(Boolean)
+      .map(toUiVehicleType)
+      .filter(
+        (type, index, values) =>
+          values.indexOf(type) === index
+      );
+
+    for (
+      const candidateType of
+      candidateTypes
+    ) {
+      const formattedPlate =
+        formatPlateByVehicleType(
+          rawDetectedPlate,
+          candidateType
+        );
+
+      if (
+        validateVietnamPlate(
+          formattedPlate,
+          candidateType
+        )
+      ) {
         return {
           plate: formattedPlate,
           vehicleType: candidateType
@@ -683,11 +774,17 @@ function CheckInOutPage() {
       }
     }
 
-    return textFallback || {
-      plate: rawDetectedPlate,
-      vehicleType: toUiVehicleType(rawDetectedType || fallbackType)
-    };
+    return (
+      textFallback || {
+        plate: rawDetectedPlate,
+        vehicleType: toUiVehicleType(
+          rawDetectedType ||
+            fallbackType
+        )
+      }
+    );
   };
+
 
   const createPlateRecognitionFormData = (file) => {
     const formData = new FormData();
@@ -706,19 +803,15 @@ function CheckInOutPage() {
   };
 
   const postPlateRecognitionImage = async (
-    file,
-    requestedVehicleType = ""
+    file
   ) => {
-    const queryParams = new URLSearchParams();
+    const queryParams =
+      new URLSearchParams();
 
-    queryParams.set("mode", "accurate");
-
-    if (requestedVehicleType) {
-      queryParams.set(
-        "vehicleType",
-        requestedVehicleType
-      );
-    }
+    queryParams.set(
+      "mode",
+      "accurate"
+    );
 
     const formData =
       createPlateRecognitionFormData(file);
@@ -757,21 +850,29 @@ function CheckInOutPage() {
 
       const response =
         await postPlateRecognitionImage(
-          file,
-          vehicleType
+          file
         );
 
       setCheckInOcrProgress(100);
 
       const data = unwrapOcrData(response.data);
-      const resolvedPlate = resolveOcrPlate(data, vehicleType);
-      const detectedPlate = resolvedPlate?.plate || "";
-      const uiDetectedType = resolvedPlate?.vehicleType || vehicleType;
+      const resolvedPlate =
+        resolveOcrPlate(data);
+
+      const detectedPlate =
+        resolvedPlate?.plate || "";
+
+      const uiDetectedType =
+        resolvedPlate?.vehicleType ||
+        detectVehicleTypeFromPlate(
+          detectedPlate
+        ) ||
+        "Car";
 
       const ocrSucceeded =
         data.success !== false &&
         Boolean(detectedPlate) &&
-        shouldAcceptOcrPlate(detectedPlate, uiDetectedType, data);
+        shouldAcceptOcrPlate(detectedPlate, uiDetectedType);
 
       if (!ocrSucceeded) {
         setLicensePlateIn("");
@@ -792,8 +893,7 @@ function CheckInOutPage() {
         message: buildOcrSuccessMessage(
           "OCR detected",
           detectedPlate,
-          uiDetectedType,
-          data
+          uiDetectedType
         )
       });
     } catch (error) {
@@ -840,7 +940,7 @@ function CheckInOutPage() {
       const ocrSucceeded =
         data.success !== false &&
         Boolean(detectedPlate) &&
-        shouldAcceptOcrPlate(detectedPlate, uiDetectedType, data);
+        shouldAcceptOcrPlate(detectedPlate, uiDetectedType);
 
       if (!ocrSucceeded) {
         setSearchPlate("");
@@ -862,8 +962,7 @@ function CheckInOutPage() {
         message: buildOcrSuccessMessage(
           "Checkout OCR detected",
           detectedPlate,
-          uiDetectedType,
-          data
+          uiDetectedType
         )
       });
     } catch (error) {
