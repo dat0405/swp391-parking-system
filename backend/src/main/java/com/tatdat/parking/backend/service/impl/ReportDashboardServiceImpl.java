@@ -2,12 +2,16 @@ package com.tatdat.parking.backend.service.impl;
 
 import com.tatdat.parking.backend.service.ReportDashboardService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.time.DayOfWeek;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
 import java.util.*;
 
 @Service
@@ -16,12 +20,23 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
 
     private final JdbcTemplate jdbcTemplate;
 
+    @Value("${app.business-time-zone:Asia/Ho_Chi_Minh}")
+    private String businessTimeZone;
+
     @Override
     public Map<String, Object> getReportDashboard(String range) {
         String normalizedRange = normalizeRange(range);
 
-        LocalDateTime startDate = getStartDateByRange(normalizedRange);
-        LocalDateTime endDate = LocalDateTime.now();
+        /*
+         * All business timestamps in this project are stored as
+         * LocalDateTime using Vietnam time without an offset.
+         * Azure's default timezone must therefore not be used here.
+         */
+        LocalDateTime endDate = currentBusinessDateTime();
+        LocalDateTime startDate = getStartDateByRange(
+                normalizedRange,
+                endDate
+        );
 
         Map<String, Object> response = new LinkedHashMap<>();
 
@@ -77,17 +92,15 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
 
         String statusColumn = findFirstExistingColumn(
                 columns,
-                "status",
-                "payment_status"
+                "payment_status",
+                "status"
         );
 
         String dateColumn = findFirstExistingColumn(
                 columns,
-                "paid_at",
                 "payment_time",
-                "payment_date",
-                "created_at",
-                "created_date"
+                "paid_at",
+                "payment_date"
         );
 
         if (amountColumn == null) {
@@ -113,7 +126,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
                     .append(dateColumn)
                     .append(" >= ? AND ")
                     .append(dateColumn)
-                    .append(" <= ? ");
+                    .append(" < ? ");
 
             params.add(Timestamp.valueOf(startDate));
             params.add(Timestamp.valueOf(endDate));
@@ -152,7 +165,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
                 WHERE UPPER(payment_status) = 'PAID'
                   AND paid_at IS NOT NULL
                   AND paid_at >= ?
-                  AND paid_at <= ?
+                  AND paid_at < ?
                 """;
 
         Object result = jdbcTemplate.queryForObject(
@@ -174,7 +187,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
                 SELECT COUNT(*)
                 FROM parking_sessions
                 WHERE check_in_time >= ?
-                AND check_in_time <= ?
+                AND check_in_time < ?
                 """;
 
         Long count = jdbcTemplate.queryForObject(
@@ -196,10 +209,10 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
 
         String dateColumn = findFirstExistingColumn(
                 columns,
+                "booking_time",
                 "created_at",
                 "created_date",
-                "start_time",
-                "booking_time"
+                "start_time"
         );
 
         if (dateColumn == null) {
@@ -214,7 +227,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
                 + dateColumn
                 + " >= ? AND "
                 + dateColumn
-                + " <= ?";
+                + " < ?";
 
         Long count = jdbcTemplate.queryForObject(
                 sql,
@@ -299,17 +312,15 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
 
         String statusColumn = findFirstExistingColumn(
                 columns,
-                "status",
-                "payment_status"
+                "payment_status",
+                "status"
         );
 
         String dateColumn = findFirstExistingColumn(
                 columns,
-                "paid_at",
                 "payment_time",
-                "payment_date",
-                "created_at",
-                "created_date"
+                "paid_at",
+                "payment_date"
         );
 
         if (amountColumn == null || dateColumn == null) {
@@ -331,7 +342,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
                 .append(dateColumn)
                 .append(" >= ? AND ")
                 .append(dateColumn)
-                .append(" <= ? ");
+                .append(" < ? ");
 
         params.add(Timestamp.valueOf(startDate));
         params.add(Timestamp.valueOf(endDate));
@@ -377,7 +388,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
                 WHERE UPPER(payment_status) = 'PAID'
                   AND paid_at IS NOT NULL
                   AND paid_at >= ?
-                  AND paid_at <= ?
+                  AND paid_at < ?
                 GROUP BY %s
                 ORDER BY %s
                 """.formatted(groupExpression, groupExpression, orderExpression);
@@ -462,10 +473,10 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
 
         String dateColumn = findFirstExistingColumn(
                 columns,
+                "booking_time",
                 "created_at",
                 "created_date",
-                "start_time",
-                "booking_time"
+                "start_time"
         );
 
         StringBuilder sql = new StringBuilder();
@@ -479,7 +490,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
                     .append(dateColumn)
                     .append(" >= ? AND ")
                     .append(dateColumn)
-                    .append(" <= ? ");
+                    .append(" < ? ");
 
             params.add(Timestamp.valueOf(startDate));
             params.add(Timestamp.valueOf(endDate));
@@ -526,7 +537,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
                 LEFT JOIN vehicles v ON ps.vehicle_id = v.id
                 LEFT JOIN parking_slots sl ON ps.slot_id = sl.id
                 WHERE ps.check_in_time >= ?
-                AND ps.check_in_time <= ?
+                AND ps.check_in_time < ?
                 ORDER BY ps.check_in_time DESC
                 """;
 
@@ -575,7 +586,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
         }
 
         if ("MONTH".equals(range)) {
-            return "DATEPART(WEEK, " + dateColumn + ")";
+            return "DATEPART(DAY, " + dateColumn + ")";
         }
 
         return "DATENAME(WEEKDAY, " + dateColumn + ")";
@@ -587,7 +598,7 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
         }
 
         if ("MONTH".equals(range)) {
-            return "DATEPART(WEEK, " + dateColumn + ")";
+            return "DATEPART(DAY, " + dateColumn + ")";
         }
 
         return "MIN(" + dateColumn + ")";
@@ -607,19 +618,70 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
         return "WEEK";
     }
 
-    private LocalDateTime getStartDateByRange(String range) {
+    /**
+     * Return the beginning of the selected calendar range in
+     * Vietnam business time.
+     *
+     * TODAY: 00:00 today -> current time
+     * WEEK: Monday 00:00 -> current time
+     * MONTH: first day of current month 00:00 -> current time
+     */
+    private LocalDateTime getStartDateByRange(
+            String range,
+            LocalDateTime currentBusinessTime
+    ) {
         String normalizedRange = normalizeRange(range);
-        LocalDateTime now = LocalDateTime.now();
+
+        LocalDateTime safeNow =
+                currentBusinessTime == null
+                        ? currentBusinessDateTime()
+                        : currentBusinessTime;
 
         if ("TODAY".equals(normalizedRange)) {
-            return now.toLocalDate().atStartOfDay();
+            return safeNow
+                    .toLocalDate()
+                    .atStartOfDay();
         }
 
         if ("MONTH".equals(normalizedRange)) {
-            return now.minusDays(30);
+            return safeNow
+                    .toLocalDate()
+                    .withDayOfMonth(1)
+                    .atStartOfDay();
         }
 
-        return now.minusDays(7);
+        return safeNow
+                .toLocalDate()
+                .with(
+                        TemporalAdjusters.previousOrSame(
+                                DayOfWeek.MONDAY
+                        )
+                )
+                .atStartOfDay();
+    }
+
+    /**
+     * Current system business time.
+     *
+     * The database stores payment_time, paid_at, booking_time and
+     * check_in_time as LocalDateTime values in Vietnam time.
+     */
+    private LocalDateTime currentBusinessDateTime() {
+        return LocalDateTime.now(
+                getBusinessZoneId()
+        );
+    }
+
+    private ZoneId getBusinessZoneId() {
+        try {
+            return ZoneId.of(
+                    businessTimeZone
+            );
+        } catch (Exception ignored) {
+            return ZoneId.of(
+                    "Asia/Ho_Chi_Minh"
+            );
+        }
     }
 
     private void addPercentToRows(List<Map<String, Object>> rows) {
@@ -645,7 +707,13 @@ public class ReportDashboardServiceImpl implements ReportDashboardService {
         }
 
         if (value instanceof Number number) {
-            return BigDecimal.valueOf(number.doubleValue());
+            try {
+                return new BigDecimal(
+                        number.toString()
+                );
+            } catch (NumberFormatException ignored) {
+                return BigDecimal.ZERO;
+            }
         }
 
         try {

@@ -10,6 +10,7 @@ import com.tatdat.parking.backend.repository.ParkingSlotRepository;
 import com.tatdat.parking.backend.repository.PaymentRepository;
 import com.tatdat.parking.backend.service.ReportService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +21,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +48,9 @@ public class ReportServiceImpl implements ReportService {
     private final ParkingSlotRepository parkingSlotRepository;
     private final ParkingSessionRepository parkingSessionRepository;
     private final JdbcTemplate jdbcTemplate;
+
+    @Value("${app.business-time-zone:Asia/Ho_Chi_Minh}")
+    private String businessTimeZone;
 
     @Override
     public RevenueReportDTO getRevenueReport() {
@@ -119,7 +124,8 @@ public class ReportServiceImpl implements ReportService {
     @Override
     public VehicleTrafficDTO getVehicleTraffic() {
         LocalDate today =
-                LocalDate.now();
+                currentBusinessDateTime()
+                        .toLocalDate();
 
         LocalDateTime start =
                 today.atStartOfDay();
@@ -191,7 +197,9 @@ public class ReportServiceImpl implements ReportService {
         validateComparisonMonths(months);
 
         YearMonth currentMonth =
-                YearMonth.now();
+                YearMonth.from(
+                        currentBusinessDateTime()
+                );
 
         YearMonth firstQueryMonth =
                 currentMonth.minusMonths(
@@ -425,9 +433,8 @@ public class ReportServiceImpl implements ReportService {
                 firstExistingColumn(
                         "payments",
                         List.of(
-                                "paid_at",
                                 "payment_time",
-                                "created_at"
+                                "paid_at"
                         )
                 );
 
@@ -547,9 +554,8 @@ public class ReportServiceImpl implements ReportService {
                 firstExistingColumn(
                         "payments",
                         List.of(
-                                "paid_at",
                                 "payment_time",
-                                "created_at"
+                                "paid_at"
                         )
                 );
 
@@ -819,7 +825,7 @@ public class ReportServiceImpl implements ReportService {
         }
 
         LocalDateTime now =
-                LocalDateTime.now();
+                currentBusinessDateTime();
 
         LocalDateTime effectiveEnd =
                 end.isAfter(now)
@@ -1031,8 +1037,8 @@ public class ReportServiceImpl implements ReportService {
         return firstExistingColumn(
                 "bookings",
                 List.of(
-                        "created_at",
                         "booking_time",
+                        "created_at",
                         "start_time",
                         "booking_date"
                 )
@@ -1193,6 +1199,31 @@ public class ReportServiceImpl implements ReportService {
 
         return count != null
                 && count > 0;
+    }
+
+    /**
+     * Lấy thời gian nghiệp vụ hiện tại theo múi giờ Việt Nam.
+     *
+     * Các cột LocalDateTime của hệ thống như booking_time,
+     * payment_time, paid_at, check_in_time và check_out_time
+     * đang được lưu theo giờ Việt Nam, không kèm timezone offset.
+     */
+    private LocalDateTime currentBusinessDateTime() {
+        return LocalDateTime.now(
+                getBusinessZoneId()
+        );
+    }
+
+    private ZoneId getBusinessZoneId() {
+        try {
+            return ZoneId.of(
+                    businessTimeZone
+            );
+        } catch (Exception ignored) {
+            return ZoneId.of(
+                    "Asia/Ho_Chi_Minh"
+            );
+        }
     }
 
     private BigDecimal safeDecimal(
