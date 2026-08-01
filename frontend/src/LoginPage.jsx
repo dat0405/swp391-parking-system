@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   User,
   Lock,
@@ -33,6 +33,58 @@ function LoginPage() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const navigate = useNavigate();
+
+  const resetGoogleLoginState = useCallback(() => {
+    setIsGoogleLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const handlePageShow = () => {
+      resetGoogleLoginState();
+    };
+
+    const handleWindowFocus = () => {
+      resetGoogleLoginState();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        resetGoogleLoginState();
+      }
+    };
+
+    window.addEventListener(
+      'pageshow',
+      handlePageShow
+    );
+
+    window.addEventListener(
+      'focus',
+      handleWindowFocus
+    );
+
+    document.addEventListener(
+      'visibilitychange',
+      handleVisibilityChange
+    );
+
+    return () => {
+      window.removeEventListener(
+        'pageshow',
+        handlePageShow
+      );
+
+      window.removeEventListener(
+        'focus',
+        handleWindowFocus
+      );
+
+      document.removeEventListener(
+        'visibilitychange',
+        handleVisibilityChange
+      );
+    };
+  }, [resetGoogleLoginState]);
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
@@ -182,7 +234,9 @@ function LoginPage() {
   };
 
   const handleGoogleButtonClick = () => {
-    if (isLoading || isGoogleLoading) return;
+    if (isLoading || isGoogleLoading) {
+      return;
+    }
 
     const clientId =
       import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -197,41 +251,52 @@ function LoginPage() {
 
     setIsGoogleLoading(true);
 
-    /*
-     * Google redirect/auth-code flow:
-     * - Google redirects back to /auth/google/callback?code=...
-     * - The redirect URI must exactly match Google Cloud Console.
-     */
-    const redirectUri =
-      `${window.location.origin}/auth/google/callback`;
+    try {
+      const redirectUri =
+        `${window.location.origin}/auth/google/callback`;
 
-    const state =
-      typeof crypto !== 'undefined' &&
-      typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random()
-            .toString(16)
-            .slice(2)}`;
+      const state =
+        typeof crypto !== 'undefined' &&
+        typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()
+              .toString(16)
+              .slice(2)}`;
 
-    sessionStorage.setItem(
-      'google_oauth_state',
-      state
-    );
+      sessionStorage.setItem(
+        'google_oauth_state',
+        state
+      );
 
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      scope: 'openid email profile',
-      prompt: 'select_account',
-      state
-    });
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'openid email profile',
+        prompt: 'select_account',
+        state
+      });
 
-    window.location.href =
-      `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+      window.location.assign(
+        `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+      );
+    } catch (error) {
+      console.error(
+        'Google login redirect failed:',
+        error
+      );
+
+      resetGoogleLoginState();
+
+      showToast(
+        'Unable to open Google Sign-In. Please try again.',
+        'error'
+      );
+    }
   };
 
-  const isPageLoading =
+  const isNormalLoginLoading = isLoading;
+  const isGoogleButtonLoading =
     isLoading || isGoogleLoading;
 
   return (
@@ -348,7 +413,7 @@ function LoginPage() {
                   placeholder="e.g. staff@company.vn"
                   value={formData.email}
                   onChange={handleInputChange}
-                  disabled={isPageLoading}
+                  disabled={isNormalLoginLoading}
                   required
                 />
               </div>
@@ -379,7 +444,7 @@ function LoginPage() {
                   placeholder="••••••••"
                   value={formData.password}
                   onChange={handleInputChange}
-                  disabled={isPageLoading}
+                  disabled={isNormalLoginLoading}
                   required
                 />
 
@@ -389,7 +454,7 @@ function LoginPage() {
                   onClick={() =>
                     setShowPassword((prev) => !prev)
                   }
-                  disabled={isPageLoading}
+                  disabled={isNormalLoginLoading}
                 >
                   {showPassword ? (
                     <EyeOff size={16} />
@@ -421,7 +486,7 @@ function LoginPage() {
                 <input
                   type="checkbox"
                   style={{ accentColor: '#3b82f6' }}
-                  disabled={isPageLoading}
+                  disabled={isNormalLoginLoading}
                 />
                 Remember me
               </label>
@@ -429,13 +494,13 @@ function LoginPage() {
               <span
                 style={{
                   color: '#3b82f6',
-                  cursor: isPageLoading
+                  cursor: isNormalLoginLoading
                     ? 'not-allowed'
                     : 'pointer',
                   fontWeight: '500'
                 }}
                 onClick={() =>
-                  !isPageLoading &&
+                  !isNormalLoginLoading &&
                   navigate('/forgot-password')
                 }
               >
@@ -445,18 +510,18 @@ function LoginPage() {
 
             <button
               type="submit"
-              disabled={isPageLoading}
+              disabled={isNormalLoginLoading}
               style={{
                 width: '100%',
                 padding: '0.85rem',
-                backgroundColor: isPageLoading
+                backgroundColor: isNormalLoginLoading
                   ? '#1e3a8a'
                   : '#3b82f6',
                 color: '#ffffff',
                 border: 'none',
                 borderRadius: '0.5rem',
                 fontWeight: '600',
-                cursor: isPageLoading
+                cursor: isNormalLoginLoading
                   ? 'not-allowed'
                   : 'pointer',
                 display: 'flex',
@@ -470,7 +535,7 @@ function LoginPage() {
                 ? 'Verifying Access...'
                 : 'Sign In'}
 
-              {!isPageLoading && (
+              {!isNormalLoginLoading && (
                 <ArrowRight size={16} />
               )}
             </button>
@@ -514,11 +579,11 @@ function LoginPage() {
           <button
             type="button"
             onClick={handleGoogleButtonClick}
-            disabled={isPageLoading}
+            disabled={isGoogleButtonLoading}
             style={{
               width: '100%',
               height: '44px',
-              backgroundColor: isPageLoading
+              backgroundColor: isGoogleButtonLoading
                 ? '#f1f3f4'
                 : '#ffffff',
               color: '#3c4043',
@@ -527,7 +592,7 @@ function LoginPage() {
               fontWeight: '500',
               fontSize: '14px',
               fontFamily: 'Roboto, Arial, sans-serif',
-              cursor: isPageLoading
+              cursor: isGoogleButtonLoading
                 ? 'not-allowed'
                 : 'pointer',
               display: 'flex',
@@ -535,10 +600,10 @@ function LoginPage() {
               justifyContent: 'center',
               gap: '12px',
               marginBottom: '1.5rem',
-              opacity: isPageLoading ? 0.75 : 1
+              opacity: isGoogleButtonLoading ? 0.75 : 1
             }}
             onMouseEnter={(event) => {
-              if (!isPageLoading) {
+              if (!isGoogleButtonLoading) {
                 event.currentTarget.style.backgroundColor =
                   '#f8fafd';
                 event.currentTarget.style.borderColor =
@@ -547,7 +612,7 @@ function LoginPage() {
             }}
             onMouseLeave={(event) => {
               event.currentTarget.style.backgroundColor =
-                isPageLoading
+                isGoogleButtonLoading
                   ? '#f1f3f4'
                   : '#ffffff';
               event.currentTarget.style.borderColor =
@@ -602,7 +667,7 @@ function LoginPage() {
                 cursor: 'pointer'
               }}
               onClick={() =>
-                !isPageLoading &&
+                !isNormalLoginLoading &&
                 navigate('/register')
               }
             >
