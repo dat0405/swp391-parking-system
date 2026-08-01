@@ -372,8 +372,24 @@ public class PaymentServiceImpl implements PaymentService {
 
     /**
      * Kiểm tra trạng thái giao dịch PayOS.
+     *
+     * Ngoài việc trả trạng thái mới nhất từ PayOS,
+     * method này còn đồng bộ trạng thái thanh toán
+     * của Booking xuống database.
+     *
+     * Nhờ đó:
+     * - Booking History hiển thị PAID.
+     * - Reservations của Admin/Manager hiển thị PAID.
+     * - Booking chuyển sang CONFIRMED.
+     * - Slot chuyển sang RESERVED.
+     * - paidAt được cập nhật.
+     *
+     * Endpoint này cũng được sử dụng cho thanh toán checkout.
+     * Nếu orderCode không thuộc Booking thì method chỉ trả
+     * trạng thái PayOS và không cập nhật Booking.
      */
     @Override
+    @Transactional
     public PayOSPaymentStatusResponse getPayOSPaymentStatus(
             Long orderCode
     ) throws Exception {
@@ -384,6 +400,9 @@ public class PaymentServiceImpl implements PaymentService {
             );
         }
 
+        /*
+         * Lấy trạng thái mới nhất trực tiếp từ PayOS.
+         */
         Object paymentInfo =
                 payOS.get(
                         "/v2/payment-requests/"
@@ -400,6 +419,10 @@ public class PaymentServiceImpl implements PaymentService {
                         }
                 );
 
+        /*
+         * PayOS có thể trả các field trực tiếp
+         * hoặc bọc trong object data.
+         */
         Map<String, Object> dataMap =
                 paymentInfoMap;
 
@@ -417,41 +440,375 @@ public class PaymentServiceImpl implements PaymentService {
                     );
         }
 
-        String status =
-                String.valueOf(
-                        dataMap.getOrDefault(
-                                "status",
-                                paymentInfoMap.getOrDefault(
-                                        "status",
-                                        "PENDING"
-                                )
+        Object rawStatus =
+                dataMap.get("status");
+
+        if (rawStatus == null) {
+            rawStatus =
+                    paymentInfoMap.get(
+                            "status"
+                    );
+        }
+
+        String payOSStatus =
+                normalizeText(
+                        rawStatus == null
+                                ? Booking.PAYMENT_STATUS_PENDING
+                                : String.valueOf(
+                                rawStatus
                         )
                 );
 
         Object amountValue =
                 dataMap.get("amount");
 
+        if (amountValue == null) {
+            amountValue =
+                    paymentInfoMap.get(
+                            "amount"
+                    );
+        }
+
         Integer amount = null;
 
         if (amountValue instanceof Number number) {
-            amount = number.intValue();
+            amount =
+                    number.intValue();
+        } else if (amountValue != null) {
+            try {
+                amount =
+                        new BigDecimal(
+                                String.valueOf(
+                                        amountValue
+                                )
+                        )
+                                .setScale(
+                                        0,
+                                        RoundingMode.HALF_UP
+                                )
+                                .intValueExact();
+            } catch (
+                    NumberFormatException
+                    | ArithmeticException ignored
+            ) {
+                /*
+                 * Không chặn việc kiểm tra trạng thái
+                 * nếu PayOS trả amount không đúng kiểu số.
+                 */
+            }
+        }
+
+        Object rawPaymentLinkId =
+                dataMap.get(
+                        "paymentLinkId"
+                );
+
+        if (rawPaymentLinkId == null) {
+            rawPaymentLinkId =
+                    paymentInfoMap.get(
+                            "paymentLinkId"
+                    );
         }
 
         String paymentLinkId =
-                dataMap.get("paymentLinkId") == null
+                rawPaymentLinkId == null
                         ? null
                         : String.valueOf(
-                        dataMap.get(
-                                "paymentLinkId"
-                        )
+                        rawPaymentLinkId
                 );
+
+        /*
+         * Nếu orderCode thuộc Booking của Driver,
+         * khóa bản ghi để tránh webhook và polling
+         * cập nhật đồng thời.
+         *
+         * Nếu orderCode thuộc checkout tại cổng,
+         * booking sẽ không được tìm thấy và method
+         * chỉ trả trạng thái PayOS.
+         */
+        Booking booking =
+                bookingRepository
+                        .findByPaymentOrderCodeForUpdate(
+                                orderCode
+                        )
+                        .orElse(null);
+
+        if (booking != null) {
+            String currentBookingStatus =
+                    normalizeText(
+                            booking.getStatus()
+                    );
+
+            String currentPaymentStatus =
+                    normalizeText(
+                            booking.getPaymentStatus()
+                    );
+
+            boolean paymentSuccessful =
+                    Booking.PAYMENT_STATUS_PAID.equals(
+                            payOSStatus
+                    )
+                            || "SUCCESS".equals(
+                            payOSStatus
+                    )
+                            || "SUCCEEDED".equals(
+                            payOSStatus
+                    )
+                            || "COMPLETED".equals(
+                            payOSStatus
+                    );
+
+            /*
+             * Booking đã được webhook hoặc lần polling trước
+             * cập nhật thành công. Chỉ bảo đảm slot vẫn RESERVED,
+             * không tạo notification lần thứ hai.
+             */
+            if (
+                    Booking.STATUS_CONFIRMED.equals(
+                            currentBookingStatus
+                    )
+                            || Booking.PAYMENT_STATUS_PAID.equals(
+                            currentPaymentStatus
+                    )
+            ) {
+                markBookingSlotAsReserved(
+                        booking
+                );
+
+                bookingRepository.save(
+                        booking
+                );
+
+                payOSStatus =
+                        Booking.PAYMENT_STATUS_PAID;
+            } else if (paymentSuccessful) {
+                /*
+                 * Không kích hoạt lại booking đã bị hủy,
+                 * hết hạn hoặc đã kết thúc.
+                 */
+                if (
+                        !Booking.STATUS_PENDING_PAYMENT.equals(
+                                currentBookingStatus
+                        )
+                ) {
+                    if (
+                            currentPaymentStatus != null
+                                    && !currentPaymentStatus
+                                    .isBlank()
+                    ) {
+                        payOSStatus =
+                                currentPaymentStatus;
+                    }
+                } else {
+                    Instant now =
+                            Instant.now();
+
+                    /*
+                     * Booking đã quá thời hạn thanh toán
+                     * thì không được kích hoạt lại.
+                     */
+                    if (
+                            booking.getPaymentExpiredAt()
+                                    != null
+                                    && !now.isBefore(
+                                    booking
+                                            .getPaymentExpiredAt()
+                            )
+                    ) {
+                        expireBookingAsPaymentTimeout(
+                                booking,
+                                now
+                        );
+
+                        bookingRepository.save(
+                                booking
+                        );
+
+                        payOSStatus =
+                                Booking.PAYMENT_STATUS_EXPIRED;
+                    } else if (
+                            booking.getPaymentAmount()
+                                    != null
+                                    && amount != null
+                                    && !booking
+                                    .getPaymentAmount()
+                                    .equals(amount)
+                    ) {
+                        /*
+                         * Chặn giao dịch có số tiền không khớp.
+                         */
+                        booking.setPaymentStatus(
+                                Booking.PAYMENT_STATUS_FAILED
+                        );
+
+                        booking.setPaymentDescription(
+                                "PayOS amount does not match booking amount"
+                        );
+
+                        bookingRepository.save(
+                                booking
+                        );
+
+                        payOSStatus =
+                                Booking.PAYMENT_STATUS_FAILED;
+
+                        System.out.println(
+                                "PayOS status polling rejected because amount mismatch. "
+                                        + "bookingId="
+                                        + booking.getId()
+                                        + ", orderCode="
+                                        + orderCode
+                        );
+                    } else {
+                        /*
+                         * Đồng bộ trạng thái thanh toán xuống database.
+                         */
+                        booking.setStatus(
+                                Booking.STATUS_CONFIRMED
+                        );
+
+                        booking.setPaymentStatus(
+                                Booking.PAYMENT_STATUS_PAID
+                        );
+
+                        booking.setPaidAt(
+                                toBusinessLocalDateTime(
+                                        now
+                                )
+                        );
+
+                        if (
+                                paymentLinkId != null
+                                        && !paymentLinkId
+                                        .isBlank()
+                        ) {
+                            booking.setPaymentLinkId(
+                                    paymentLinkId
+                            );
+                        }
+
+                        if (amount != null) {
+                            booking.setPaymentAmount(
+                                    amount
+                            );
+                        }
+
+                        /*
+                         * Chuyển slot sang RESERVED.
+                         */
+                        markBookingSlotAsReserved(
+                                booking
+                        );
+
+                        Booking savedBooking =
+                                bookingRepository.save(
+                                        booking
+                                );
+
+                        /*
+                         * Chỉ tạo notification một lần khi polling
+                         * là luồng đầu tiên xác nhận thanh toán.
+                         */
+                        createBookingConfirmedNotification(
+                                savedBooking
+                        );
+
+                        payOSStatus =
+                                Booking.PAYMENT_STATUS_PAID;
+
+                        System.out.println(
+                                "PayOS status polling synchronized booking. "
+                                        + "bookingId="
+                                        + savedBooking.getId()
+                                        + ", orderCode="
+                                        + orderCode
+                                        + ", paymentStatus=PAID"
+                        );
+                    }
+                }
+            } else if (
+                    "CANCELLED".equals(
+                            payOSStatus
+                    )
+                            || "CANCELED".equals(
+                            payOSStatus
+                    )
+                            || "EXPIRED".equals(
+                            payOSStatus
+                    )
+                            || "FAILED".equals(
+                            payOSStatus
+                    )
+            ) {
+                /*
+                 * Đồng bộ trạng thái kết thúc thất bại
+                 * khi booking vẫn đang chờ thanh toán.
+                 */
+                if (
+                        Booking.STATUS_PENDING_PAYMENT.equals(
+                                currentBookingStatus
+                        )
+                ) {
+                    Instant now =
+                            Instant.now();
+
+                    if (
+                            "EXPIRED".equals(
+                                    payOSStatus
+                            )
+                    ) {
+                        expireBookingAsPaymentTimeout(
+                                booking,
+                                now
+                        );
+                    } else if (
+                            "CANCELLED".equals(
+                                    payOSStatus
+                            )
+                                    || "CANCELED".equals(
+                                    payOSStatus
+                            )
+                    ) {
+                        booking.setStatus(
+                                Booking.STATUS_CANCELLED
+                        );
+
+                        booking.setPaymentStatus(
+                                "CANCELLED"
+                        );
+
+                        booking.setCancelledAt(
+                                toBusinessLocalDateTime(
+                                        now
+                                )
+                        );
+                    } else {
+                        booking.setPaymentStatus(
+                                Booking.PAYMENT_STATUS_FAILED
+                        );
+
+                        booking.setPaymentDescription(
+                                "PayOS payment failed"
+                        );
+                    }
+
+                    bookingRepository.save(
+                            booking
+                    );
+                }
+            }
+        }
 
         return PayOSPaymentStatusResponse
                 .builder()
                 .orderCode(orderCode)
-                .paymentStatus(status)
+                .paymentStatus(
+                        payOSStatus
+                )
                 .amount(amount)
-                .paymentLinkId(paymentLinkId)
+                .paymentLinkId(
+                        paymentLinkId
+                )
                 .build();
     }
 

@@ -44,7 +44,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
@@ -103,6 +103,18 @@ public class ParkingOperationController {
 
     private static final int MAX_TICKET_GENERATION_ATTEMPTS =
             30;
+
+    /*
+     * Database booking times are currently stored as LocalDateTime
+     * in Vietnam business time, without a timezone offset.
+     *
+     * Check-in, checkout, booking matching and fee calculations must
+     * therefore use the same business timezone.
+     */
+    private static final ZoneId BUSINESS_TIME_ZONE =
+            ZoneId.of(
+                    "Asia/Ho_Chi_Minh"
+            );
 
     private static final Set<String> SUPPORTED_PAYMENT_METHODS =
             Set.of(
@@ -167,7 +179,7 @@ public class ParkingOperationController {
                 request.getVehicleTypeId();
 
         LocalDateTime checkInTime =
-                currentUtcDateTime();
+                currentBusinessDateTime();
 
         VehicleType vehicleType =
                 vehicleTypeRepository
@@ -337,7 +349,7 @@ public class ParkingOperationController {
                 );
 
         LocalDateTime previewTime =
-                currentUtcDateTime();
+                currentBusinessDateTime();
 
         return buildCheckOutPreview(
                 session,
@@ -382,7 +394,7 @@ public class ParkingOperationController {
                 );
 
         LocalDateTime checkOutTime =
-                currentUtcDateTime();
+                currentBusinessDateTime();
 
         CheckOutResponse preview =
                 buildCheckOutPreview(
@@ -1725,18 +1737,21 @@ public class ParkingOperationController {
     }
 
     /**
-     * Lưu thời gian trong database theo UTC.
+     * Lấy thời gian nghiệp vụ hiện tại theo giờ Việt Nam.
      *
-     * Frontend chịu trách nhiệm chuyển UTC sang
-     * Asia/Ho_Chi_Minh khi hiển thị.
+     * Booking.startTime và Booking.endTime trong database
+     * đang được lưu dưới dạng LocalDateTime theo giờ Việt Nam,
+     * không kèm timezone offset.
      *
-     * Cách này giữ tương thích với các session cũ
-     * đã được Azure lưu theo UTC và tránh cộng lệch 7 giờ
-     * khi tính duration/overstay.
+     * Check-in và checkout phải dùng cùng timezone này để:
+     * - tìm đúng booking CONFIRMED/PAID trong khung giờ;
+     * - gắn booking_id vào parking session;
+     * - tính duration, overstay và overnight chính xác;
+     * - tránh tạo nhầm session walk-in.
      */
-    private LocalDateTime currentUtcDateTime() {
+    private LocalDateTime currentBusinessDateTime() {
         return LocalDateTime.now(
-                ZoneOffset.UTC
+                BUSINESS_TIME_ZONE
         );
     }
 
