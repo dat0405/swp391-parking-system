@@ -1,7 +1,19 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import Sidebar from "../dashboard/Sidebar";
 import Header from "../dashboard/Header";
-import { SquarePlay, LogOut, ReceiptText, X, Zap, ShieldCheck, CheckCircle2 } from "lucide-react";
+import {
+  SquarePlay,
+  LogOut,
+  ReceiptText,
+  X,
+  Zap,
+  ShieldCheck,
+  CheckCircle2,
+  AlertTriangle,
+  CircleX,
+  Info,
+  Banknote
+} from "lucide-react";
 import { parkingSessionApi } from "../api/parkingSessionApi";
 import { Html5Qrcode } from "html5-qrcode";
 import axiosClient from "../api/axiosClient";
@@ -79,6 +91,82 @@ function CheckInOutPage() {
     error: "",
     status: "IDLE"
   });
+
+  /*
+   * Application dialog state.
+   *
+   * Browser showAppAlert()/confirm() dialogs make the deployed application
+   * look like a local test build and cannot follow the system theme.
+   * All notices and confirmations on this page now use this in-app UI.
+   */
+  const [appDialog, setAppDialog] = useState({
+    show: false,
+    mode: "alert",
+    tone: "warning",
+    title: "",
+    message: "",
+    confirmLabel: "OK",
+    cancelLabel: "Cancel",
+    details: []
+  });
+
+  const appDialogResolverRef = useRef(null);
+
+  const closeAppDialog = (result = false) => {
+    const resolver = appDialogResolverRef.current;
+    appDialogResolverRef.current = null;
+
+    setAppDialog((previousDialog) => ({
+      ...previousDialog,
+      show: false
+    }));
+
+    if (typeof resolver === "function") {
+      resolver(result);
+    }
+  };
+
+  const showAppAlert = (message, options = {}) => {
+    /*
+     * Resolve any previous confirmation safely before replacing it.
+     */
+    if (typeof appDialogResolverRef.current === "function") {
+      appDialogResolverRef.current(false);
+      appDialogResolverRef.current = null;
+    }
+
+    setAppDialog({
+      show: true,
+      mode: "alert",
+      tone: options.tone || "warning",
+      title: options.title || "Action Required",
+      message: String(message || ""),
+      confirmLabel: options.confirmLabel || "OK",
+      cancelLabel: "",
+      details: Array.isArray(options.details) ? options.details : []
+    });
+  };
+
+  const showAppConfirm = (message, options = {}) => {
+    return new Promise((resolve) => {
+      if (typeof appDialogResolverRef.current === "function") {
+        appDialogResolverRef.current(false);
+      }
+
+      appDialogResolverRef.current = resolve;
+
+      setAppDialog({
+        show: true,
+        mode: "confirm",
+        tone: options.tone || "warning",
+        title: options.title || "Please Confirm",
+        message: String(message || ""),
+        confirmLabel: options.confirmLabel || "Confirm",
+        cancelLabel: options.cancelLabel || "Cancel",
+        details: Array.isArray(options.details) ? options.details : []
+      });
+    });
+  };
 
   const getApiErrorMessage = (error, fallbackMessage) => {
     const responseData = error?.response?.data;
@@ -205,7 +293,13 @@ function CheckInOutPage() {
     const requireGatePlate = options.requireGatePlate !== false;
 
     if (!normalizedTicket) {
-      alert("Unable to read the ticket code from the QR ticket.");
+      showAppAlert(
+        "Unable to read the ticket code from the QR ticket.",
+        {
+          title: "Ticket Not Recognized",
+          tone: "error"
+        }
+      );
       return;
     }
 
@@ -241,7 +335,7 @@ function CheckInOutPage() {
           status: "IDLE"
         });
 
-        alert(
+        showAppAlert(
           `The QR ticket does not match the vehicle plate at the exit gate.\n\nExit gate plate: ${searchPlate}\nTicket plate: ${responseData.licensePlate}`
         );
         return;
@@ -255,7 +349,7 @@ function CheckInOutPage() {
         status: "IDLE"
       });
     } catch (error) {
-      alert(
+      showAppAlert(
         getApiErrorMessage(
           error,
           "The QR ticket is invalid or the vehicle is no longer in the parking area."
@@ -358,12 +452,25 @@ function CheckInOutPage() {
 
   const ensureCheckoutPlateWasScanned = () => {
     if (checkOutOcrLoading) {
-      alert("The system is recognizing the exit gate license plate. Please wait for OCR to finish.");
+      showAppAlert(
+        "The system is still recognizing the exit gate license plate. Please wait for OCR to finish.",
+        {
+          title: "Plate Recognition in Progress",
+          tone: "info"
+        }
+      );
       return false;
     }
 
     if (!checkoutPlateScanned || !getScannedCheckoutPlate()) {
-      alert("Please scan or upload the exit gate license plate before searching for a ticket or checking out.");
+      showAppAlert(
+        "Scan or upload the exit gate license plate before searching for a ticket, selecting a parked vehicle, or confirming checkout.",
+        {
+          title: "Exit Plate Required",
+          tone: "warning",
+          confirmLabel: "Got It"
+        }
+      );
       return false;
     }
 
@@ -379,7 +486,7 @@ function CheckInOutPage() {
     const selectedPlate = getSessionPlate(session);
 
     if (!selectedPlate || scannedPlate !== selectedPlate) {
-      alert(
+      showAppAlert(
         `The selected vehicle does not match the scanned license plate.\n\nScanned plate: ${searchPlate || "N/A"}\nSelected vehicle plate: ${session?.licensePlate || "N/A"}`
       );
       return false;
@@ -409,7 +516,13 @@ function CheckInOutPage() {
 
   const validateCheckoutBeforeFinalizing = () => {
     if (!checkoutData) {
-      alert("Please search for a specific vehicle before checking out.");
+      showAppAlert(
+        "Search for the vehicle by QR ticket or select the matching parked vehicle before checking out.",
+        {
+          title: "Vehicle Information Required",
+          tone: "warning"
+        }
+      );
       return false;
     }
 
@@ -421,14 +534,20 @@ function CheckInOutPage() {
     const checkoutPlate = normalizePlateForCompare(checkoutData.licensePlate);
 
     if (checkoutPlate && scannedPlate !== checkoutPlate) {
-      alert(
+      showAppAlert(
         `The scanned license plate does not match the checkout information.\n\nScanned plate: ${searchPlate}\nCheckout plate: ${checkoutData.licensePlate}`
       );
       return false;
     }
 
     if (!checkoutFeeDetails.lostTicket && !checkoutData.ticketId) {
-      alert("Please scan the QR ticket or select a valid backup ticket before checkout.");
+      showAppAlert(
+        "Scan the QR ticket or select a valid backup ticket before checkout.",
+        {
+          title: "QR Ticket Required",
+          tone: "warning"
+        }
+      );
       return false;
     }
 
@@ -992,7 +1111,13 @@ function CheckInOutPage() {
     }
 
     if (!file.type.startsWith("image/")) {
-      alert("Please select a valid license plate image file.");
+      showAppAlert(
+        "Please select a valid license plate image file.",
+        {
+          title: "Invalid Image File",
+          tone: "error"
+        }
+      );
       event.target.value = "";
       return;
     }
@@ -1000,7 +1125,13 @@ function CheckInOutPage() {
     const maximumFileSize = 10 * 1024 * 1024;
 
     if (file.size > maximumFileSize) {
-      alert("The license plate image must not exceed 10 MB.");
+      showAppAlert(
+        "The license plate image must not exceed 10 MB.",
+        {
+          title: "Image Is Too Large",
+          tone: "warning"
+        }
+      );
       event.target.value = "";
       return;
     }
@@ -1286,7 +1417,13 @@ function CheckInOutPage() {
     e.preventDefault();
 
     if (checkInOcrLoading) {
-      alert("The system is recognizing the license plate. Please wait for OCR to finish or enter the plate manually.");
+      showAppAlert(
+        "The system is recognizing the license plate. Please wait for OCR to finish or enter the plate manually.",
+        {
+          title: "Plate Recognition in Progress",
+          tone: "info"
+        }
+      );
       return;
     }
 
@@ -1294,7 +1431,7 @@ function CheckInOutPage() {
     if (!formattedPlate) return;
 
     if (!validateVietnamPlate(formattedPlate, vehicleType)) {
-      alert(
+      showAppAlert(
         normalizeVehicleType(vehicleType) === "car"
           ? "Invalid car license plate format. Example: 30F-256.58"
           : "Invalid motorbike license plate format. Example: 27-B1-258.88 or 59-AA-123.56"
@@ -1305,7 +1442,13 @@ function CheckInOutPage() {
     const selectedVehicleTypeId = getVehicleTypeId(vehicleType);
 
     if (!selectedVehicleTypeId) {
-      alert("Invalid vehicle type.");
+      showAppAlert(
+        "The selected vehicle type is invalid.",
+        {
+          title: "Invalid Vehicle Type",
+          tone: "error"
+        }
+      );
       return;
     }
 
@@ -1363,7 +1506,7 @@ function CheckInOutPage() {
 
       resetCheckoutWorkingState();
     } catch (error) {
-      alert(getApiErrorMessage(error, "Check-in failed."));
+      showAppAlert(getApiErrorMessage(error, "Check-in failed."));
     }
   };
 
@@ -1373,7 +1516,7 @@ function CheckInOutPage() {
     const ticket = searchTicketId.trim().toUpperCase();
 
     if (checkOutOcrLoading) {
-      alert("The system is recognizing the exit gate license plate. Please wait for OCR to finish.");
+      showAppAlert("The system is recognizing the exit gate license plate. Please wait for OCR to finish.");
       return;
     }
 
@@ -1382,7 +1525,13 @@ function CheckInOutPage() {
     }
 
     if (!ticket) {
-      alert("Please enter the ticket ID or scan the QR ticket.");
+      showAppAlert(
+        "Enter the ticket ID or scan the customer's QR ticket.",
+        {
+          title: "Ticket ID Required",
+          tone: "warning"
+        }
+      );
       return;
     }
 
@@ -1463,8 +1612,32 @@ function CheckInOutPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      "Confirm that the staff member has received the full cash payment from the customer?"
+    const confirmed = await showAppConfirm(
+      "Only confirm after the staff member has received the full cash amount from the customer.",
+      {
+        title: "Confirm Cash Payment",
+        tone: "cash",
+        confirmLabel: "Confirm Cash Received",
+        cancelLabel: "Go Back",
+        details: [
+          {
+            label: "License Plate",
+            value: checkoutData.licensePlate || "N/A"
+          },
+          {
+            label: "Ticket ID",
+            value: checkoutData.ticketId || "N/A"
+          },
+          {
+            label: "Payment Method",
+            value: "Cash"
+          },
+          {
+            label: "Amount Received",
+            value: formatCurrency(checkoutFeeDetails.amountDue)
+          }
+        ]
+      }
     );
 
     if (!confirmed) {
@@ -1671,7 +1844,7 @@ function CheckInOutPage() {
       setCheckoutFinalized(false);
       setShowPaymentModal(true);
     } catch (error) {
-      alert(
+      showAppAlert(
         getApiErrorMessage(
           error,
           "Failed to create the payment QR code or complete checkout."
@@ -1859,10 +2032,30 @@ function CheckInOutPage() {
     };
   }, [ticketScannerModal.show]);
 
-  const handleCloseModal = () => {
+  const handleCloseModal = async () => {
     if (checkoutPaymentStatus === "PENDING" && !checkoutFinalized) {
-      const confirmed = window.confirm(
-        "PayOS payment is still awaiting confirmation. Closing this window will stop tracking the transaction. Do you still want to close it?"
+      const confirmed = await showAppConfirm(
+        "PayOS is still waiting for payment confirmation. Closing this window will stop tracking the transaction on this screen.",
+        {
+          title: "Stop Payment Tracking?",
+          tone: "warning",
+          confirmLabel: "Close Payment Window",
+          cancelLabel: "Continue Tracking",
+          details: [
+            {
+              label: "License Plate",
+              value: checkoutData?.licensePlate || "N/A"
+            },
+            {
+              label: "Order Code",
+              value: checkoutPaymentData?.orderCode || "N/A"
+            },
+            {
+              label: "Current Status",
+              value: checkoutPaymentStatus
+            }
+          ]
+        }
       );
 
       if (!confirmed) {
@@ -1880,6 +2073,30 @@ function CheckInOutPage() {
     setCheckoutFinalized(false);
     resetCheckoutWorkingState();
   };
+
+  useEffect(() => {
+    if (!appDialog.show) {
+      return undefined;
+    }
+
+    const handleDialogKeyDown = (event) => {
+      if (event.key === "Escape") {
+        closeAppDialog(false);
+      }
+    };
+
+    window.addEventListener(
+      "keydown",
+      handleDialogKeyDown
+    );
+
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        handleDialogKeyDown
+      );
+    };
+  }, [appDialog.show]);
 
   useEffect(() => {
     if (!ticketQrModal.show && !ticketScannerModal.show) {
@@ -2471,7 +2688,7 @@ function CheckInOutPage() {
 
                       window.scrollTo({ top: 0, behavior: "smooth" });
                     } catch (error) {
-                      alert(getApiErrorMessage(error, "Unable to retrieve checkout information."));
+                      showAppAlert(getApiErrorMessage(error, "Unable to retrieve checkout information."));
                       setCheckoutData(null);
                     }
                   }}
@@ -2551,7 +2768,7 @@ function CheckInOutPage() {
 
                           window.scrollTo({ top: 0, behavior: "smooth" });
                         } catch (error) {
-                          alert(getApiErrorMessage(error, "Unable to retrieve lost-ticket checkout information."));
+                          showAppAlert(getApiErrorMessage(error, "Unable to retrieve lost-ticket checkout information."));
                           setCheckoutData(null);
                         }
                       }}
@@ -2899,6 +3116,14 @@ function CheckInOutPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {appDialog.show && (
+          <ApplicationDialog
+            dialog={appDialog}
+            onConfirm={() => closeAppDialog(true)}
+            onCancel={() => closeAppDialog(false)}
+          />
         )}
 
         {showPaymentModal && checkoutData && (
@@ -3321,6 +3546,305 @@ function CheckInOutPage() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+function ApplicationDialog({
+  dialog,
+  onConfirm,
+  onCancel
+}) {
+  const toneStyles = {
+    info: {
+      accent: "#3b82f6",
+      soft: "rgba(59, 130, 246, 0.14)",
+      border: "rgba(59, 130, 246, 0.38)",
+      Icon: Info
+    },
+    warning: {
+      accent: "#f59e0b",
+      soft: "rgba(245, 158, 11, 0.14)",
+      border: "rgba(245, 158, 11, 0.38)",
+      Icon: AlertTriangle
+    },
+    error: {
+      accent: "#ef4444",
+      soft: "rgba(239, 68, 68, 0.14)",
+      border: "rgba(239, 68, 68, 0.38)",
+      Icon: CircleX
+    },
+    success: {
+      accent: "#10b981",
+      soft: "rgba(16, 185, 129, 0.14)",
+      border: "rgba(16, 185, 129, 0.38)",
+      Icon: CheckCircle2
+    },
+    cash: {
+      accent: "#f59e0b",
+      soft: "rgba(245, 158, 11, 0.14)",
+      border: "rgba(245, 158, 11, 0.38)",
+      Icon: Banknote
+    }
+  };
+
+  const selectedTone =
+    toneStyles[dialog.tone] ||
+    toneStyles.warning;
+
+  const DialogIcon =
+    selectedTone.Icon;
+
+  const isConfirmDialog =
+    dialog.mode === "confirm";
+
+  const details =
+    Array.isArray(dialog.details)
+      ? dialog.details.filter(
+          (item) =>
+            item &&
+            item.label &&
+            item.value !== undefined &&
+            item.value !== null
+        )
+      : [];
+
+  return (
+    <div
+      onMouseDown={(event) => {
+        if (
+          event.target ===
+          event.currentTarget
+        ) {
+          onCancel();
+        }
+      }}
+      role="presentation"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 10050,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "1rem",
+        background:
+          "rgba(2, 6, 23, 0.78)",
+        backdropFilter: "blur(7px)"
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="application-dialog-title"
+        style={{
+          width: "460px",
+          maxWidth:
+            "calc(100vw - 2rem)",
+          maxHeight:
+            "calc(100vh - 2rem)",
+          overflowY: "auto",
+          boxSizing: "border-box",
+          padding: "1.5rem",
+          borderRadius: "1rem",
+          background: theme.card,
+          border: `1px solid ${selectedTone.border}`,
+          boxShadow:
+            "0 28px 80px rgba(0, 0, 0, 0.48)",
+          color: theme.text
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "1rem"
+          }}
+        >
+          <div
+            style={{
+              flex: "0 0 auto",
+              width: "46px",
+              height: "46px",
+              borderRadius: "0.8rem",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background:
+                selectedTone.soft,
+              border: `1px solid ${selectedTone.border}`,
+              color:
+                selectedTone.accent
+            }}
+          >
+            <DialogIcon size={24} />
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0
+            }}
+          >
+            <h3
+              id="application-dialog-title"
+              style={{
+                margin: 0,
+                color: theme.text,
+                fontSize: "1.08rem",
+                fontWeight: 850,
+                lineHeight: 1.3
+              }}
+            >
+              {dialog.title}
+            </h3>
+
+            <p
+              style={{
+                margin:
+                  "0.55rem 0 0",
+                color: theme.muted,
+                fontSize: "0.86rem",
+                lineHeight: 1.55,
+                whiteSpace: "pre-line",
+                overflowWrap: "anywhere"
+              }}
+            >
+              {dialog.message}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close dialog"
+            style={{
+              flex: "0 0 auto",
+              width: "34px",
+              height: "34px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "0.55rem",
+              border: `1px solid ${theme.border}`,
+              background: theme.cardSoft,
+              color: theme.muted,
+              cursor: "pointer"
+            }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {details.length > 0 && (
+          <div
+            style={{
+              marginTop: "1.25rem",
+              padding: "0.9rem 1rem",
+              display: "grid",
+              gap: "0.65rem",
+              borderRadius: "0.75rem",
+              border: `1px solid ${theme.border}`,
+              background: theme.cardSoft
+            }}
+          >
+            {details.map(
+              (item, index) => (
+                <div
+                  key={`${item.label}-${index}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "minmax(120px, 0.8fr) minmax(0, 1.2fr)",
+                    gap: "0.75rem",
+                    alignItems: "center"
+                  }}
+                >
+                  <span
+                    style={{
+                      color: theme.muted,
+                      fontSize: "0.75rem",
+                      fontWeight: 750
+                    }}
+                  >
+                    {item.label}
+                  </span>
+
+                  <span
+                    style={{
+                      color: theme.text,
+                      fontSize: "0.82rem",
+                      fontWeight: 850,
+                      textAlign: "right",
+                      overflowWrap: "anywhere"
+                    }}
+                  >
+                    {item.value}
+                  </span>
+                </div>
+              )
+            )}
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: "1.4rem",
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: "0.75rem",
+            flexWrap: "wrap"
+          }}
+        >
+          {isConfirmDialog && (
+            <button
+              type="button"
+              onClick={onCancel}
+              style={{
+                minWidth: "110px",
+                padding:
+                  "0.78rem 1rem",
+                borderRadius: "0.65rem",
+                border: `1px solid ${theme.border}`,
+                background: theme.cardSoft,
+                color: theme.text,
+                fontSize: "0.82rem",
+                fontWeight: 800,
+                cursor: "pointer"
+              }}
+            >
+              {dialog.cancelLabel ||
+                "Cancel"}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            autoFocus
+            style={{
+              minWidth:
+                isConfirmDialog
+                  ? "155px"
+                  : "105px",
+              padding:
+                "0.78rem 1rem",
+              borderRadius: "0.65rem",
+              border: "none",
+              background:
+                selectedTone.accent,
+              color: "#ffffff",
+              fontSize: "0.82rem",
+              fontWeight: 900,
+              cursor: "pointer",
+              boxShadow: `0 8px 22px ${selectedTone.soft}`
+            }}
+          >
+            {dialog.confirmLabel ||
+              "OK"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
