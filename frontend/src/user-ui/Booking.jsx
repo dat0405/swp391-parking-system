@@ -2661,6 +2661,152 @@ function Booking() {
               border: 1px solid var(--border-color) !important; 
             }
 
+            /* =======================================================
+               RESPONSIVE BOOKING PAYMENT MODAL
+               Keeps the payment window inside the viewport and usable
+               on desktop, short laptop screens, tablets and mobile.
+               ======================================================= */
+            .booking-payment-overlay {
+              overflow-y: auto !important;
+              overscroll-behavior: contain;
+              padding: clamp(0.75rem, 2vw, 1.5rem) !important;
+              box-sizing: border-box;
+            }
+
+            .booking-payment-modal {
+              width: min(820px, 100%) !important;
+              max-width: 100% !important;
+              max-height: calc(100dvh - 2rem);
+              margin: auto;
+              padding: clamp(1.15rem, 2.4vw, 1.8rem) !important;
+              overflow-x: hidden;
+              overflow-y: auto;
+              overscroll-behavior: contain;
+              box-sizing: border-box;
+              scrollbar-width: thin;
+              scrollbar-color: var(--border-color) transparent;
+            }
+
+            .booking-payment-modal::-webkit-scrollbar {
+              width: 8px;
+            }
+
+            .booking-payment-modal::-webkit-scrollbar-track {
+              background: transparent;
+            }
+
+            .booking-payment-modal::-webkit-scrollbar-thumb {
+              background: var(--border-color);
+              border-radius: 999px;
+            }
+
+            .booking-payment-content {
+              grid-template-columns:
+                minmax(0, 1.08fr)
+                minmax(270px, 0.92fr) !important;
+              gap: clamp(1.25rem, 3vw, 2.25rem) !important;
+              align-items: start;
+            }
+
+            .booking-payment-details,
+            .booking-payment-qr-panel {
+              min-width: 0;
+            }
+
+            .booking-payment-qr-panel {
+              justify-content: flex-start !important;
+            }
+
+            .booking-payment-qr-image {
+              display: block;
+              width: min(220px, 100%) !important;
+              max-width: 100%;
+              height: auto !important;
+              aspect-ratio: 1 / 1;
+              object-fit: contain;
+            }
+
+            .booking-payment-qr-placeholder {
+              width: min(220px, 100%) !important;
+              max-width: 100%;
+              height: auto !important;
+              min-height: 190px;
+              aspect-ratio: 1 / 1;
+            }
+
+            @media (max-width: 820px) {
+              .booking-payment-overlay {
+                align-items: flex-start !important;
+                padding: 0.75rem !important;
+              }
+
+              .booking-payment-modal {
+                width: 100% !important;
+                max-height: calc(100dvh - 1.5rem);
+                border-radius: 0.85rem !important;
+              }
+
+              .booking-payment-content {
+                grid-template-columns: minmax(0, 1fr) !important;
+                gap: 1.4rem !important;
+              }
+
+              .booking-payment-qr-panel {
+                padding-top: 1.25rem;
+                border-top: 1px solid var(--border-color);
+              }
+
+              .booking-payment-qr-image,
+              .booking-payment-qr-placeholder {
+                width: min(240px, 100%) !important;
+              }
+            }
+
+            @media (max-width: 520px) {
+              .booking-payment-overlay {
+                padding: 0 !important;
+                align-items: flex-start !important;
+                background: var(--bg-dashboard) !important;
+                backdrop-filter: none !important;
+              }
+
+              .booking-payment-modal {
+                width: 100% !important;
+                min-height: 100dvh;
+                max-height: 100dvh;
+                padding: 1rem !important;
+                border-radius: 0 !important;
+                border-left: none !important;
+                border-right: none !important;
+              }
+
+              .booking-payment-content {
+                gap: 1.15rem !important;
+              }
+
+              .booking-payment-qr-image,
+              .booking-payment-qr-placeholder {
+                width: min(215px, 100%) !important;
+              }
+            }
+
+            @media (max-height: 760px) and (min-width: 821px) {
+              .booking-payment-overlay {
+                align-items: flex-start !important;
+                padding-top: 0.75rem !important;
+                padding-bottom: 0.75rem !important;
+              }
+
+              .booking-payment-modal {
+                max-height: calc(100dvh - 1.5rem);
+              }
+
+              .booking-payment-qr-image,
+              .booking-payment-qr-placeholder {
+                width: min(190px, 100%) !important;
+              }
+            }
+
             .booking-cancel-confirm-overlay {
               position: fixed;
               inset: 0;
@@ -3257,6 +3403,7 @@ function Booking() {
            ========================================== */}
         {successModal.show && successModal.data && (
           <div
+            className="booking-payment-overlay"
             style={{
               position: "fixed",
               top: 0, left: 0, right: 0, bottom: 0,
@@ -3270,7 +3417,7 @@ function Booking() {
             }}
           >
             <div
-              className="pm-modal-card"
+              className="pm-modal-card booking-payment-modal"
               style={{
                 padding: "2rem",
                 borderRadius: "1rem",
@@ -3303,10 +3450,20 @@ function Booking() {
               </h3>
 
               {/* Two Column Content Grid */}
-              <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: "2.5rem" }}>
+              <div
+                className="booking-payment-content"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.1fr 0.9fr",
+                  gap: "2.5rem"
+                }}
+              >
                 
                 {/* LEFT DETAILS PANEL */}
-                <div style={{ display: "flex", flexDirection: "column" }}>
+                <div
+                  className="booking-payment-details"
+                  style={{ display: "flex", flexDirection: "column" }}
+                >
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                     <span className="pm-text-license" style={{ fontSize: "1.8rem", fontWeight: "800", letterSpacing: "0.5px" }}>
                       {successModal.data.licensePlate}
@@ -3388,7 +3545,15 @@ function Booking() {
                 </div>
 
                 {/* RIGHT QR PAYMENT CODE PANEL */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                <div
+                  className="booking-payment-qr-panel"
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                >
                   <div className="pm-text-title" style={{ fontSize: "1.1rem", fontWeight: "600", marginBottom: "1rem", textAlign: "center" }}>
                     {bookingPaymentStatus === "PAID" ? "Payment completed successfully." : "Scan QR Code for Payment"}
                   </div>
@@ -3407,15 +3572,12 @@ function Booking() {
                         <img
                           src={successModal.data.qrImageSrc}
                           alt="PayOS QR payment code"
-                          style={{ display: "block" }}
-                          width={220}
-                          height={220}
+                          className="booking-payment-qr-image"
                         />
                       ) : (
                         <div
+                          className="booking-payment-qr-placeholder"
                           style={{
-                            width: 220,
-                            height: 220,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
